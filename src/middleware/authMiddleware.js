@@ -1,0 +1,51 @@
+const jwt = require("jsonwebtoken");
+
+// ─────────────────────────────────────────────
+// @desc    Verify JWT token from Authorization header
+// @usage   Apply to any protected route
+// ─────────────────────────────────────────────
+const protect = (req, res, next) => {
+  try {
+    // Expect header: Authorization: Bearer <token>
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        success: false,
+        message: "Access denied. No token provided.",
+      });
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    // Verify and decode the token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Attach decoded payload (id, role) to request object
+    req.user = decoded;
+    next();
+  } catch (error) {
+    console.error("Auth Middleware Error:", error.message);
+    return res.status(401).json({
+      success: false,
+      message: "Invalid or expired token. Please log in again.",
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Restrict access to admin role only
+// @usage   Apply AFTER protect middleware
+// ─────────────────────────────────────────────
+const adminOnly = (req, res, next) => {
+  if (req.user && req.user.role === "admin") {
+    next();
+  } else {
+    return res.status(403).json({
+      success: false,
+      message: "Access denied. Admins only.",
+    });
+  }
+};
+
+module.exports = { protect, adminOnly };
