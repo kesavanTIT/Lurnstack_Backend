@@ -21,9 +21,14 @@ model User {
 
 model LiveClass {
   id          Int      @id @default(autoincrement())
-  title       String
+  courseName  String
+  classTitle  String
+  instructor  String
   description String?
+  date        String
+  time        String
+  duration    String
   meetLink    String
-  scheduledAt DateTime
+  thumbnail   String?
   createdAt   DateTime @default(now())
 }

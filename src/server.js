@@ -4,6 +4,7 @@ const cors = require("cors");
 
 // ── Route Imports ────────────────────────────
 const authRoutes = require("./routes/authRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 
 // ── App Setup ────────────────────────────────
 const app = express();
@@ -38,6 +39,7 @@ app.get("/", async (req, res) => {
 
 // ── API Routes ───────────────────────────────
 app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 
 // ── 404 Handler ──────────────────────────────
 app.use((req, res) => {
