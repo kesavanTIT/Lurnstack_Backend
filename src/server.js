@@ -15,12 +15,25 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ── Health Check ─────────────────────────────
-app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message: "🚀 LurnStack Backend API is running!",
-    version: "1.0.0",
-  });
+app.get("/", async (req, res) => {
+  try {
+    const prisma = require("./config/db");
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({
+      success: true,
+      message: "🚀 LurnStack Backend API is running!",
+      database: "Connected ✅",
+      version: "1.0.0",
+    });
+  } catch (error) {
+    res.json({
+      success: true,
+      message: "🚀 LurnStack Backend API is running!",
+      database: "Disconnected ❌",
+      error: error.message,
+      version: "1.0.0",
+    });
+  }
 });
 
 // ── API Routes ───────────────────────────────

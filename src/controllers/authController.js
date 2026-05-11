@@ -61,6 +61,7 @@ const registerUser = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Internal server error. Please try again.",
+      error: error.message, // Temporarily include error message to debug production issue
     });
   }
 };
