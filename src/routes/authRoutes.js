@@ -7,9 +7,10 @@ const { registerUser, loginUser } = require("../controllers/authController");
 // @access  Public
 router.post("/register", registerUser);
 
-// @route   POST /api/auth/login
+// @route  POST /api/auth/login
 // @desc    Authenticate user and return JWT token
 // @access  Public
 router.post("/login", loginUser);
 
 module.exports = router;
+
