@@ -1,3 +1,4 @@
+console.log("Initializing LurnStack Backend...");
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -61,8 +62,18 @@ app.use((err, req, res, next) => {
 });
 
 // ── Start Server ─────────────────────────────
-app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
-});
+const startServer = async () => {
+  try {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`✅ Server running on port ${PORT}`);
+      console.log(`🚀 Health check: http://localhost:${PORT}/`);
+    });
+  } catch (error) {
+    console.error("❌ Failed to start server:", error);
+    process.exit(1);
+  }
+};
+
+startServer();
 
 module.exports = app;
