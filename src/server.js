@@ -13,19 +13,22 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ── Middleware ───────────────────────────────
+// Request Logger (Helpful for Railway debugging)
+app.use((req, res, next) => {
+  console.log(`Incoming Request: ${req.method} ${req.url}`);
+  next();
+});
+
 const corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "https://lurnstackbackend-production.up.railway.app",
-  ],
+  origin: true, // Reflects the request origin, best for debugging
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
+  optionsSuccessStatus: 200, // Fixed status for preflight success
 };
 
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // Preflight handling BEFORE routes
+app.options("*", cors(corsOptions)); // Handle preflight BEFORE all routes
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
