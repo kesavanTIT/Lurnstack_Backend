@@ -16,14 +16,16 @@ const createLiveClass = async (req, res) => {
       time,
       duration,
       meetLink,
-      thumbnail,
     } = req.body;
+
+    // Check if thumbnail was uploaded
+    const thumbnail = req.file ? req.file.path : null;
 
     // Validation
     if (!courseName || !classTitle || !instructor || !date || !time || !duration || !meetLink) {
       return res.status(400).json({
         success: false,
-        message: "Please provide all required fields.",
+        message: "Please provide all required fields (courseName, classTitle, instructor, date, time, duration, meetLink).",
       });
     }
 
@@ -51,6 +53,7 @@ const createLiveClass = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Internal server error. Failed to create class.",
+      error: error.message,
     });
   }
 };
@@ -63,7 +66,16 @@ const createLiveClass = async (req, res) => {
 const updateLiveClass = async (req, res) => {
   try {
     const { classId } = req.params;
-    const { date, time, meetLink, description, classTitle } = req.body;
+    const {
+      courseName,
+      classTitle,
+      instructor,
+      description,
+      date,
+      time,
+      duration,
+      meetLink,
+    } = req.body;
 
     const existingClass = await prisma.liveClass.findUnique({
       where: { id: parseInt(classId) },
@@ -76,14 +88,24 @@ const updateLiveClass = async (req, res) => {
       });
     }
 
+    // Handle thumbnail update
+    let thumbnail = existingClass.thumbnail;
+    if (req.file) {
+      thumbnail = req.file.path;
+    }
+
     const updatedClass = await prisma.liveClass.update({
       where: { id: parseInt(classId) },
       data: {
+        courseName: courseName || existingClass.courseName,
+        classTitle: classTitle || existingClass.classTitle,
+        instructor: instructor || existingClass.instructor,
+        description: description !== undefined ? description : existingClass.description,
         date: date || existingClass.date,
         time: time || existingClass.time,
+        duration: duration || existingClass.duration,
         meetLink: meetLink || existingClass.meetLink,
-        description: description || existingClass.description,
-        classTitle: classTitle || existingClass.classTitle,
+        thumbnail: thumbnail,
       },
     });
 
@@ -128,6 +150,7 @@ const deleteLiveClass = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Live class deleted successfully!",
+      data: { id: classId }
     });
   } catch (error) {
     console.error("Delete Live Class Error:", error);

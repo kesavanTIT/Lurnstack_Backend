@@ -32,6 +32,7 @@ app.options("*", cors(corsOptions)); // Handle preflight BEFORE all routes
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use("/uploads", express.static("uploads"));
 
 // ── Health Check ─────────────────────────────
 app.get("/", async (req, res) => {

@@ -11,6 +11,7 @@ const {
   getAdminMe,
 } = require("../controllers/adminAuthController");
 const { protect, isAdmin } = require("../middleware/authMiddleware");
+const upload = require("../middleware/uploadMiddleware");
 
 // ── Public Admin Routes ───────────────────────
 router.post("/register", registerAdmin);
@@ -24,8 +25,8 @@ router.use(isAdmin);
 router.get("/me", getAdminMe);
 
 // Live Class Management
-router.post("/create-live-class", createLiveClass);
-router.put("/update-live-class/:classId", updateLiveClass);
+router.post("/create-live-class", upload.single("thumbnail"), createLiveClass);
+router.put("/update-live-class/:classId", upload.single("thumbnail"), updateLiveClass);
 router.delete("/delete-live-class/:classId", deleteLiveClass);
 
 module.exports = router;
