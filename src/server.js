@@ -80,6 +80,19 @@ app.use((err, req, res, next) => {
 // ── Start Server ─────────────────────────────
 const startServer = async () => {
   try {
+    const prisma = require("./config/db");
+    
+    // Self-healing: Ensure 'updatedAt' column exists if migration skipped it
+    console.log("🛠️ Checking database schema consistency...");
+    await prisma.$executeRaw`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='LiveClass' AND column_name='updatedAt') THEN
+          ALTER TABLE "LiveClass" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+        END IF;
+      END $$;
+    `.catch(err => console.error("⚠️ DB Patch Warning:", err.message));
+
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`✅ Server running on port ${PORT}`);
       console.log(`🚀 Health check: http://localhost:${PORT}/`);
