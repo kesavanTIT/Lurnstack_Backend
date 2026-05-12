@@ -5,19 +5,27 @@ const {
   updateLiveClass,
   deleteLiveClass,
 } = require("../controllers/adminController");
-const { protect, adminOnly } = require("../middleware/authMiddleware");
+const {
+  registerAdmin,
+  loginAdmin,
+  getAdminMe,
+} = require("../controllers/adminAuthController");
+const { protect, isAdmin } = require("../middleware/authMiddleware");
 
-// Apply protection to all routes in this file
+// ── Public Admin Routes ───────────────────────
+router.post("/register", registerAdmin);
+router.post("/login", loginAdmin);
+
+// ── Protected Admin Routes ────────────────────
+// Apply protect and isAdmin to all routes below
 router.use(protect);
-router.use(adminOnly);
+router.use(isAdmin);
 
-// @route   POST /api/admin/create-live-class
+router.get("/me", getAdminMe);
+
+// Live Class Management
 router.post("/create-live-class", createLiveClass);
-
-// @route   PUT /api/admin/update-live-class/:classId
 router.put("/update-live-class/:classId", updateLiveClass);
-
-// @route   DELETE /api/admin/delete-live-class/:classId
 router.delete("/delete-live-class/:classId", deleteLiveClass);
 
 module.exports = router;
