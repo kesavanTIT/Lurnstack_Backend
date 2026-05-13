@@ -1,5 +1,41 @@
 const prisma = require("../config/db");
 
+// Helper to parse date (YYYY-MM-DD) and time (HH:mm AM/PM) into IST Date object
+const parseScheduledAt = (dateStr, timeStr) => {
+  try {
+    // Normalize time separator (handle 10.30 instead of 10:30)
+    const normalizedTime = timeStr.replace(".", ":");
+    const [year, month, day] = dateStr.split("-").map(Number);
+    let [time, modifier] = normalizedTime.split(" ");
+    let [hours, minutes] = time.split(":").map(Number);
+
+    if (modifier === "PM" && hours < 12) hours += 12;
+    if (modifier === "AM" && hours === 12) hours = 0;
+
+    // Create ISO string with IST offset (+05:30)
+    const isoStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00+05:30`;
+    const date = new Date(isoStr);
+    return isNaN(date.getTime()) ? null : date;
+  } catch (error) {
+    return null;
+  }
+};
+
+
+// Helper to parse duration string (e.g., "2 Hours", "90 Minutes") into minutes integer
+const parseDurationMinutes = (durationStr) => {
+  if (!durationStr) return 60;
+  if (!isNaN(durationStr)) return parseInt(durationStr);
+
+  const parts = durationStr.toString().toLowerCase().split(" ");
+  const val = parseInt(parts[0]);
+  if (parts.includes("hour") || parts.includes("hours")) {
+    return val * 60;
+  }
+  return val || 60; // Default to 60 if parsing fails
+};
+
+
 // ─────────────────────────────────────────────
 // @desc    Create a new live class
 // @route   POST /api/admin/create-live-class
@@ -29,19 +65,26 @@ const createLiveClass = async (req, res) => {
       });
     }
 
+    // Parse scheduledAt and durationMinutes
+    const scheduledAt = parseScheduledAt(date, time);
+    const durationMinutes = parseDurationMinutes(duration);
+
     const newClass = await prisma.liveClass.create({
       data: {
         courseName,
         classTitle,
         instructor,
         description,
-        date,
-        time,
-        duration,
+        date, // Keep string for UI
+        time, // Keep string for UI
+        duration, // Keep string for UI
+        scheduledAt,
+        durationMinutes,
         meetLink,
         thumbnail,
       },
     });
+
 
     res.status(201).json({
       success: true,
@@ -94,6 +137,12 @@ const updateLiveClass = async (req, res) => {
       thumbnail = req.file.path;
     }
 
+    // Parse updated scheduledAt and durationMinutes if provided
+    const newDate = date || existingClass.date;
+    const newTime = time || existingClass.time;
+    const scheduledAt = parseScheduledAt(newDate, newTime);
+    const durationMinutes = parseDurationMinutes(duration || existingClass.duration);
+
     const updatedClass = await prisma.liveClass.update({
       where: { id: parseInt(classId) },
       data: {
@@ -101,13 +150,16 @@ const updateLiveClass = async (req, res) => {
         classTitle: classTitle || existingClass.classTitle,
         instructor: instructor || existingClass.instructor,
         description: description !== undefined ? description : existingClass.description,
-        date: date || existingClass.date,
-        time: time || existingClass.time,
+        date: newDate,
+        time: newTime,
         duration: duration || existingClass.duration,
+        scheduledAt,
+        durationMinutes,
         meetLink: meetLink || existingClass.meetLink,
         thumbnail: thumbnail,
       },
     });
+
 
     res.status(200).json({
       success: true,

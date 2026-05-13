@@ -21,16 +21,19 @@ model User {
 }
 
 model LiveClass {
-  id          Int      @id @default(autoincrement())
-  courseName  String
-  classTitle  String
-  instructor  String
-  description String?
-  date        String
-  time        String
-  duration    String
-  meetLink    String
-  thumbnail   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  id              Int      @id @default(autoincrement())
+  courseName      String
+  classTitle      String
+  instructor      String
+  description     String?
+  scheduledAt     DateTime? // Combined date and time for robust sorting/filtering
+  durationMinutes Int?      // Duration in minutes for easier calculations
+  date            String
+  time            String
+  duration        String
+  meetLink        String
+  thumbnail       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
 }
+

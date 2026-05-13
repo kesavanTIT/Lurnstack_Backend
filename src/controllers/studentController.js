@@ -8,13 +8,34 @@ const prisma = require("../config/db");
 const getAllLiveClasses = async (req, res) => {
   try {
     const liveClasses = await prisma.liveClass.findMany({
-      orderBy: { createdAt: "desc" },
+      orderBy: { scheduledAt: "asc" },
+    });
+
+    const now = new Date();
+
+    const enrichedClasses = liveClasses.map((cls) => {
+      const startTime = cls.scheduledAt ? new Date(cls.scheduledAt) : null;
+      const duration = cls.durationMinutes || 60;
+      const endTime = startTime ? new Date(startTime.getTime() + duration * 60000) : null;
+
+      let status = "upcoming";
+      if (endTime && now > endTime) {
+        status = "completed";
+      } else if (startTime && now > startTime && now < endTime) {
+        status = "live";
+      }
+
+      return {
+        ...cls,
+        status,
+      };
     });
 
     res.status(200).json({
       success: true,
-      data: liveClasses,
+      data: enrichedClasses,
     });
+
   } catch (error) {
     console.error("Get All Live Classes Error:", error);
     res.status(500).json({
