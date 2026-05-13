@@ -32,7 +32,12 @@ app.options("*", cors(corsOptions)); // Handle preflight BEFORE all routes
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use("/uploads", express.static("uploads"));
+app.use("/uploads", express.static("uploads", {
+  setHeaders: (res) => {
+    res.set("Access-Control-Allow-Origin", "*");
+  }
+}));
+
 
 // ── Health Check ─────────────────────────────
 app.get("/", async (req, res) => {

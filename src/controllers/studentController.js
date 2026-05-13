@@ -27,9 +27,11 @@ const getAllLiveClasses = async (req, res) => {
 
       return {
         ...cls,
+        thumbnail: cls.thumbnail ? `${req.protocol}://${req.get("host")}/${cls.thumbnail.replace(/\\/g, "/")}` : null,
         status,
       };
     });
+
 
     res.status(200).json({
       success: true,
@@ -66,10 +68,15 @@ const getLiveClassById = async (req, res) => {
       });
     }
 
+    if (liveClass.thumbnail) {
+      liveClass.thumbnail = `${req.protocol}://${req.get("host")}/${liveClass.thumbnail.replace(/\\/g, "/")}`;
+    }
+
     res.status(200).json({
       success: true,
       data: liveClass,
     });
+
   } catch (error) {
     console.error("Get Live Class By ID Error:", error);
     res.status(500).json({

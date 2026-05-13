@@ -86,11 +86,16 @@ const createLiveClass = async (req, res) => {
     });
 
 
+    if (newClass.thumbnail) {
+      newClass.thumbnail = `${req.protocol}://${req.get("host")}/${newClass.thumbnail.replace(/\\/g, "/")}`;
+    }
+
     res.status(201).json({
       success: true,
       message: "Live class created successfully!",
       data: newClass,
     });
+
   } catch (error) {
     console.error("Create Live Class Error:", error);
     res.status(500).json({
@@ -161,11 +166,16 @@ const updateLiveClass = async (req, res) => {
     });
 
 
+    if (updatedClass.thumbnail) {
+      updatedClass.thumbnail = `${req.protocol}://${req.get("host")}/${updatedClass.thumbnail.replace(/\\/g, "/")}`;
+    }
+
     res.status(200).json({
       success: true,
       message: "Live class updated successfully!",
       data: updatedClass,
     });
+
   } catch (error) {
     console.error("Update Live Class Error:", error);
     res.status(500).json({
