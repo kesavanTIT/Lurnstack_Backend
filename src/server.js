@@ -6,6 +6,7 @@ const cors = require("cors");
 // ── Route Imports ────────────────────────────
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const adminCategoryRoutes = require("./routes/adminCategoryRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 
 // ── App Setup ────────────────────────────────
@@ -64,6 +65,7 @@ app.get("/", async (req, res) => {
 // ── API Routes ───────────────────────────────
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/admin/categories", adminCategoryRoutes);
 app.use("/api/student", studentRoutes);
 
 // ── 404 Handler ──────────────────────────────
