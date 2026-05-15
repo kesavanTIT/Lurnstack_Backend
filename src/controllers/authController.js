@@ -3,16 +3,15 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 // ─────────────────────────────────────────────
-// @desc    Register a new user (always student)
+// @desc    Register a new user (STUDENT or TRAINER)
 // @route   POST /api/auth/register
 // @access  Public
 // ─────────────────────────────────────────────
 const registerUser = async (req, res) => {
   try {
-    // 1. Extract UI-matching uppercase fields from request body
-    //    FULL_NAME = "FULL NAME" label, EMAIL_ADDRESS = "EMAIL ADDRESS" label
-    //    Role is intentionally excluded — defaults to "student" via Prisma schema.
-    const { FULL_NAME, EMAIL_ADDRESS, PASSWORD } = req.body;
+    // 1. Extract fields from request body
+    //    role is optional — defaults to STUDENT if not provided.
+    const { FULL_NAME, EMAIL_ADDRESS, PASSWORD, role } = req.body;
 
     // 2. Validation — ensure all required fields are present
     if (!FULL_NAME || !EMAIL_ADDRESS || !PASSWORD) {
@@ -22,7 +21,10 @@ const registerUser = async (req, res) => {
       });
     }
 
-    // 3. Duplicate check — make sure the email is not already registered
+    // 3. Resolve role — accept 'TRAINER' from UI toggle; default everything else to STUDENT
+    const userRole = role === "TRAINER" ? "TRAINER" : "STUDENT";
+
+    // 4. Duplicate check — make sure the email is not already registered
     const existingUser = await prisma.user.findUnique({
       where: { email: EMAIL_ADDRESS },
     });
@@ -34,21 +36,21 @@ const registerUser = async (req, res) => {
       });
     }
 
-    // 4. Security — hash the password before saving (salt rounds: 12)
+    // 5. Security — hash the password before saving (salt rounds: 12)
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(PASSWORD, salt);
 
-    // 5. Create the new user record in the database
+    // 6. Create the new user record in the database
     const newUser = await prisma.user.create({
       data: {
         fullName: FULL_NAME,
         email: EMAIL_ADDRESS,
         password: hashedPassword,
-        // role defaults to "student" via Prisma schema — not set explicitly
+        role: userRole, // Enum: STUDENT | TRAINER
       },
     });
 
-    // 6. Return user data excluding password with 201 Created status
+    // 7. Return user data excluding password with 201 Created status
     const { password: _pw, ...userWithoutPassword } = newUser;
 
     return res.status(201).json({
@@ -61,7 +63,7 @@ const registerUser = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Internal server error. Please try again.",
-      error: error.message, // Temporarily include error message to debug production issue
+      error: error.message,
     });
   }
 };
@@ -109,12 +111,12 @@ const loginUser = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Login successful!",
-      user: {
-        fullName: user.fullName,
-        email: user.email,
-        role: user.role,
-      },
       token,
+      user: {
+        id: user.id,
+        name: user.fullName,
+        role: user.role, // STUDENT | TRAINER — frontend uses this for redirection
+      },
     });
   } catch (error) {
     console.error("Login Error:", error);
