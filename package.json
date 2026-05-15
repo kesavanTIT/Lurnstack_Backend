@@ -9,7 +9,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "npx prisma migrate dev --name init",
     "prisma:studio": "npx prisma studio",
-    "build": "prisma migrate deploy",
+    "build": "prisma generate && prisma migrate deploy",
     "postinstall": "prisma generate"
   },
   "engines": {
