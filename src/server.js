@@ -8,6 +8,7 @@ const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const adminCategoryRoutes = require("./routes/adminCategoryRoutes");
 const studentRoutes = require("./routes/studentRoutes");
+const trainerRoutes = require("./routes/trainerRoutes");
 
 // ── App Setup ────────────────────────────────
 const app = express();
@@ -67,6 +68,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/admin/categories", adminCategoryRoutes);
 app.use("/api/student", studentRoutes);
+app.use("/api/trainer", trainerRoutes);
 
 // ── 404 Handler ──────────────────────────────
 app.use((req, res) => {

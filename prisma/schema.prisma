@@ -12,12 +12,13 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  fullName  String
-  email     String   @unique
-  password  String
-  role      Role     @default(STUDENT)
-  createdAt DateTime @default(now())
+  id           Int           @id @default(autoincrement())
+  fullName     String
+  email        String        @unique
+  password     String
+  role         Role          @default(STUDENT)
+  createdAt    DateTime      @default(now())
+  liveSessions LiveSession[]
 }
 
 enum Role {
@@ -49,4 +50,25 @@ model Category {
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
+}
+
+model LiveSession {
+  id              String   @id @default(uuid())
+  courseTitle     String
+  category        String
+  description     String
+  classTitle      String
+  thumbnail       String
+  trainerId       Int
+  trainer         User     @relation(fields: [trainerId], references: [id])
+  scheduledDate   String
+  startTime       String
+  endTime         String
+  scheduledAt     DateTime
+  endsAt          DateTime
+  durationMinutes Int
+  meetingLink     String
+  status          String   @default("published")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
