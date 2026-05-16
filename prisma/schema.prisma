@@ -64,8 +64,8 @@ model LiveSession {
   scheduledDate   String
   startTime       String
   endTime         String
-  scheduledAt     DateTime
-  endsAt          DateTime
+  scheduledAt     String
+  endsAt          String
   durationMinutes Int
   meetingLink     String
   status          String   @default("published")

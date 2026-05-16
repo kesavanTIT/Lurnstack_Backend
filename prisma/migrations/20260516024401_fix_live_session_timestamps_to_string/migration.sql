@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "LiveSession" ALTER COLUMN "scheduledAt" SET DATA TYPE TEXT,
+ALTER COLUMN "endsAt" SET DATA TYPE TEXT;

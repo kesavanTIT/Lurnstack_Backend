@@ -6,13 +6,14 @@ const prisma = require("../config/db");
 // Returns { scheduledAt, endsAt, durationMinutes } with +05:30 (IST) offset.
 // ─────────────────────────────────────────────────────────────────────────────
 const buildTimestamps = (scheduledDate, startTime, endTime) => {
+  // Direct template strings for the database to preserve the +05:30 format
   const scheduledAt = `${scheduledDate}T${startTime}:00+05:30`;
   const endsAt = `${scheduledDate}T${endTime}:00+05:30`;
 
-  // Calculate absolute delta in minutes
-  const startMs = new Date(scheduledAt).getTime();
-  const endMs = new Date(endsAt).getTime();
-  const durationMinutes = Math.round(Math.abs(endMs - startMs) / 60000);
+  // Use Date objects ONLY internally to compute durationMinutes correctly
+  const startDiff = new Date(`${scheduledDate}T${startTime}:00+05:30`);
+  const endDiff = new Date(`${scheduledDate}T${endTime}:00+05:30`);
+  const durationMinutes = Math.round((endDiff - startDiff) / 60000);
 
   return { scheduledAt, endsAt, durationMinutes };
 };
@@ -98,8 +99,8 @@ const createSession = async (req, res) => {
         scheduledDate,
         startTime,
         endTime,
-        scheduledAt: new Date(scheduledAt),
-        endsAt: new Date(endsAt),
+        scheduledAt,
+        endsAt,
         durationMinutes,
         meetingLink,
         status: "published",
@@ -246,8 +247,8 @@ const updateTrainerSession = async (req, res) => {
         resolvedEnd
       );
 
-      updateData.scheduledAt = new Date(scheduledAt);
-      updateData.endsAt = new Date(endsAt);
+      updateData.scheduledAt = scheduledAt;
+      updateData.endsAt = endsAt;
       updateData.durationMinutes = durationMinutes;
     }
 
