@@ -22,7 +22,12 @@ app.use((req, res, next) => {
 });
 
 const corsOptions = {
-  origin: true, // Reflects the request origin, best for debugging
+  origin: [
+    "https://lurnstack.com", 
+    "https://admin.lurnstack.com", 
+    "http://localhost:3000", 
+    "http://localhost:5173"
+  ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
@@ -94,14 +99,21 @@ const startServer = async () => {
     
     // Self-healing: Ensure 'updatedAt' column exists if migration skipped it
     console.log("🛠️ Checking database schema consistency...");
-    await prisma.$executeRaw`
-      DO $$ 
-      BEGIN 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='LiveClass' AND column_name='updatedAt') THEN
-          ALTER TABLE "LiveClass" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
-        END IF;
-      END $$;
-    `.catch(err => console.error("⚠️ DB Patch Warning:", err.message));
+    const isMySQL = process.env.DATABASE_URL && process.env.DATABASE_URL.includes("mysql");
+    if (isMySQL) {
+      await prisma.$executeRaw`
+        ALTER TABLE LiveClass ADD COLUMN IF NOT EXISTS updatedAt TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3);
+      `.catch(err => console.error("⚠️ DB Patch Warning (MySQL):", err.message));
+    } else {
+      await prisma.$executeRaw`
+        DO $$ 
+        BEGIN 
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='LiveClass' AND column_name='updatedAt') THEN
+            ALTER TABLE "LiveClass" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+          END IF;
+        END $$;
+      `.catch(err => console.error("⚠️ DB Patch Warning (Postgres):", err.message));
+    }
 
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`✅ Server running on port ${PORT}`);
