@@ -56,12 +56,13 @@ const createSession = async (req, res) => {
       category,
       description,
       classTitle,
-      thumbnail,
       scheduledDate,
       startTime,
       endTime,
       meetingLink,
     } = req.body;
+
+    const thumbnail = req.file ? req.file.path.replace(/\\/g, "/") : req.body.thumbnail;
 
     // Basic field validation
     if (
@@ -214,12 +215,13 @@ const updateTrainerSession = async (req, res) => {
       category,
       description,
       classTitle,
-      thumbnail,
       scheduledDate,
       startTime,
       endTime,
       meetingLink,
     } = req.body;
+
+    const thumbnail = req.file ? req.file.path.replace(/\\/g, "/") : req.body.thumbnail;
 
     // Build update payload — only include fields that were sent
     const updateData = {};
