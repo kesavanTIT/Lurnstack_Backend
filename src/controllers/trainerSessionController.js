@@ -317,10 +317,105 @@ const deleteTrainerSession = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// @desc    Publish a trainer session
+// @route   PATCH /api/trainer/sessions/:sessionId/publish
+// @access  Private/Trainer
+// ─────────────────────────────────────────────
+const publishSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    // Verify session exists
+    const existing = await prisma.liveSession.findUnique({
+      where: { id: sessionId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: "Session not found.",
+      });
+    }
+
+    const updatedSession = await prisma.liveSession.update({
+      where: { id: sessionId },
+      data: { status: "published" },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Live class published successfully",
+      data: {
+        id: updatedSession.id,
+        status: updatedSession.status,
+      },
+    });
+  } catch (error) {
+    console.error("publishSession Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to publish session.",
+      error: error.message,
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Cancel a trainer session
+// @route   PATCH /api/trainer/sessions/:sessionId/cancel
+// @access  Private/Trainer
+// ─────────────────────────────────────────────
+const cancelSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { reason } = req.body;
+
+    if (reason) {
+      console.log(`Cancelling session ${sessionId}. Reason: ${reason}`);
+    }
+
+    // Verify session exists
+    const existing = await prisma.liveSession.findUnique({
+      where: { id: sessionId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: "Session not found.",
+      });
+    }
+
+    const updatedSession = await prisma.liveSession.update({
+      where: { id: sessionId },
+      data: { status: "cancelled" },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Live class cancelled successfully",
+      data: {
+        id: updatedSession.id,
+        status: updatedSession.status,
+      },
+    });
+  } catch (error) {
+    console.error("cancelSession Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to cancel session.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createSession,
   getTrainerSessions,
   getSingleTrainerSession,
   updateTrainerSession,
   deleteTrainerSession,
+  publishSession,
+  cancelSession,
 };

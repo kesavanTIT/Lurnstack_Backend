@@ -7,6 +7,8 @@ const {
   getSingleTrainerSession,
   updateTrainerSession,
   deleteTrainerSession,
+  publishSession,
+  cancelSession,
 } = require("../controllers/trainerSessionController");
 
 const { protect } = require("../middleware/authMiddleware");
@@ -29,6 +31,12 @@ router.get("/sessions/:sessionId", getSingleTrainerSession);
 
 // PATCH  /api/trainer/sessions/:sessionId → Partially update a session
 router.patch("/sessions/:sessionId", updateTrainerSession);
+
+// PATCH  /api/trainer/sessions/:sessionId/publish → Publish a session
+router.patch("/sessions/:sessionId/publish", publishSession);
+
+// PATCH  /api/trainer/sessions/:sessionId/cancel → Cancel a session
+router.patch("/sessions/:sessionId/cancel", cancelSession);
 
 // DELETE /api/trainer/sessions/:sessionId → Delete a session
 router.delete("/sessions/:sessionId", deleteTrainerSession);
