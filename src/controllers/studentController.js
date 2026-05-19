@@ -286,8 +286,22 @@ const removeSessionCard = async (req, res) => {
     const { sessionId } = req.params;
     const studentId = parseInt(req.user.id);
 
+    const card = await prisma.sessionCard.findFirst({
+      where: {
+        OR: [
+          { sessionId: sessionId },
+          { id: sessionId }
+        ],
+        studentId: studentId
+      }
+    });
+
+    if (!card) {
+      return res.status(404).json({ success: false, message: "Card not found." });
+    }
+
     await prisma.sessionCard.delete({
-      where: { sessionId_studentId: { sessionId, studentId } }
+      where: { id: card.id }
     });
 
     res.status(200).json({
@@ -295,9 +309,6 @@ const removeSessionCard = async (req, res) => {
       message: "Session removed from card successfully"
     });
   } catch (error) {
-    if (error.code === 'P2025') {
-      return res.status(404).json({ success: false, message: "Card not found." });
-    }
     console.error("Remove Session Card Error:", error);
     res.status(500).json({ success: false, message: "Internal server error." });
   }
