@@ -9,17 +9,17 @@ const jwt = require("jsonwebtoken");
 // ─────────────────────────────────────────────
 const registerAdmin = async (req, res) => {
   try {
-    const { FULL_NAME, EMAIL_ADDRESS, PASSWORD } = req.body;
+    const { fullName, email, password } = req.body;
 
-    if (!FULL_NAME || !EMAIL_ADDRESS || !PASSWORD) {
+    if (!fullName || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Please provide all required fields: FULL_NAME, EMAIL_ADDRESS, and PASSWORD.",
+        message: "Please provide all required fields: fullName, email, and password.",
       });
     }
 
     const existingUser = await prisma.user.findUnique({
-      where: { email: EMAIL_ADDRESS },
+      where: { email: email },
     });
 
     if (existingUser) {
@@ -30,12 +30,12 @@ const registerAdmin = async (req, res) => {
     }
 
     const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash(PASSWORD, salt);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
     const newAdmin = await prisma.user.create({
       data: {
-        fullName: FULL_NAME,
-        email: EMAIL_ADDRESS,
+        fullName: fullName,
+        email: email,
         password: hashedPassword,
         role: "ADMIN", // Hardcoded as 'ADMIN'
       },
@@ -74,10 +74,10 @@ const registerAdmin = async (req, res) => {
 // ─────────────────────────────────────────────
 const loginAdmin = async (req, res) => {
   try {
-    const { EMAIL_ADDRESS, PASSWORD } = req.body;
+    const { email, password } = req.body;
 
     const user = await prisma.user.findUnique({
-      where: { email: EMAIL_ADDRESS },
+      where: { email: email },
     });
 
     if (!user || user.role !== "ADMIN") {
@@ -87,7 +87,7 @@ const loginAdmin = async (req, res) => {
       });
     }
 
-    const isPasswordValid = await bcrypt.compare(PASSWORD, user.password);
+    const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
       return res.status(401).json({
