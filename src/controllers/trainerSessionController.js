@@ -338,15 +338,13 @@ const publishSession = async (req, res) => {
     const updatedSession = await prisma.liveSession.update({
       where: { id: sessionId },
       data: { status: "published" },
+      include: { trainer: true },
     });
 
     return res.status(200).json({
       success: true,
       message: "Live class published successfully",
-      data: {
-        id: updatedSession.id,
-        status: updatedSession.status,
-      },
+      data: formatSession(updatedSession),
     });
   } catch (error) {
     console.error("publishSession Error:", error);
@@ -387,15 +385,13 @@ const cancelSession = async (req, res) => {
     const updatedSession = await prisma.liveSession.update({
       where: { id: sessionId },
       data: { status: "cancelled" },
+      include: { trainer: true },
     });
 
     return res.status(200).json({
       success: true,
       message: "Live class cancelled successfully",
-      data: {
-        id: updatedSession.id,
-        status: updatedSession.status,
-      },
+      data: formatSession(updatedSession),
     });
   } catch (error) {
     console.error("cancelSession Error:", error);
