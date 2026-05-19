@@ -37,7 +37,7 @@ const registerAdmin = async (req, res) => {
         fullName: FULL_NAME,
         email: EMAIL_ADDRESS,
         password: hashedPassword,
-        role: "admin", // Hardcoded as 'admin'
+        role: "ADMIN", // Hardcoded as 'ADMIN'
       },
     });
 
@@ -80,7 +80,7 @@ const loginAdmin = async (req, res) => {
       where: { email: EMAIL_ADDRESS },
     });
 
-    if (!user || user.role !== "admin") {
+    if (!user || user.role !== "ADMIN") {
       return res.status(401).json({
         success: false,
         message: "Invalid credentials or not an admin.",
@@ -141,7 +141,7 @@ const getAdminMe = async (req, res) => {
       },
     });
 
-    if (!admin || admin.role !== "admin") {
+    if (!admin || admin.role !== "ADMIN") {
       return res.status(404).json({
         success: false,
         message: "Admin profile not found.",

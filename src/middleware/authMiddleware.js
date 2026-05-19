@@ -38,7 +38,7 @@ const protect = (req, res, next) => {
 // @usage   Apply AFTER protect middleware
 // ─────────────────────────────────────────────
 const adminOnly = (req, res, next) => {
-  if (req.user && req.user.role === "admin") {
+  if (req.user && req.user.role === "ADMIN") {
     next();
   } else {
     return res.status(403).json({
@@ -49,7 +49,7 @@ const adminOnly = (req, res, next) => {
 };
 
 const isAdmin = (req, res, next) => {
-  if (req.user && req.user.role === "admin") {
+  if (req.user && req.user.role === "ADMIN") {
     next();
   } else {
     return res.status(403).json({
