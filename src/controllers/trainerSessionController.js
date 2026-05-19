@@ -257,18 +257,13 @@ const updateTrainerSession = async (req, res) => {
     const updated = await prisma.liveSession.update({
       where: { id: sessionId },
       data: updateData,
+      include: { trainer: true },
     });
 
     return res.status(200).json({
       success: true,
       message: "Live class updated successfully",
-      data: {
-        id: updated.id,
-        scheduledAt: updated.scheduledAt,
-        endsAt: updated.endsAt,
-        durationMinutes: updated.durationMinutes,
-        status: updated.status,
-      },
+      data: formatSession(updated),
     });
   } catch (error) {
     console.error("updateTrainerSession Error:", error);
