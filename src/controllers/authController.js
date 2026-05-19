@@ -11,7 +11,7 @@ const registerUser = async (req, res) => {
   try {
     // 1. Extract fields from request body
     //    role is optional — defaults to STUDENT if not provided.
-    const { FULL_NAME, EMAIL_ADDRESS, PASSWORD, role } = req.body;
+    const { FULL_NAME, EMAIL_ADDRESS, PASSWORD, PHONE_NUMBER, role } = req.body;
 
     // 2. Validation — ensure all required fields are present
     if (!FULL_NAME || !EMAIL_ADDRESS || !PASSWORD) {
@@ -46,6 +46,7 @@ const registerUser = async (req, res) => {
         fullName: FULL_NAME,
         email: EMAIL_ADDRESS,
         password: hashedPassword,
+        phoneNumber: PHONE_NUMBER,
         role: userRole, // Enum: STUDENT | TRAINER
       },
     });

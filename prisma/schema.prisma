@@ -16,6 +16,7 @@ model User {
   fullName     String
   email        String        @unique
   password     String
+  phoneNumber  String?
   role         Role          @default(STUDENT)
   createdAt    DateTime      @default(now())
   liveSessions LiveSession[]
