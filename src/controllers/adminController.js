@@ -239,7 +239,7 @@ const deleteTrainer = async (req, res) => {
 const toggleTrainerStatus = async (req, res) => {
   try {
     const id = parseUserId(req.params.id);
-    const { status } = req.body;
+    const status = req.body.status ?? req.body.isActive;
 
     if (!id) {
       return res.status(400).json({
@@ -282,6 +282,7 @@ const toggleTrainerStatus = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Trainer status updated successfully.",
+      isActive: status,
     });
   } catch (error) {
     console.error("Toggle Trainer Status Error:", error);

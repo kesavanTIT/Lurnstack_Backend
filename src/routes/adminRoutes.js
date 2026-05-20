@@ -34,6 +34,8 @@ router.get("/students", getStudents);
 router.get("/trainers", getTrainers);
 router.delete("/students/:id", deleteStudent);
 router.delete("/trainers/:id", deleteTrainer);
+router.patch("/trainers/:id", toggleTrainerStatus);
+router.put("/trainers/:id", toggleTrainerStatus);
 router.patch("/trainers/:id/status", toggleTrainerStatus);
 
 // Live Class Management
