@@ -4,6 +4,9 @@ const {
   getDashboardSummary,
   getStudents,
   getTrainers,
+  deleteStudent,
+  deleteTrainer,
+  toggleTrainerStatus,
   createLiveClass,
   updateLiveClass,
   deleteLiveClass,
@@ -29,6 +32,9 @@ router.get("/me", getAdminMe);
 router.get("/dashboard/summary", getDashboardSummary);
 router.get("/students", getStudents);
 router.get("/trainers", getTrainers);
+router.delete("/students/:id", deleteStudent);
+router.delete("/trainers/:id", deleteTrainer);
+router.patch("/trainers/:id/status", toggleTrainerStatus);
 
 // Live Class Management
 router.post("/create-live-class", upload.single("thumbnail"), createLiveClass);

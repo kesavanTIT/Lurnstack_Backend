@@ -82,6 +82,145 @@ const getTrainers = async (req, res) => {
   }
 };
 
+const parseUserId = (rawId) => {
+  const id = Number.parseInt(rawId, 10);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+// @desc    Delete a student
+// @route   DELETE /api/admin/students/:id
+// @access  Private/Admin
+const deleteStudent = async (req, res) => {
+  try {
+    const id = parseUserId(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid student ID.",
+      });
+    }
+
+    const result = await prisma.user.deleteMany({
+      where: {
+        id,
+        role: "STUDENT",
+      },
+    });
+
+    if (result.count === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Student deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Delete Student Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to delete student.",
+    });
+  }
+};
+
+// @desc    Delete a trainer
+// @route   DELETE /api/admin/trainers/:id
+// @access  Private/Admin
+const deleteTrainer = async (req, res) => {
+  try {
+    const id = parseUserId(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid trainer ID.",
+      });
+    }
+
+    const result = await prisma.user.deleteMany({
+      where: {
+        id,
+        role: "TRAINER",
+      },
+    });
+
+    if (result.count === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Trainer not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Trainer deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Delete Trainer Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to delete trainer.",
+    });
+  }
+};
+
+// @desc    Toggle trainer active status
+// @route   PATCH /api/admin/trainers/:id/status
+// @access  Private/Admin
+const toggleTrainerStatus = async (req, res) => {
+  try {
+    const id = parseUserId(req.params.id);
+    const { status } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid trainer ID.",
+      });
+    }
+
+    if (typeof status !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message: "Trainer status must be a boolean.",
+      });
+    }
+
+    const result = await prisma.user.updateMany({
+      where: {
+        id,
+        role: "TRAINER",
+      },
+      data: {
+        isActive: status,
+      },
+    });
+
+    if (result.count === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Trainer not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Trainer status updated successfully.",
+    });
+  } catch (error) {
+    console.error("Toggle Trainer Status Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to update trainer status.",
+    });
+  }
+};
+
 // Helper to parse date (YYYY-MM-DD) and time (HH:mm AM/PM) into IST Date object
 const parseScheduledAt = (dateStr, timeStr) => {
   try {
@@ -309,6 +448,9 @@ module.exports = {
   getDashboardSummary,
   getStudents,
   getTrainers,
+  deleteStudent,
+  deleteTrainer,
+  toggleTrainerStatus,
   createLiveClass,
   updateLiveClass,
   deleteLiveClass,
