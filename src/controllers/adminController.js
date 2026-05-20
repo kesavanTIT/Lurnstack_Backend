@@ -1,3 +1,4 @@
+const { Prisma } = require("@prisma/client");
 const prisma = require("../config/db");
 
 const dashboardUserSelect = {
@@ -6,6 +7,21 @@ const dashboardUserSelect = {
   email: true,
   phoneNumber: true,
   createdAt: true,
+};
+
+const hasUserField = (fieldName) => {
+  const userModel = Prisma.dmmf.datamodel.models.find((model) => model.name === "User");
+  return Boolean(userModel?.fields.some((field) => field.name === fieldName));
+};
+
+const parseUserId = (rawId) => {
+  const id = Number.parseInt(rawId, 10);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+const parseClassId = (rawId) => {
+  const id = Number.parseInt(rawId, 10);
+  return Number.isInteger(id) && id > 0 ? id : null;
 };
 
 // @desc    Get admin dashboard student/trainer counts
@@ -82,11 +98,6 @@ const getTrainers = async (req, res) => {
   }
 };
 
-const parseUserId = (rawId) => {
-  const id = Number.parseInt(rawId, 10);
-  return Number.isInteger(id) && id > 0 ? id : null;
-};
-
 // @desc    Delete a student
 // @route   DELETE /api/admin/students/:id
 // @access  Private/Admin
@@ -128,7 +139,7 @@ const deleteStudent = async (req, res) => {
   }
 };
 
-// @desc    Delete a trainer
+// @desc    Delete a trainer and their dependent live sessions
 // @route   DELETE /api/admin/trainers/:id
 // @access  Private/Admin
 const deleteTrainer = async (req, res) => {
@@ -142,14 +153,67 @@ const deleteTrainer = async (req, res) => {
       });
     }
 
-    const result = await prisma.user.deleteMany({
-      where: {
-        id,
-        role: "TRAINER",
-      },
+    const result = await prisma.$transaction(async (tx) => {
+      const trainer = await tx.user.findFirst({
+        where: {
+          id,
+          role: "TRAINER",
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!trainer) {
+        return { deleted: false };
+      }
+
+      const trainerSessions = await tx.liveSession.findMany({
+        where: {
+          trainerId: id,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      const trainerSessionIds = trainerSessions.map((session) => session.id);
+
+      if (trainerSessionIds.length > 0) {
+        await tx.sessionBooking.deleteMany({
+          where: {
+            sessionId: {
+              in: trainerSessionIds,
+            },
+          },
+        });
+
+        await tx.sessionCard.deleteMany({
+          where: {
+            sessionId: {
+              in: trainerSessionIds,
+            },
+          },
+        });
+      }
+
+      await tx.liveSession.deleteMany({
+        where: {
+          trainerId: id,
+        },
+      });
+
+      const deletedTrainer = await tx.user.deleteMany({
+        where: {
+          id,
+          role: "TRAINER",
+        },
+      });
+
+      return { deleted: deletedTrainer.count > 0 };
     });
 
-    if (result.count === 0) {
+    if (!result.deleted) {
       return res.status(404).json({
         success: false,
         message: "Trainer not found.",
@@ -191,6 +255,13 @@ const toggleTrainerStatus = async (req, res) => {
       });
     }
 
+    if (!hasUserField("isActive")) {
+      return res.status(400).json({
+        success: false,
+        message: "Trainer status field is not configured in the User model.",
+      });
+    }
+
     const result = await prisma.user.updateMany({
       where: {
         id,
@@ -221,10 +292,8 @@ const toggleTrainerStatus = async (req, res) => {
   }
 };
 
-// Helper to parse date (YYYY-MM-DD) and time (HH:mm AM/PM) into IST Date object
 const parseScheduledAt = (dateStr, timeStr) => {
   try {
-    // Normalize time separator (handle 10.30 instead of 10:30)
     const normalizedTime = timeStr.replace(".", ":");
     const [year, month, day] = dateStr.split("-").map(Number);
     let [time, modifier] = normalizedTime.split(" ");
@@ -233,35 +302,31 @@ const parseScheduledAt = (dateStr, timeStr) => {
     if (modifier === "PM" && hours < 12) hours += 12;
     if (modifier === "AM" && hours === 12) hours = 0;
 
-    // Create ISO string with IST offset (+05:30)
     const isoStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00+05:30`;
     const date = new Date(isoStr);
-    return isNaN(date.getTime()) ? null : date;
+    return Number.isNaN(date.getTime()) ? null : date;
   } catch (error) {
     return null;
   }
 };
 
-
-// Helper to parse duration string (e.g., "2 Hours", "90 Minutes") into minutes integer
 const parseDurationMinutes = (durationStr) => {
   if (!durationStr) return 60;
-  if (!isNaN(durationStr)) return parseInt(durationStr);
+  if (!Number.isNaN(Number(durationStr))) return Number.parseInt(durationStr, 10);
 
   const parts = durationStr.toString().toLowerCase().split(" ");
-  const val = parseInt(parts[0]);
+  const val = Number.parseInt(parts[0], 10);
+
   if (parts.includes("hour") || parts.includes("hours")) {
     return val * 60;
   }
-  return val || 60; // Default to 60 if parsing fails
+
+  return val || 60;
 };
 
-
-// ─────────────────────────────────────────────
 // @desc    Create a new live class
 // @route   POST /api/admin/create-live-class
 // @access  Private/Admin
-// ─────────────────────────────────────────────
 const createLiveClass = async (req, res) => {
   try {
     const {
@@ -275,10 +340,8 @@ const createLiveClass = async (req, res) => {
       meetLink,
     } = req.body;
 
-    // Check if thumbnail was uploaded
     const thumbnail = req.file ? req.file.path : null;
 
-    // Validation
     if (!courseName || !classTitle || !instructor || !date || !time || !duration || !meetLink) {
       return res.status(400).json({
         success: false,
@@ -286,7 +349,6 @@ const createLiveClass = async (req, res) => {
       });
     }
 
-    // Parse scheduledAt and durationMinutes
     const scheduledAt = parseScheduledAt(date, time);
     const durationMinutes = parseDurationMinutes(duration);
 
@@ -296,9 +358,9 @@ const createLiveClass = async (req, res) => {
         classTitle,
         instructor,
         description,
-        date, // Keep string for UI
-        time, // Keep string for UI
-        duration, // Keep string for UI
+        date,
+        time,
+        duration,
         scheduledAt,
         durationMinutes,
         meetLink,
@@ -306,35 +368,38 @@ const createLiveClass = async (req, res) => {
       },
     });
 
-
     if (newClass.thumbnail) {
       newClass.thumbnail = `${req.protocol}://${req.get("host")}/${newClass.thumbnail.replace(/\\/g, "/")}`;
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Live class created successfully!",
       data: newClass,
     });
-
   } catch (error) {
     console.error("Create Live Class Error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Internal server error. Failed to create class.",
-      error: error.message,
     });
   }
 };
 
-// ─────────────────────────────────────────────
 // @desc    Update an existing live class
 // @route   PUT /api/admin/update-live-class/:classId
 // @access  Private/Admin
-// ─────────────────────────────────────────────
 const updateLiveClass = async (req, res) => {
   try {
-    const { classId } = req.params;
+    const id = parseClassId(req.params.classId);
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid live class ID.",
+      });
+    }
+
     const {
       courseName,
       classTitle,
@@ -347,7 +412,7 @@ const updateLiveClass = async (req, res) => {
     } = req.body;
 
     const existingClass = await prisma.liveClass.findUnique({
-      where: { id: parseInt(classId) },
+      where: { id },
     });
 
     if (!existingClass) {
@@ -357,20 +422,13 @@ const updateLiveClass = async (req, res) => {
       });
     }
 
-    // Handle thumbnail update
-    let thumbnail = existingClass.thumbnail;
-    if (req.file) {
-      thumbnail = req.file.path;
-    }
-
-    // Parse updated scheduledAt and durationMinutes if provided
     const newDate = date || existingClass.date;
     const newTime = time || existingClass.time;
     const scheduledAt = parseScheduledAt(newDate, newTime);
     const durationMinutes = parseDurationMinutes(duration || existingClass.duration);
 
     const updatedClass = await prisma.liveClass.update({
-      where: { id: parseInt(classId) },
+      where: { id },
       data: {
         courseName: courseName || existingClass.courseName,
         classTitle: classTitle || existingClass.classTitle,
@@ -382,41 +440,44 @@ const updateLiveClass = async (req, res) => {
         scheduledAt,
         durationMinutes,
         meetLink: meetLink || existingClass.meetLink,
-        thumbnail: thumbnail,
+        thumbnail: req.file ? req.file.path : existingClass.thumbnail,
       },
     });
-
 
     if (updatedClass.thumbnail) {
       updatedClass.thumbnail = `${req.protocol}://${req.get("host")}/${updatedClass.thumbnail.replace(/\\/g, "/")}`;
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Live class updated successfully!",
       data: updatedClass,
     });
-
   } catch (error) {
     console.error("Update Live Class Error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Internal server error. Failed to update class.",
     });
   }
 };
 
-// ─────────────────────────────────────────────
 // @desc    Delete a live class
 // @route   DELETE /api/admin/delete-live-class/:classId
 // @access  Private/Admin
-// ─────────────────────────────────────────────
 const deleteLiveClass = async (req, res) => {
   try {
-    const { classId } = req.params;
+    const id = parseClassId(req.params.classId);
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid live class ID.",
+      });
+    }
 
     const existingClass = await prisma.liveClass.findUnique({
-      where: { id: parseInt(classId) },
+      where: { id },
     });
 
     if (!existingClass) {
@@ -427,17 +488,16 @@ const deleteLiveClass = async (req, res) => {
     }
 
     await prisma.liveClass.delete({
-      where: { id: parseInt(classId) },
+      where: { id },
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Live class deleted successfully!",
-      data: { id: classId }
     });
   } catch (error) {
     console.error("Delete Live Class Error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Internal server error. Failed to delete class.",
     });
