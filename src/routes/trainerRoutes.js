@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const {
+  getTrainerStatus,
   createSession,
   getTrainerSessions,
   getSingleTrainerSession,
@@ -22,6 +23,8 @@ router.use(protect);
 // ── Trainer Session Endpoints ──────────────────
 
 // POST   /api/trainer/sessions          → Create a new live session
+router.get("/status", getTrainerStatus);
+
 router.post("/sessions", upload.single("thumbnail"), createSession);
 
 // GET    /api/trainer/sessions          → List all sessions for the logged-in trainer

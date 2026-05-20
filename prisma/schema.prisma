@@ -18,6 +18,7 @@ model User {
   password     String
   phoneNumber  String?
   role         Role          @default(STUDENT)
+  isActive     Boolean       @default(true)
   createdAt    DateTime      @default(now())
   liveSessions LiveSession[]
   sessionCards    SessionCard[]

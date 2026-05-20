@@ -49,8 +49,85 @@ const formatSession = (session) => ({
 // @route   POST /api/trainer/sessions
 // @access  Private/Trainer
 // ─────────────────────────────────────────────
+// @desc    Get logged-in trainer activation status
+// @route   GET /api/trainer/status
+// @access  Private/Trainer
+const getTrainerStatus = async (req, res) => {
+  try {
+    const trainerId = Number.parseInt(req.user.id, 10);
+
+    if (!Number.isInteger(trainerId) || trainerId <= 0) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid authentication payload.",
+      });
+    }
+
+    const trainer = await prisma.user.findFirst({
+      where: {
+        id: trainerId,
+        role: "TRAINER",
+      },
+      select: {
+        isActive: true,
+      },
+    });
+
+    if (!trainer) {
+      return res.status(404).json({
+        success: false,
+        message: "Trainer not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      isActive: trainer.isActive,
+    });
+  } catch (error) {
+    console.error("getTrainerStatus Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to fetch trainer status.",
+    });
+  }
+};
+
 const createSession = async (req, res) => {
   try {
+    const trainerId = Number.parseInt(req.user.id, 10);
+
+    if (!Number.isInteger(trainerId) || trainerId <= 0) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid authentication payload.",
+      });
+    }
+
+    const trainer = await prisma.user.findFirst({
+      where: {
+        id: trainerId,
+        role: "TRAINER",
+      },
+      select: {
+        isActive: true,
+      },
+    });
+
+    if (!trainer) {
+      return res.status(404).json({
+        success: false,
+        message: "Trainer not found.",
+      });
+    }
+
+    if (trainer.isActive === false) {
+      return res.status(403).json({
+        success: false,
+        message: "Action restricted. Inactive trainers cannot create classes.",
+      });
+    }
+
     const {
       courseTitle,
       category,
@@ -96,7 +173,7 @@ const createSession = async (req, res) => {
         description,
         classTitle,
         thumbnail,
-        trainerId: parseInt(req.user.id),
+        trainerId,
         scheduledDate,
         startTime,
         endTime,
@@ -404,6 +481,7 @@ const cancelSession = async (req, res) => {
 };
 
 module.exports = {
+  getTrainerStatus,
   createSession,
   getTrainerSessions,
   getSingleTrainerSession,
