@@ -1,5 +1,87 @@
 const prisma = require("../config/db");
 
+const dashboardUserSelect = {
+  id: true,
+  fullName: true,
+  email: true,
+  phoneNumber: true,
+  createdAt: true,
+};
+
+// @desc    Get admin dashboard student/trainer counts
+// @route   GET /api/admin/dashboard/summary
+// @access  Private/Admin
+const getDashboardSummary = async (req, res) => {
+  try {
+    const [totalStudents, totalTrainers] = await Promise.all([
+      prisma.user.count({ where: { role: "STUDENT" } }),
+      prisma.user.count({ where: { role: "TRAINER" } }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalStudents,
+        totalTrainers,
+      },
+    });
+  } catch (error) {
+    console.error("Dashboard Summary Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to fetch dashboard summary.",
+    });
+  }
+};
+
+// @desc    Get all students for admin dashboard
+// @route   GET /api/admin/students
+// @access  Private/Admin
+const getStudents = async (req, res) => {
+  try {
+    const students = await prisma.user.findMany({
+      where: { role: "STUDENT" },
+      select: dashboardUserSelect,
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: students,
+    });
+  } catch (error) {
+    console.error("Get Students Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to fetch students.",
+    });
+  }
+};
+
+// @desc    Get all trainers for admin dashboard
+// @route   GET /api/admin/trainers
+// @access  Private/Admin
+const getTrainers = async (req, res) => {
+  try {
+    const trainers = await prisma.user.findMany({
+      where: { role: "TRAINER" },
+      select: dashboardUserSelect,
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: trainers,
+    });
+  } catch (error) {
+    console.error("Get Trainers Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to fetch trainers.",
+    });
+  }
+};
+
 // Helper to parse date (YYYY-MM-DD) and time (HH:mm AM/PM) into IST Date object
 const parseScheduledAt = (dateStr, timeStr) => {
   try {
@@ -224,6 +306,9 @@ const deleteLiveClass = async (req, res) => {
 };
 
 module.exports = {
+  getDashboardSummary,
+  getStudents,
+  getTrainers,
   createLiveClass,
   updateLiveClass,
   deleteLiveClass,

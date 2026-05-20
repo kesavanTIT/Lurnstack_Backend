@@ -1,6 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const {
+  getDashboardSummary,
+  getStudents,
+  getTrainers,
   createLiveClass,
   updateLiveClass,
   deleteLiveClass,
@@ -23,6 +26,9 @@ router.use(protect);
 router.use(isAdmin);
 
 router.get("/me", getAdminMe);
+router.get("/dashboard/summary", getDashboardSummary);
+router.get("/students", getStudents);
+router.get("/trainers", getTrainers);
 
 // Live Class Management
 router.post("/create-live-class", upload.single("thumbnail"), createLiveClass);
