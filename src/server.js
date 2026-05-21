@@ -23,7 +23,7 @@ app.use((req, res, next) => {
 
 const corsOptions = {
   origin: [
-    "https://lurnstack.com", 
+    "https://lurnstack.com",
     "https://admin.lurnstack.com", 
     "https://trainers.lurnstack.com", 
     "http://localhost:3000", 

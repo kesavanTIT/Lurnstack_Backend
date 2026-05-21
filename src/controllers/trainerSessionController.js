@@ -1,57 +1,110 @@
 const prisma = require("../config/db");
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TIMEZONE HELPER
-// Accepts scheduledDate ("2026-05-20"), startTime ("10:30"), endTime ("11:30")
-// Returns { scheduledAt, endsAt, durationMinutes } with +05:30 (IST) offset.
+// TIMEZONE & STATUS HELPERS (Asia/Kolkata)
 // ─────────────────────────────────────────────────────────────────────────────
-const buildTimestamps = (scheduledDate, startTime, endTime) => {
-  // Direct template strings for the database to preserve the +05:30 format
-  const scheduledAt = `${scheduledDate}T${startTime}:00+05:30`;
-  const endsAt = `${scheduledDate}T${endTime}:00+05:30`;
 
-  // Use Date objects ONLY internally to compute durationMinutes correctly
-  const startDiff = new Date(`${scheduledDate}T${startTime}:00+05:30`);
-  const endDiff = new Date(`${scheduledDate}T${endTime}:00+05:30`);
-  const durationMinutes = Math.round((endDiff - startDiff) / 60000);
-
-  return { scheduledAt, endsAt, durationMinutes };
+// Helper to get today's date string in Asia/Kolkata timezone (format: YYYY-MM-DD)
+const getKolkataDateString = (date = new Date()) => {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return formatter.format(date);
 };
 
-// ─────────────────────────────────────────────
-// Helper: build the full response shape for a session
-// Joins trainer name and email from the included `trainer` relation.
-// ─────────────────────────────────────────────
-const formatSession = (session) => ({
-  id: session.id,
-  courseTitle: session.courseTitle,
-  category: session.category,
-  description: session.description,
-  classTitle: session.classTitle,
-  thumbnail: session.thumbnail,
-  trainerId: `trainer_${session.trainerId}`,
-  trainerName: session.trainer?.fullName ?? null,
-  trainerEmail: session.trainer?.email ?? null,
-  scheduledDate: session.scheduledDate,
-  startTime: session.startTime,
-  endTime: session.endTime,
-  scheduledAt: session.scheduledAt,
-  endsAt: session.endsAt,
-  durationMinutes: session.durationMinutes,
-  meetingLink: session.meetingLink,
-  status: session.status,
-  createdAt: session.createdAt,
-  updatedAt: session.updatedAt,
-});
+// Helper to calculate session status dynamically based on current server time
+const calculateSessionStatus = (session, now = new Date()) => {
+  if (session.status === "paused") {
+    return "paused";
+  }
+  if (session.status === "ended") {
+    return "ended";
+  }
 
-// ─────────────────────────────────────────────
-// @desc    Create a new live session
-// @route   POST /api/trainer/sessions
-// @access  Private/Trainer
+  const timezone = session.timezone || "Asia/Kolkata";
+  const todayStr = getKolkataDateString(now);
+
+  // Check if session is cancelled for today
+  if (session.cancelledDates && session.cancelledDates.includes(todayStr)) {
+    return "cancelled";
+  }
+
+  // Get current minutes since midnight in Asia/Kolkata
+  const timeFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const timeStr = timeFormatter.format(now);
+  const [currentHours, currentMinutes] = timeStr.split(":").map(Number);
+  const currentTotalMinutes = currentHours * 60 + currentMinutes;
+
+  // Parse session start and end times (HH:MM)
+  const [startHours, startMinutes] = session.startTime.split(":").map(Number);
+  const [endHours, endMinutes] = session.endTime.split(":").map(Number);
+  const startTotalMinutes = startHours * 60 + startMinutes;
+  const endTotalMinutes = endHours * 60 + endMinutes;
+
+  const joinOpenMinutes = startTotalMinutes - 5;
+
+  // For non-recurring sessions, check if today is the day of creation
+  if (!session.isRecurring) {
+    const createdDateStr = getKolkataDateString(new Date(session.createdAt));
+    if (todayStr < createdDateStr) {
+      return "upcoming";
+    }
+    if (todayStr > createdDateStr) {
+      return "completed_today";
+    }
+  }
+
+  // Calculate status
+  if (currentTotalMinutes < joinOpenMinutes) {
+    return "upcoming";
+  } else if (currentTotalMinutes >= joinOpenMinutes && currentTotalMinutes < startTotalMinutes) {
+    return "join_open";
+  } else if (currentTotalMinutes >= startTotalMinutes && currentTotalMinutes < endTotalMinutes) {
+    return "live";
+  } else {
+    return "completed_today";
+  }
+};
+
+// Helper: build response shape for session
+const formatSession = (session) => {
+  const dynamicStatus = calculateSessionStatus(session);
+  return {
+    id: session.id,
+    courseId: session.courseId,
+    trainerId: `trainer_${session.trainerId}`,
+    trainerName: session.trainer?.fullName ?? null,
+    trainerEmail: session.trainer?.email ?? null,
+    title: session.title,
+    subtitle: session.subtitle,
+    description: session.description,
+    startTime: session.startTime,
+    endTime: session.endTime,
+    timezone: session.timezone,
+    meetingLink: session.meetingLink,
+    isRecurring: session.isRecurring,
+    recurrenceType: session.recurrenceType,
+    status: dynamicStatus,
+    cancelledDates: session.cancelledDates,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    endedAt: session.endedAt,
+  };
+};
+
 // ─────────────────────────────────────────────
 // @desc    Get logged-in trainer activation status
 // @route   GET /api/trainer/status
 // @access  Private/Trainer
+// ─────────────────────────────────────────────
 const getTrainerStatus = async (req, res) => {
   try {
     const trainerId = Number.parseInt(req.user.id, 10);
@@ -93,6 +146,39 @@ const getTrainerStatus = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// @desc    Get Trainer Courses (fetched from Category table)
+// @route   GET /api/trainer/courses
+// @access  Private/Trainer
+// ─────────────────────────────────────────────
+const getTrainerCourses = async (req, res) => {
+  try {
+    const categories = await prisma.category.findMany({
+      orderBy: { name: "asc" }
+    });
+    const courses = categories.map(cat => ({
+      id: cat.id,
+      title: cat.name,
+      description: cat.description
+    }));
+    return res.status(200).json({
+      success: true,
+      data: courses
+    });
+  } catch (error) {
+    console.error("getTrainerCourses Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to fetch courses."
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Create a new session
+// @route   POST /api/trainer/sessions
+// @access  Private/Trainer
+// ─────────────────────────────────────────────
 const createSession = async (req, res) => {
   try {
     const trainerId = Number.parseInt(req.user.id, 10);
@@ -129,59 +215,42 @@ const createSession = async (req, res) => {
     }
 
     const {
-      courseTitle,
-      category,
+      courseId,
+      title,
+      subtitle,
       description,
-      classTitle,
-      scheduledDate,
       startTime,
       endTime,
+      timezone,
       meetingLink,
+      recurrenceType,
     } = req.body;
 
-    const thumbnail = req.file ? req.file.path.replace(/\\/g, "/") : req.body.thumbnail;
+    const isRecurring = req.body.isRecurring === true || req.body.isRecurring === "true";
 
-    // Basic field validation
-    if (
-      !courseTitle ||
-      !category ||
-      !description ||
-      !classTitle ||
-      !thumbnail ||
-      !scheduledDate ||
-      !startTime ||
-      !endTime ||
-      !meetingLink
-    ) {
+    // Validate fields
+    if (!courseId || !title || !startTime || !endTime || !meetingLink) {
       return res.status(400).json({
         success: false,
-        message:
-          "All fields are required: courseTitle, category, description, classTitle, thumbnail, scheduledDate, startTime, endTime, meetingLink.",
+        message: "Required fields: courseId, title, startTime, endTime, meetingLink.",
       });
     }
 
-    const { scheduledAt, endsAt, durationMinutes } = buildTimestamps(
-      scheduledDate,
-      startTime,
-      endTime
-    );
-
     const session = await prisma.liveSession.create({
       data: {
-        courseTitle,
-        category,
-        description,
-        classTitle,
-        thumbnail,
+        courseId,
         trainerId,
-        scheduledDate,
+        title,
+        subtitle: subtitle || null,
+        description: description || null,
         startTime,
         endTime,
-        scheduledAt,
-        endsAt,
-        durationMinutes,
+        timezone: timezone || "Asia/Kolkata",
         meetingLink,
+        isRecurring,
+        recurrenceType: isRecurring ? recurrenceType : null,
         status: "published",
+        cancelledDates: [],
       },
       include: { trainer: true },
     });
@@ -208,11 +277,10 @@ const createSession = async (req, res) => {
 // ─────────────────────────────────────────────
 const getTrainerSessions = async (req, res) => {
   try {
-    // SECURITY: Only return sessions owned by the requesting trainer
     const sessions = await prisma.liveSession.findMany({
       where: { trainerId: parseInt(req.user.id) },
       include: { trainer: true },
-      orderBy: { scheduledAt: "asc" },
+      orderBy: { createdAt: "desc" },
     });
 
     return res.status(200).json({
@@ -275,7 +343,6 @@ const updateTrainerSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
 
-    // Verify session exists
     const existing = await prisma.liveSession.findUnique({
       where: { id: sessionId },
     });
@@ -288,47 +355,35 @@ const updateTrainerSession = async (req, res) => {
     }
 
     const {
-      courseTitle,
-      category,
+      courseId,
+      title,
+      subtitle,
       description,
-      classTitle,
-      scheduledDate,
       startTime,
       endTime,
+      timezone,
       meetingLink,
+      recurrenceType,
     } = req.body;
 
-    const thumbnail = req.file ? req.file.path.replace(/\\/g, "/") : req.body.thumbnail;
+    const isRecurring = req.body.isRecurring !== undefined 
+      ? (req.body.isRecurring === true || req.body.isRecurring === "true")
+      : undefined;
 
-    // Build update payload — only include fields that were sent
     const updateData = {};
-    if (courseTitle !== undefined) updateData.courseTitle = courseTitle;
-    if (category !== undefined) updateData.category = category;
+    if (courseId !== undefined) updateData.courseId = courseId;
+    if (title !== undefined) updateData.title = title;
+    if (subtitle !== undefined) updateData.subtitle = subtitle;
     if (description !== undefined) updateData.description = description;
-    if (classTitle !== undefined) updateData.classTitle = classTitle;
-    if (thumbnail !== undefined) updateData.thumbnail = thumbnail;
-    if (meetingLink !== undefined) updateData.meetingLink = meetingLink;
-
-    // Persist raw string fields for display
-    if (scheduledDate !== undefined) updateData.scheduledDate = scheduledDate;
     if (startTime !== undefined) updateData.startTime = startTime;
     if (endTime !== undefined) updateData.endTime = endTime;
+    if (timezone !== undefined) updateData.timezone = timezone;
+    if (meetingLink !== undefined) updateData.meetingLink = meetingLink;
+    if (isRecurring !== undefined) updateData.isRecurring = isRecurring;
+    if (recurrenceType !== undefined) updateData.recurrenceType = recurrenceType;
 
-    // Re-compute computed timestamp fields only when time-related data changes
-    if (scheduledDate !== undefined || startTime !== undefined || endTime !== undefined) {
-      const resolvedDate = scheduledDate ?? existing.scheduledDate;
-      const resolvedStart = startTime ?? existing.startTime;
-      const resolvedEnd = endTime ?? existing.endTime;
-
-      const { scheduledAt, endsAt, durationMinutes } = buildTimestamps(
-        resolvedDate,
-        resolvedStart,
-        resolvedEnd
-      );
-
-      updateData.scheduledAt = scheduledAt;
-      updateData.endsAt = endsAt;
-      updateData.durationMinutes = durationMinutes;
+    if (updateData.isRecurring === false) {
+      updateData.recurrenceType = null;
     }
 
     const updated = await prisma.liveSession.update({
@@ -361,7 +416,6 @@ const deleteTrainerSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
 
-    // Verify session exists before attempting deletion
     const existing = await prisma.liveSession.findUnique({
       where: { id: sessionId },
     });
@@ -392,101 +446,178 @@ const deleteTrainerSession = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
-// @desc    Publish a trainer session
-// @route   PATCH /api/trainer/sessions/:sessionId/publish
+// @desc    Pause a session
+// @route   POST /api/trainer/sessions/:sessionId/pause
 // @access  Private/Trainer
 // ─────────────────────────────────────────────
-const publishSession = async (req, res) => {
+const pauseSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
-
-    // Verify session exists
-    const existing = await prisma.liveSession.findUnique({
-      where: { id: sessionId },
-    });
-
+    const existing = await prisma.liveSession.findUnique({ where: { id: sessionId } });
     if (!existing) {
-      return res.status(404).json({
-        success: false,
-        message: "Session not found.",
-      });
+      return res.status(404).json({ success: false, message: "Session not found." });
     }
 
-    const updatedSession = await prisma.liveSession.update({
+    const updated = await prisma.liveSession.update({
       where: { id: sessionId },
-      data: { status: "published" },
-      include: { trainer: true },
+      data: { status: "paused" },
+      include: { trainer: true }
     });
 
     return res.status(200).json({
       success: true,
-      message: "Live class published successfully",
-      data: formatSession(updatedSession),
+      message: "Session paused successfully.",
+      data: formatSession(updated)
     });
   } catch (error) {
-    console.error("publishSession Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error. Failed to publish session.",
-      error: error.message,
-    });
+    console.error("pauseSession Error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 // ─────────────────────────────────────────────
-// @desc    Cancel a trainer session
-// @route   PATCH /api/trainer/sessions/:sessionId/cancel
+// @desc    Resume a session
+// @route   POST /api/trainer/sessions/:sessionId/resume
 // @access  Private/Trainer
 // ─────────────────────────────────────────────
-const cancelSession = async (req, res) => {
+const resumeSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { reason } = req.body;
-
-    if (reason) {
-      console.log(`Cancelling session ${sessionId}. Reason: ${reason}`);
-    }
-
-    // Verify session exists
-    const existing = await prisma.liveSession.findUnique({
-      where: { id: sessionId },
-    });
-
+    const existing = await prisma.liveSession.findUnique({ where: { id: sessionId } });
     if (!existing) {
-      return res.status(404).json({
-        success: false,
-        message: "Session not found.",
-      });
+      return res.status(404).json({ success: false, message: "Session not found." });
     }
 
-    const updatedSession = await prisma.liveSession.update({
+    const updated = await prisma.liveSession.update({
       where: { id: sessionId },
-      data: { status: "cancelled" },
-      include: { trainer: true },
+      data: { status: "published" },
+      include: { trainer: true }
     });
 
     return res.status(200).json({
       success: true,
-      message: "Live class cancelled successfully",
-      data: formatSession(updatedSession),
+      message: "Session resumed successfully.",
+      data: formatSession(updated)
     });
   } catch (error) {
-    console.error("cancelSession Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error. Failed to cancel session.",
-      error: error.message,
+    console.error("resumeSession Error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    End a session
+// @route   POST /api/trainer/sessions/:sessionId/end
+// @access  Private/Trainer
+// ─────────────────────────────────────────────
+const endSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const existing = await prisma.liveSession.findUnique({ where: { id: sessionId } });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Session not found." });
+    }
+
+    const updated = await prisma.liveSession.update({
+      where: { id: sessionId },
+      data: { status: "ended", endedAt: new Date() },
+      include: { trainer: true }
     });
+
+    return res.status(200).json({
+      success: true,
+      message: "Session ended successfully.",
+      data: formatSession(updated)
+    });
+  } catch (error) {
+    console.error("endSession Error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Cancel session for today
+// @route   POST /api/trainer/sessions/:sessionId/cancel-today
+// @access  Private/Trainer
+// ─────────────────────────────────────────────
+const cancelTodaySession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const existing = await prisma.liveSession.findUnique({ where: { id: sessionId } });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Session not found." });
+    }
+
+    const todayStr = getKolkataDateString();
+    let cancelledDates = [...existing.cancelledDates];
+    if (!cancelledDates.includes(todayStr)) {
+      cancelledDates.push(todayStr);
+    }
+
+    const updated = await prisma.liveSession.update({
+      where: { id: sessionId },
+      data: { cancelledDates },
+      include: { trainer: true }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Session cancelled for today successfully.",
+      data: formatSession(updated)
+    });
+  } catch (error) {
+    console.error("cancelTodaySession Error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Un-cancel session for today
+// @route   DELETE /api/trainer/sessions/:sessionId/cancel-today
+// @access  Private/Trainer
+// ─────────────────────────────────────────────
+const uncancelTodaySession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const existing = await prisma.liveSession.findUnique({ where: { id: sessionId } });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Session not found." });
+    }
+
+    const todayStr = getKolkataDateString();
+    let cancelledDates = existing.cancelledDates.filter(d => d !== todayStr);
+
+    const updated = await prisma.liveSession.update({
+      where: { id: sessionId },
+      data: { cancelledDates },
+      include: { trainer: true }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Session uncancelled for today successfully.",
+      data: formatSession(updated)
+    });
+  } catch (error) {
+    console.error("uncancelTodaySession Error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 module.exports = {
   getTrainerStatus,
+  getTrainerCourses,
   createSession,
   getTrainerSessions,
   getSingleTrainerSession,
   updateTrainerSession,
   deleteTrainerSession,
-  publishSession,
-  cancelSession,
+  pauseSession,
+  resumeSession,
+  endSession,
+  cancelTodaySession,
+  uncancelTodaySession,
+  // Mappings for legacy routing
+  publishSession: resumeSession,
+  cancelSession: cancelTodaySession
 };

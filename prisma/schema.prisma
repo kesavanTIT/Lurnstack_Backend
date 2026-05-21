@@ -12,17 +12,18 @@ datasource db {
 }
 
 model User {
-  id           Int           @id @default(autoincrement())
-  fullName     String
-  email        String        @unique
-  password     String
-  phoneNumber  String?
-  role         Role          @default(STUDENT)
-  isActive     Boolean       @default(true)
-  createdAt    DateTime      @default(now())
-  liveSessions LiveSession[]
+  id              Int              @id @default(autoincrement())
+  fullName        String
+  email           String           @unique
+  password        String
+  phoneNumber     String?
+  role            Role             @default(STUDENT)
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  liveSessions    LiveSession[]
   sessionCards    SessionCard[]
   sessionBookings SessionBooking[]
+  attendances     Attendance[]
 }
 
 enum Role {
@@ -46,6 +47,8 @@ model LiveClass {
   thumbnail       String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
+  isRecurring     Boolean  @default(false)
+  recurrenceType  String?
 }
 
 model Category {
@@ -58,26 +61,27 @@ model Category {
 }
 
 model LiveSession {
-  id              String   @id @default(uuid())
-  courseTitle     String
-  category        String
-  description     String
-  classTitle      String
-  thumbnail       String
+  id              String           @id @default(uuid())
+  courseId        String
   trainerId       Int
-  trainer         User     @relation(fields: [trainerId], references: [id])
-  scheduledDate   String
+  trainer         User             @relation(fields: [trainerId], references: [id])
+  title           String
+  subtitle        String?
+  description     String?
   startTime       String
   endTime         String
-  scheduledAt     String
-  endsAt          String
-  durationMinutes Int
+  timezone        String           @default("Asia/Kolkata")
   meetingLink     String
-  status          String   @default("published")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  isRecurring     Boolean          @default(false)
+  recurrenceType  String?
+  status          String           @default("published")
+  cancelledDates  String[]         @default([])
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  endedAt         DateTime?
   cards           SessionCard[]
   bookings        SessionBooking[]
+  attendances     Attendance[]
 }
 
 model SessionCard {
@@ -101,4 +105,17 @@ model SessionBooking {
   joinedAt    DateTime    @default(now())
 
   @@unique([sessionId, studentId])
+}
+
+model Attendance {
+  id          String      @id @default(uuid())
+  sessionId   String
+  studentId   Int
+  session     LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student     User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  joinDate    String      // YYYY-MM-DD
+  joinedAt    DateTime    @default(now())
+  status      String      @default("joined")
+
+  @@unique([sessionId, studentId, joinDate])
 }

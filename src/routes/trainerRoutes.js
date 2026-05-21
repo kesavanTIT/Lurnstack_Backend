@@ -3,46 +3,59 @@ const router = express.Router();
 
 const {
   getTrainerStatus,
+  getTrainerCourses,
   createSession,
   getTrainerSessions,
   getSingleTrainerSession,
   updateTrainerSession,
   deleteTrainerSession,
-  publishSession,
-  cancelSession,
+  pauseSession,
+  resumeSession,
+  endSession,
+  cancelTodaySession,
+  uncancelTodaySession,
 } = require("../controllers/trainerSessionController");
 
 const { protect } = require("../middleware/authMiddleware");
-const upload = require("../middleware/uploadMiddleware");
 
 // ── Protect all trainer routes ─────────────────
-// Every request must carry a valid Bearer JWT token.
-// req.user.id is injected by the protect middleware.
 router.use(protect);
 
-// ── Trainer Session Endpoints ──────────────────
-
-// POST   /api/trainer/sessions          → Create a new live session
+// ── Trainer Status Endpoint ────────────────────
 router.get("/status", getTrainerStatus);
 
-router.post("/sessions", upload.single("thumbnail"), createSession);
+// ── Trainer Courses Endpoint ───────────────────
+router.get("/courses", getTrainerCourses);
 
-// GET    /api/trainer/sessions          → List all sessions for the logged-in trainer
+// ── Trainer Session Endpoints ──────────────────
+// POST   /api/trainer/sessions             → Create a new live session
+router.post("/sessions", createSession);
+
+// GET    /api/trainer/sessions             → List all sessions for the logged-in trainer
 router.get("/sessions", getTrainerSessions);
 
-// GET    /api/trainer/sessions/:sessionId → Fetch a single session
+// GET    /api/trainer/sessions/:sessionId  → Fetch a single session
 router.get("/sessions/:sessionId", getSingleTrainerSession);
 
-// PATCH  /api/trainer/sessions/:sessionId → Partially update a session
-router.patch("/sessions/:sessionId", upload.single("thumbnail"), updateTrainerSession);
+// PATCH  /api/trainer/sessions/:sessionId  → Partially update a session
+router.patch("/sessions/:sessionId", updateTrainerSession);
 
-// PATCH  /api/trainer/sessions/:sessionId/publish → Publish a session
-router.patch("/sessions/:sessionId/publish", publishSession);
+// POST   /api/trainer/sessions/:sessionId/pause  → Pause the session
+router.post("/sessions/:sessionId/pause", pauseSession);
 
-// PATCH  /api/trainer/sessions/:sessionId/cancel → Cancel a session
-router.patch("/sessions/:sessionId/cancel", cancelSession);
+// POST   /api/trainer/sessions/:sessionId/resume → Resume the session
+router.post("/sessions/:sessionId/resume", resumeSession);
 
-// DELETE /api/trainer/sessions/:sessionId → Delete a session
+// POST   /api/trainer/sessions/:sessionId/end    → Permanently end the session
+router.post("/sessions/:sessionId/end", endSession);
+
+// POST   /api/trainer/sessions/:sessionId/cancel-today → Cancel the session for today
+router.post("/sessions/:sessionId/cancel-today", cancelTodaySession);
+
+// DELETE /api/trainer/sessions/:sessionId/cancel-today → Un-cancel today's session
+router.delete("/sessions/:sessionId/cancel-today", uncancelTodaySession);
+
+// DELETE /api/trainer/sessions/:sessionId  → Delete a session permanently
 router.delete("/sessions/:sessionId", deleteTrainerSession);
 
 module.exports = router;
