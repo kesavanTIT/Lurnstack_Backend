@@ -213,7 +213,8 @@ const getTrainerCourses = async (req, res) => {
     const courses = categories.map(cat => ({
       id: cat.id,
       title: cat.name,
-      description: cat.description
+      subtitle: cat.description || "Daily practical session",
+      category: cat.name
     }));
     return res.status(200).json({
       success: true,
