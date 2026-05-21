@@ -117,7 +117,7 @@ const calculateSessionTodayStatus = (session, now = new Date()) => {
 };
 
 // Helper: build response shape for student session
-const formatSession = (session, categoryMap = new Map(), studentId = null) => {
+const formatSession = (session, categoryMap = new Map(), studentId = null, req = null) => {
   const now = new Date();
   const todayStatus = calculateSessionTodayStatus(session, now);
   const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
@@ -127,6 +127,11 @@ const formatSession = (session, categoryMap = new Map(), studentId = null) => {
   
   const todayStr = getKolkataDateString(now);
   const isJoined = session.attendances ? session.attendances.some(att => att.joinDate === todayStr) : false;
+
+  let thumbnail = session.thumbnail || null;
+  if (thumbnail && req && !thumbnail.startsWith("http://") && !thumbnail.startsWith("https://")) {
+    thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+  }
 
   return {
     id: session.id,
@@ -139,6 +144,7 @@ const formatSession = (session, categoryMap = new Map(), studentId = null) => {
     title: session.title,
     subtitle: session.subtitle,
     description: session.description,
+    thumbnail,
     scheduledAt,
     endsAt,
     startTime: session.startTime,
@@ -186,7 +192,7 @@ const getAllLiveClasses = async (req, res) => {
 
       return {
         ...cls,
-        thumbnail: cls.thumbnail ? `${req.protocol}://${req.get("host")}/${cls.thumbnail.replace(/\\/g, "/")}` : null,
+        thumbnail: cls.thumbnail ? (cls.thumbnail.startsWith("http://") || cls.thumbnail.startsWith("https://") ? cls.thumbnail : `${req.protocol}://${req.get("host")}/${cls.thumbnail.replace(/\\/g, "/")}`) : null,
         status,
         isRecurring: cls.isRecurring,
         recurrenceType: cls.recurrenceType
@@ -248,7 +254,7 @@ const getAllLiveClasses = async (req, res) => {
         duration: `${durationMinutes} mins`,
         meetLink: session.meetingLink || "",
         meetingLink: session.meetingLink || "",
-        thumbnail: null,
+        thumbnail: session.thumbnail ? (session.thumbnail.startsWith("http://") || session.thumbnail.startsWith("https://") ? session.thumbnail : `${req.protocol}://${req.get("host")}/${session.thumbnail.replace(/\\/g, "/")}`) : null,
         status: legacyStatus,
         isRecurring: session.isRecurring,
         recurrenceType: session.recurrenceType,
@@ -298,7 +304,7 @@ const getLiveClassById = async (req, res) => {
 
     if (liveClass) {
       if (liveClass.thumbnail) {
-        liveClass.thumbnail = `${req.protocol}://${req.get("host")}/${liveClass.thumbnail.replace(/\\/g, "/")}`;
+        liveClass.thumbnail = liveClass.thumbnail.startsWith("http://") || liveClass.thumbnail.startsWith("https://") ? liveClass.thumbnail : `${req.protocol}://${req.get("host")}/${liveClass.thumbnail.replace(/\\/g, "/")}`;
       }
       return res.status(200).json({
         success: true,
@@ -371,7 +377,7 @@ const getLiveClassById = async (req, res) => {
         duration: `${durationMinutes} mins`,
         meetLink: session.meetingLink || "",
         meetingLink: session.meetingLink || "",
-        thumbnail: null,
+        thumbnail: session.thumbnail ? (session.thumbnail.startsWith("http://") || session.thumbnail.startsWith("https://") ? session.thumbnail : `${req.protocol}://${req.get("host")}/${session.thumbnail.replace(/\\/g, "/")}`) : null,
         status: legacyStatus,
         isRecurring: session.isRecurring,
         recurrenceType: session.recurrenceType,
@@ -467,7 +473,7 @@ const getStudentSessions = async (req, res) => {
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c.name]));
 
-    let formattedSessions = sessions.map(session => formatSession(session, categoryMap, studentId));
+    let formattedSessions = sessions.map(session => formatSession(session, categoryMap, studentId, req));
 
     if (filter) {
       formattedSessions = formattedSessions.filter(s => s.todayStatus === filter || s.status === filter);
@@ -512,7 +518,7 @@ const getStudentSessionDetails = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Session details fetched successfully",
-      data: formatSession(session, categoryMap, studentId)
+      data: formatSession(session, categoryMap, studentId, req)
     });
   } catch (error) {
     console.error("Get Student Session Details Error:", error);
@@ -623,7 +629,7 @@ const getMySessionCards = async (req, res) => {
         ...session,
         cards: [card]
       };
-      const formatted = formatSession(sessionEnriched, categoryMap, studentId);
+      const formatted = formatSession(sessionEnriched, categoryMap, studentId, req);
       return {
         cardId: card.id,
         ...formatted
@@ -755,7 +761,7 @@ const getMyJoinedSessions = async (req, res) => {
 
     const formattedBookings = attendances.map(att => {
       const session = att.session;
-      const formatted = formatSession(session, categoryMap, studentId);
+      const formatted = formatSession(session, categoryMap, studentId, req);
       return {
         bookingId: att.id,
         ...formatted,

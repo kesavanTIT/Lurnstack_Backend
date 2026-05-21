@@ -117,11 +117,16 @@ const calculateSessionTodayStatus = (session, now = new Date()) => {
 };
 
 // Helper: build response shape for session
-const formatSession = (session, categoryMap = new Map()) => {
+const formatSession = (session, categoryMap = new Map(), req = null) => {
   const now = new Date();
   const todayStatus = calculateSessionTodayStatus(session, now);
   const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
   const courseTitle = categoryMap.get(session.courseId) || null;
+
+  let thumbnail = session.thumbnail || null;
+  if (thumbnail && req && !thumbnail.startsWith("http://") && !thumbnail.startsWith("https://")) {
+    thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+  }
 
   return {
     id: session.id,
@@ -134,6 +139,7 @@ const formatSession = (session, categoryMap = new Map()) => {
     title: session.title,
     subtitle: session.subtitle,
     description: session.description,
+    thumbnail,
     scheduledAt,
     endsAt,
     startTime: session.startTime,
@@ -291,6 +297,13 @@ const createSession = async (req, res) => {
       });
     }
 
+    let thumbnail = null;
+    if (req.file) {
+      thumbnail = req.file.path;
+    } else if (req.body.thumbnail && req.body.thumbnail !== "null" && req.body.thumbnail !== "undefined") {
+      thumbnail = req.body.thumbnail;
+    }
+
     const session = await prisma.liveSession.create({
       data: {
         courseId,
@@ -306,6 +319,7 @@ const createSession = async (req, res) => {
         recurrenceType: isRecurring ? recurrenceType : null,
         status: "active",
         cancelledDates: [],
+        thumbnail,
       },
       include: { trainer: true },
     });
@@ -316,7 +330,7 @@ const createSession = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Live class created successfully",
-      data: formatSession(session, categoryMap),
+      data: formatSession(session, categoryMap, req),
     });
   } catch (error) {
     console.error("createSession Error:", error);
@@ -347,7 +361,7 @@ const getTrainerSessions = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Trainer sessions fetched successfully",
-      data: sessions.map(s => formatSession(s, categoryMap)),
+      data: sessions.map(s => formatSession(s, categoryMap, req)),
     });
   } catch (error) {
     console.error("getTrainerSessions Error:", error);
@@ -386,7 +400,7 @@ const getSingleTrainerSession = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Trainer session fetched successfully",
-      data: formatSession(session, categoryMap),
+      data: formatSession(session, categoryMap, req),
     });
   } catch (error) {
     console.error("getSingleTrainerSession Error:", error);
@@ -450,6 +464,14 @@ const updateTrainerSession = async (req, res) => {
       updateData.recurrenceType = null;
     }
 
+    if (req.file) {
+      updateData.thumbnail = req.file.path;
+    } else if (req.body.thumbnail !== undefined) {
+      updateData.thumbnail = (req.body.thumbnail === "null" || req.body.thumbnail === "undefined") 
+        ? null 
+        : req.body.thumbnail;
+    }
+
     const updated = await prisma.liveSession.update({
       where: { id: sessionId },
       data: updateData,
@@ -462,7 +484,7 @@ const updateTrainerSession = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Live class updated successfully",
-      data: formatSession(updated, categoryMap),
+      data: formatSession(updated, categoryMap, req),
     });
   } catch (error) {
     console.error("updateTrainerSession Error:", error);
@@ -537,7 +559,7 @@ const pauseSession = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Session paused successfully.",
-      data: formatSession(updated, categoryMap)
+      data: formatSession(updated, categoryMap, req)
     });
   } catch (error) {
     console.error("pauseSession Error:", error);
@@ -570,7 +592,7 @@ const resumeSession = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Session resumed successfully.",
-      data: formatSession(updated, categoryMap)
+      data: formatSession(updated, categoryMap, req)
     });
   } catch (error) {
     console.error("resumeSession Error:", error);
@@ -603,7 +625,7 @@ const endSession = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Session ended successfully.",
-      data: formatSession(updated, categoryMap)
+      data: formatSession(updated, categoryMap, req)
     });
   } catch (error) {
     console.error("endSession Error:", error);
@@ -656,7 +678,7 @@ const cancelTodaySession = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Session cancelled for today successfully.",
-      data: formatSession(updated, categoryMap)
+      data: formatSession(updated, categoryMap, req)
     });
   } catch (error) {
     console.error("cancelTodaySession Error:", error);
@@ -707,7 +729,7 @@ const uncancelTodaySession = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Session uncancelled for today successfully.",
-      data: formatSession(updated, categoryMap)
+      data: formatSession(updated, categoryMap, req)
     });
   } catch (error) {
     console.error("uncancelTodaySession Error:", error);

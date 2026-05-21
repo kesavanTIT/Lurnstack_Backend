@@ -17,6 +17,7 @@ const {
 } = require("../controllers/trainerSessionController");
 
 const { protect } = require("../middleware/authMiddleware");
+const upload = require("../middleware/uploadMiddleware");
 
 // ── Protect all trainer routes ─────────────────
 router.use(protect);
@@ -29,7 +30,7 @@ router.get("/courses", getTrainerCourses);
 
 // ── Trainer Session Endpoints ──────────────────
 // POST   /api/trainer/sessions             → Create a new live session
-router.post("/sessions", createSession);
+router.post("/sessions", upload.single("thumbnail"), createSession);
 
 // GET    /api/trainer/sessions             → List all sessions for the logged-in trainer
 router.get("/sessions", getTrainerSessions);
@@ -38,7 +39,7 @@ router.get("/sessions", getTrainerSessions);
 router.get("/sessions/:sessionId", getSingleTrainerSession);
 
 // PATCH  /api/trainer/sessions/:sessionId  → Partially update a session
-router.patch("/sessions/:sessionId", updateTrainerSession);
+router.patch("/sessions/:sessionId", upload.single("thumbnail"), updateTrainerSession);
 
 // POST   /api/trainer/sessions/:sessionId/pause  → Pause the session
 router.post("/sessions/:sessionId/pause", pauseSession);
