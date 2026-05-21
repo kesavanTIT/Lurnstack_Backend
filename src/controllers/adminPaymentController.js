@@ -14,7 +14,14 @@ const getAdminSessions = async (req, res) => {
       },
       orderBy: { createdAt: "desc" }
     });
-    return res.status(200).json({ success: true, data: sessions });
+
+    // Normalize: expose trainerName at the top level for frontend convenience
+    const formatted = sessions.map((s) => ({
+      ...s,
+      trainerName: s.trainer?.fullName || "-"
+    }));
+
+    return res.status(200).json({ success: true, data: formatted });
   } catch (error) {
     console.error("getAdminSessions error:", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
@@ -38,7 +45,11 @@ const getAdminSessionById = async (req, res) => {
     if (!session) {
       return res.status(404).json({ success: false, message: "Session not found." });
     }
-    return res.status(200).json({ success: true, data: session });
+
+    // Normalize: expose trainerName at the top level for frontend convenience
+    const formatted = { ...session, trainerName: session.trainer?.fullName || "-" };
+
+    return res.status(200).json({ success: true, data: formatted });
   } catch (error) {
     console.error("getAdminSessionById error:", error);
     return res.status(500).json({ success: false, message: "Internal server error." });

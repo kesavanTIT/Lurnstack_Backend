@@ -58,11 +58,13 @@ router.delete("/delete-live-class/:classId", deleteLiveClass);
 
 // ── Admin Payments & Pricing Management ───────────
 router.get("/sessions", getAdminSessions);
+// NOTE: Specific sub-routes MUST be declared before the generic /:sessionId route
+// to prevent Express from matching "revenue" as a sessionId value.
+router.get("/sessions/:sessionId/revenue", getSessionRevenue);
 router.get("/sessions/:sessionId", getAdminSessionById);
 router.patch("/sessions/:sessionId/pricing", updateSessionPricing);
 router.get("/payments", getAdminPayments);
 router.get("/payments/:paymentId", getAdminPaymentById);
-router.get("/sessions/:sessionId/revenue", getSessionRevenue);
 router.get("/trainer-earnings", getAdminTrainerEarnings);
 router.post("/trainer-earnings/:earningId/mark-paid", markTrainerEarningPaid);
 router.post("/trainer-earnings/:earningId/hold", toggleTrainerEarningHold);
