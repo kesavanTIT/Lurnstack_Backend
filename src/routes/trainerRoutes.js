@@ -41,6 +41,9 @@ router.post("/sessions", upload.single("thumbnail"), createSession);
 // GET    /api/trainer/sessions             → List all sessions for the logged-in trainer
 router.get("/sessions", getTrainerSessions);
 
+// GET    /api/trainer/my-sessions          → Alias for listing all sessions for the logged-in trainer
+router.get("/my-sessions", getTrainerSessions);
+
 // GET    /api/trainer/sessions/:sessionId  → Fetch a single session
 router.get("/sessions/:sessionId", getSingleTrainerSession);
 
