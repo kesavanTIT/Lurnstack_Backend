@@ -123,7 +123,20 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
   const now = new Date();
   const todayStatus = calculateSessionTodayStatus(session, now);
   const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
-  const courseTitle = categoryMap.get(session.courseId) || null;
+
+  const categoryRecord = session.courseId ? categoryMap.get(session.courseId) : null;
+  let courseTitle = null;
+  let categoryName = null;
+  if (categoryRecord) {
+    if (typeof categoryRecord === "object") {
+      courseTitle = categoryRecord.name;
+      categoryName = categoryRecord.description || "Frontend Development";
+    } else {
+      courseTitle = categoryRecord;
+    }
+  }
+  courseTitle = courseTitle || session.courseTitle || null;
+  categoryName = categoryName || session.category || null;
 
   const isAddedToCard = session.cards ? session.cards.length > 0 : false;
   
@@ -169,6 +182,7 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
     trainerName: session.trainer?.fullName ?? null,
     trainerEmail: session.trainer?.email ?? null,
     courseTitle: courseTitle,
+    category: categoryName,
     classTitle: session.title,
     title: session.title,
     subtitle: session.subtitle,
@@ -251,7 +265,7 @@ const getAllLiveClasses = async (req, res) => {
     });
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     const todayStr = getKolkataDateString(now);
 
@@ -259,7 +273,20 @@ const getAllLiveClasses = async (req, res) => {
       const todayStatus = calculateSessionTodayStatus(session, now);
       const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
       const isJoinedToday = session.attendances.some(att => att.joinDate === todayStr);
-      const courseTitle = categoryMap.get(session.courseId) || null;
+
+      const categoryRecord = session.courseId ? categoryMap.get(session.courseId) : null;
+      let courseTitle = null;
+      let categoryName = null;
+      if (categoryRecord) {
+        if (typeof categoryRecord === "object") {
+          courseTitle = categoryRecord.name;
+          categoryName = categoryRecord.description || "Frontend Development";
+        } else {
+          courseTitle = categoryRecord;
+        }
+      }
+      courseTitle = courseTitle || session.courseTitle || null;
+      categoryName = categoryName || session.category || null;
 
       let durationMinutes = 60;
       if (session.startTime && session.endTime) {
@@ -283,6 +310,7 @@ const getAllLiveClasses = async (req, res) => {
       return {
         id: session.id,
         courseName: courseTitle || "Live Session",
+        category: categoryName,
         classTitle: session.title,
         instructor: session.trainer?.fullName || "Trainer",
         description: session.description || "",
@@ -375,8 +403,22 @@ const getLiveClassById = async (req, res) => {
     }
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
-    const courseTitle = categoryMap.get(session.courseId) || null;
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    const categoryRecord = session.courseId ? categoryMap.get(session.courseId) : null;
+    let courseTitle = null;
+    let categoryName = null;
+    if (categoryRecord) {
+      if (typeof categoryRecord === "object") {
+        courseTitle = categoryRecord.name;
+        categoryName = categoryRecord.description || "Frontend Development";
+      } else {
+        courseTitle = categoryRecord;
+      }
+    }
+    courseTitle = courseTitle || session.courseTitle || null;
+    categoryName = categoryName || session.category || null;
+
     const now = new Date();
     const todayStatus = calculateSessionTodayStatus(session, now);
     const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
@@ -406,6 +448,7 @@ const getLiveClassById = async (req, res) => {
       data: {
         id: session.id,
         courseName: courseTitle || "Live Session",
+        category: categoryName,
         classTitle: session.title,
         instructor: session.trainer?.fullName || "Trainer",
         description: session.description || "",
@@ -516,7 +559,7 @@ const getStudentSessions = async (req, res) => {
     });
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     let formattedSessions = sessions.map(session => formatSession(session, categoryMap, studentId, req));
 
@@ -563,7 +606,7 @@ const getStudentSessionDetails = async (req, res) => {
     }
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     res.status(200).json({
       success: true,
@@ -671,7 +714,7 @@ const getMySessionCards = async (req, res) => {
     });
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     const formattedCards = cards.map(card => {
       const session = card.session;
@@ -831,7 +874,7 @@ const getMyJoinedSessions = async (req, res) => {
     });
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     const formattedBookings = attendances.map(att => {
       const session = att.session;

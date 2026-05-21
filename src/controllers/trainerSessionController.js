@@ -121,7 +121,20 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
   const now = new Date();
   const todayStatus = calculateSessionTodayStatus(session, now);
   const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
-  const courseTitle = categoryMap.get(session.courseId) || null;
+
+  const categoryRecord = session.courseId ? categoryMap.get(session.courseId) : null;
+  let courseTitle = null;
+  let categoryName = null;
+  if (categoryRecord) {
+    if (typeof categoryRecord === "object") {
+      courseTitle = categoryRecord.name;
+      categoryName = categoryRecord.description || "Frontend Development";
+    } else {
+      courseTitle = categoryRecord;
+    }
+  }
+  courseTitle = courseTitle || session.courseTitle || null;
+  categoryName = categoryName || session.category || null;
 
   let thumbnail = session.thumbnail || null;
   if (thumbnail && req && !thumbnail.startsWith("http://") && !thumbnail.startsWith("https://")) {
@@ -135,6 +148,7 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
     trainerName: session.trainer?.fullName ?? null,
     trainerEmail: session.trainer?.email ?? null,
     courseTitle: courseTitle,
+    category: categoryName,
     classTitle: session.title,
     title: session.title,
     subtitle: session.subtitle,
@@ -219,8 +233,8 @@ const getTrainerCourses = async (req, res) => {
     const courses = categories.map(cat => ({
       id: cat.id,
       title: cat.name,
-      subtitle: cat.description || "Daily practical session",
-      category: cat.name
+      category: cat.description || "Frontend Development",
+      subtitle: "Daily practical session"
     }));
     return res.status(200).json({
       success: true,
@@ -277,6 +291,8 @@ const createSession = async (req, res) => {
 
     const {
       courseId,
+      courseTitle,
+      category,
       title,
       subtitle,
       description,
@@ -290,11 +306,47 @@ const createSession = async (req, res) => {
     const isRecurring = req.body.isRecurring === true || req.body.isRecurring === "true";
 
     // Validate fields
-    if (!courseId || !title || !startTime || !endTime || !meetingLink) {
+    if ((!courseId && (!courseTitle || !category)) || !title || !startTime || !endTime || !meetingLink) {
       return res.status(400).json({
         success: false,
-        message: "Required fields: courseId, title, startTime, endTime, meetingLink.",
+        message: "Required fields: courseId (or courseTitle and category), title, startTime, endTime, meetingLink.",
       });
+    }
+
+    let resolvedCourseId = null;
+    let resolvedCourseTitle = null;
+    let resolvedCategory = null;
+
+    if (courseId) {
+      const categoryRecord = await prisma.category.findUnique({
+        where: { id: courseId }
+      });
+      if (categoryRecord) {
+        resolvedCourseId = categoryRecord.id;
+        resolvedCourseTitle = categoryRecord.name;
+        resolvedCategory = categoryRecord.description || "Frontend Development";
+      } else {
+        if (courseTitle && category) {
+          resolvedCourseTitle = courseTitle;
+          resolvedCategory = category;
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid courseId and no manual courseTitle/category provided.",
+          });
+        }
+      }
+    } else {
+      resolvedCourseTitle = courseTitle;
+      resolvedCategory = category;
+
+      // Try to find a matching category by name
+      const existingCategory = await prisma.category.findFirst({
+        where: { name: { equals: courseTitle, mode: 'insensitive' } }
+      });
+      if (existingCategory) {
+        resolvedCourseId = existingCategory.id;
+      }
     }
 
     let thumbnail = null;
@@ -306,7 +358,9 @@ const createSession = async (req, res) => {
 
     const session = await prisma.liveSession.create({
       data: {
-        courseId,
+        courseId: resolvedCourseId,
+        courseTitle: resolvedCourseTitle,
+        category: resolvedCategory,
         trainerId,
         title,
         subtitle: subtitle || null,
@@ -325,7 +379,7 @@ const createSession = async (req, res) => {
     });
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     return res.status(201).json({
       success: true,
@@ -356,7 +410,7 @@ const getTrainerSessions = async (req, res) => {
     });
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     return res.status(200).json({
       success: true,
@@ -395,7 +449,7 @@ const getSingleTrainerSession = async (req, res) => {
     }
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     return res.status(200).json({
       success: true,
@@ -434,6 +488,8 @@ const updateTrainerSession = async (req, res) => {
 
     const {
       courseId,
+      courseTitle,
+      category,
       title,
       subtitle,
       description,
@@ -449,7 +505,6 @@ const updateTrainerSession = async (req, res) => {
       : undefined;
 
     const updateData = {};
-    if (courseId !== undefined) updateData.courseId = courseId;
     if (title !== undefined) updateData.title = title;
     if (subtitle !== undefined) updateData.subtitle = subtitle;
     if (description !== undefined) updateData.description = description;
@@ -472,6 +527,34 @@ const updateTrainerSession = async (req, res) => {
         : req.body.thumbnail;
     }
 
+    if (courseId !== undefined || courseTitle !== undefined || category !== undefined) {
+      let resolvedCourseId = courseId !== undefined ? courseId : existing.courseId;
+      let resolvedCourseTitle = courseTitle !== undefined ? courseTitle : existing.courseTitle;
+      let resolvedCategory = category !== undefined ? category : existing.category;
+
+      if (courseId) {
+        const categoryRecord = await prisma.category.findUnique({
+          where: { id: courseId }
+        });
+        if (categoryRecord) {
+          resolvedCourseId = categoryRecord.id;
+          resolvedCourseTitle = categoryRecord.name;
+          resolvedCategory = categoryRecord.description || "Frontend Development";
+        }
+      } else if (resolvedCourseTitle && !resolvedCourseId) {
+        const existingCategory = await prisma.category.findFirst({
+          where: { name: { equals: resolvedCourseTitle, mode: 'insensitive' } }
+        });
+        if (existingCategory) {
+          resolvedCourseId = existingCategory.id;
+        }
+      }
+
+      updateData.courseId = resolvedCourseId;
+      updateData.courseTitle = resolvedCourseTitle;
+      updateData.category = resolvedCategory;
+    }
+
     const updated = await prisma.liveSession.update({
       where: { id: sessionId },
       data: updateData,
@@ -479,7 +562,7 @@ const updateTrainerSession = async (req, res) => {
     });
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     return res.status(200).json({
       success: true,
@@ -554,7 +637,7 @@ const pauseSession = async (req, res) => {
     });
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     return res.status(200).json({
       success: true,
@@ -587,7 +670,7 @@ const resumeSession = async (req, res) => {
     });
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     return res.status(200).json({
       success: true,
@@ -631,7 +714,7 @@ const endSession = async (req, res) => {
     ]);
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     return res.status(200).json({
       success: true,
@@ -684,7 +767,7 @@ const cancelTodaySession = async (req, res) => {
     });
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     return res.status(200).json({
       success: true,
@@ -735,7 +818,7 @@ const uncancelTodaySession = async (req, res) => {
     });
 
     const categories = await prisma.category.findMany();
-    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     return res.status(200).json({
       success: true,
