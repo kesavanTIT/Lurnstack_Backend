@@ -166,39 +166,88 @@ const getSessionRevenue = async (req, res) => {
   try {
     const { sessionId } = req.params;
 
-    const pricing = await prisma.sessionPricing.findUnique({
-      where: { sessionId }
+    // Fetch session with trainer info and pricing in one query
+    const session = await prisma.liveSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        trainer: { select: { id: true, fullName: true, email: true } },
+        pricing: true,
+      },
     });
 
-    if (!pricing) {
-      return res.status(404).json({ success: false, message: "Pricing not configured for this session." });
+    if (!session) {
+      return res.status(404).json({ success: false, message: "Session not found." });
     }
 
-    const paidBookingsCount = await prisma.booking.count({
+    if (!session.pricing) {
+      return res.status(404).json({
+        success: false,
+        message: "Pricing not configured for this session.",
+      });
+    }
+
+    const pricing = session.pricing;
+
+    // Fetch all captured payments for this session
+    const payments = await prisma.payment.findMany({
       where: {
         sessionId,
-        status: "paid"
-      }
+        status: "captured",
+      },
+      include: {
+        student: { select: { id: true, fullName: true, email: true } },
+        booking: { select: { id: true, sessionDate: true, status: true } },
+      },
+      orderBy: { paidAt: "desc" },
     });
 
-    const price = pricing.amountPaise;
-    const gross = price * paidBookingsCount;
+    // Aggregate revenue figures
+    const grossRevenuePaise = payments.reduce((sum, p) => sum + p.amountPaise, 0);
     const trainerSharePercent = pricing.trainerSharePercent;
-    
-    const trainerShare = Math.round(gross * (trainerSharePercent / 100));
-    const platformShare = gross - trainerShare;
+    const platformCommissionPercent = pricing.platformCommissionPercent;
+
+    const trainerEarningPaise = Math.round(grossRevenuePaise * (trainerSharePercent / 100));
+    const platformEarningPaise = grossRevenuePaise - trainerEarningPaise;
+
+    // Count unique students who have paid (deduplicated by studentId)
+    const uniquePaidStudentIds = new Set(payments.map((p) => p.studentId));
+    const paidStudentCount = uniquePaidStudentIds.size;
+
+    // Determine class title: prefer classTitle > title fields on the session
+    const classTitle =
+      session.classTitle || session.title || session.courseTitle || "Untitled Session";
 
     return res.status(200).json({
       success: true,
       data: {
-        sessionId,
-        price,
-        paidStudents: paidBookingsCount,
-        grossAmountPaise: gross,
-        trainerSharePercent,
-        trainerAmountPaise: trainerShare,
-        platformFeePaise: platformShare
-      }
+        sessionId: session.id,
+        classTitle,
+        trainerName: session.trainer?.fullName || "-",
+        trainerEmail: session.trainer?.email || "-",
+
+        // Revenue figures in rupees (divide paise by 100)
+        grossRevenue: grossRevenuePaise / 100,
+        trainerEarning: trainerEarningPaise / 100,
+        platformEarning: platformEarningPaise / 100,
+
+        // Also expose raw paise values for precision
+        grossRevenuePaise,
+        trainerEarningPaise,
+        platformEarningPaise,
+
+        // Pricing config
+        sessionPricePaise: pricing.amountPaise,
+        sessionPrice: pricing.amountPaise / 100,
+        currency: pricing.currency || "INR",
+        trainerSharePercentage: trainerSharePercent,
+        platformCommissionPercentage: platformCommissionPercent,
+
+        // Student count
+        paidStudentCount,
+
+        // Full payments list
+        payments,
+      },
     });
   } catch (error) {
     console.error("getSessionRevenue error:", error);
