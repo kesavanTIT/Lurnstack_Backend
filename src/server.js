@@ -38,6 +38,10 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions)); // Handle preflight BEFORE all routes
 
+// Webhook routes mounted with raw body parser BEFORE global json parser
+const webhookRoutes = require("./routes/webhookRoutes");
+app.use("/api/webhooks", express.raw({ type: "application/json" }), webhookRoutes);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static("uploads", {

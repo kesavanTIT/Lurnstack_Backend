@@ -11,6 +11,9 @@ const {
   getMySessionCards,
   joinSession,
   getMyJoinedSessions,
+  createBooking,
+  verifyPayment,
+  getStudentPayments,
 } = require("../controllers/studentController");
 const { protect } = require("../middleware/authMiddleware");
 
@@ -48,5 +51,14 @@ router.post("/sessions/:sessionId/join", joinSession);
 
 // @route   GET /api/student/me/session-bookings
 router.get("/me/session-bookings", getMyJoinedSessions);
+
+// @route   POST /api/student/sessions/:sessionId/bookings
+router.post("/sessions/:sessionId/bookings", createBooking);
+
+// @route   POST /api/student/payments/razorpay/verify
+router.post("/payments/razorpay/verify", verifyPayment);
+
+// @route   GET /api/student/payments
+router.get("/payments", getStudentPayments);
 
 module.exports = router;

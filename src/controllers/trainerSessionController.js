@@ -613,11 +613,22 @@ const endSession = async (req, res) => {
       return res.status(404).json({ success: false, message: "Session not found." });
     }
 
-    const updated = await prisma.liveSession.update({
-      where: { id: sessionId },
-      data: { status: "ended", endedAt: new Date() },
-      include: { trainer: true }
-    });
+    const [updated] = await prisma.$transaction([
+      prisma.liveSession.update({
+        where: { id: sessionId },
+        data: { status: "ended", endedAt: new Date() },
+        include: { trainer: true }
+      }),
+      prisma.trainerEarning.updateMany({
+        where: {
+          sessionId,
+          status: "pending_session_completion"
+        },
+        data: {
+          status: "payable"
+        }
+      })
+    ]);
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c.name]));

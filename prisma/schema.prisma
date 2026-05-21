@@ -24,7 +24,12 @@ model User {
   sessionCards    SessionCard[]
   sessionBookings SessionBooking[]
   attendances     Attendance[]
+  bookings        Booking[]        @relation(name: "UserBookingRelation")
+  payments        Payment[]        @relation(name: "UserPaymentRelation")
+  trainerEarnings TrainerEarning[] @relation(name: "TrainerEarningRelation")
+  trainerPayouts  TrainerPayout[]  @relation(name: "TrainerPayoutRelation")
 }
+
 
 enum Role {
   STUDENT
@@ -93,7 +98,13 @@ model LiveSession {
   cards           SessionCard[]
   bookings        SessionBooking[]
   attendances     Attendance[]
+  pricing         SessionPricing?  @relation(name: "SessionPricingRelation")
+  billingBookings Booking[]        @relation(name: "SessionBookingRelation")
+  payments        Payment[]        @relation(name: "SessionPaymentRelation")
+  trainerEarnings TrainerEarning[] @relation(name: "SessionEarningRelation")
+  trainerPayouts  TrainerPayout[]  @relation(name: "SessionPayoutRelation")
 }
+
 
 model SessionCard {
   id        String   @id @default(uuid())
@@ -130,3 +141,117 @@ model Attendance {
 
   @@unique([sessionId, studentId, joinDate])
 }
+
+model SessionPricing {
+  id                        String      @id @default(uuid())
+  sessionId                 String      @unique
+  session                   LiveSession @relation(name: "SessionPricingRelation", fields: [sessionId], references: [id], onDelete: Cascade)
+  amountPaise               Int
+  currency                  String      @default("INR")
+  trainerSharePercent       Float
+  platformCommissionPercent Float
+  isActive                  Boolean     @default(true)
+  createdByAdminId          Int
+  createdAt                 DateTime    @default(now())
+  updatedAt                 DateTime    @updatedAt
+}
+
+model Booking {
+  id              String           @id @default(uuid())
+  studentId       Int
+  student         User             @relation(name: "UserBookingRelation", fields: [studentId], references: [id], onDelete: Cascade)
+  sessionId       String
+  session         LiveSession      @relation(name: "SessionBookingRelation", fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionDate     DateTime
+  amountPaise     Int
+  currency        String           @default("INR")
+  status          BookingStatus    @default(pending_payment)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  payments        Payment[]        @relation(name: "BookingPaymentRelation")
+  trainerEarnings TrainerEarning[] @relation(name: "BookingEarningRelation")
+}
+
+enum BookingStatus {
+  pending_payment
+  paid
+  failed
+  cancelled
+  refunded
+  joined
+  completed
+}
+
+model Payment {
+  id                String           @id @default(uuid())
+  bookingId         String
+  booking           Booking          @relation(name: "BookingPaymentRelation", fields: [bookingId], references: [id], onDelete: Cascade)
+  studentId         Int
+  student           User             @relation(name: "UserPaymentRelation", fields: [studentId], references: [id], onDelete: Cascade)
+  sessionId         String
+  session           LiveSession      @relation(name: "SessionPaymentRelation", fields: [sessionId], references: [id], onDelete: Cascade)
+  razorpayOrderId   String           @unique
+  razorpayPaymentId String?          @unique
+  razorpaySignature String?
+  amountPaise       Int
+  currency          String           @default("INR")
+  status            PaymentStatus    @default(created)
+  paidAt            DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  trainerEarnings   TrainerEarning[] @relation(name: "PaymentEarningRelation")
+}
+
+enum PaymentStatus {
+  created
+  authorized
+  captured
+  failed
+  refunded
+}
+
+model TrainerEarning {
+  id                 String               @id @default(uuid())
+  trainerId          Int
+  trainer            User                 @relation(name: "TrainerEarningRelation", fields: [trainerId], references: [id], onDelete: Cascade)
+  sessionId          String
+  session            LiveSession          @relation(name: "SessionEarningRelation", fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionDate        DateTime
+  bookingId          String
+  booking            Booking              @relation(name: "BookingEarningRelation", fields: [bookingId], references: [id], onDelete: Cascade)
+  paymentId          String
+  payment            Payment              @relation(name: "PaymentEarningRelation", fields: [paymentId], references: [id], onDelete: Cascade)
+  grossAmountPaise   Int
+  platformFeePaise   Int
+  trainerAmountPaise Int
+  status             TrainerEarningStatus @default(pending_session_completion)
+  availableAfter     DateTime
+  paidAt             DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+}
+
+enum TrainerEarningStatus {
+  pending_session_completion
+  payable
+  processing
+  paid
+  failed
+  on_hold
+  cancelled
+}
+
+model TrainerPayout {
+  id                 String      @id @default(uuid())
+  trainerId          Int
+  trainer            User        @relation(name: "TrainerPayoutRelation", fields: [trainerId], references: [id], onDelete: Cascade)
+  sessionId          String
+  session            LiveSession @relation(name: "SessionPayoutRelation", fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionDate        DateTime
+  amountPaise        Int
+  status             String      @default("pending")
+  razorpayTransferId String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+}
+

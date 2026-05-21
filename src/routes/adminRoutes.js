@@ -16,6 +16,19 @@ const {
   loginAdmin,
   getAdminMe,
 } = require("../controllers/adminAuthController");
+const {
+  getAdminSessions,
+  getAdminSessionById,
+  updateSessionPricing,
+  getAdminPayments,
+  getAdminPaymentById,
+  getSessionRevenue,
+  getAdminTrainerEarnings,
+  markTrainerEarningPaid,
+  toggleTrainerEarningHold,
+  refundPayment,
+  updatePaymentSettings,
+} = require("../controllers/adminPaymentController");
 const { protect, isAdmin } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
 
@@ -42,5 +55,18 @@ router.patch("/trainers/:id/status", toggleTrainerStatus);
 router.post("/create-live-class", upload.single("thumbnail"), createLiveClass);
 router.put("/update-live-class/:classId", upload.single("thumbnail"), updateLiveClass);
 router.delete("/delete-live-class/:classId", deleteLiveClass);
+
+// ── Admin Payments & Pricing Management ───────────
+router.get("/sessions", getAdminSessions);
+router.get("/sessions/:sessionId", getAdminSessionById);
+router.patch("/sessions/:sessionId/pricing", updateSessionPricing);
+router.get("/payments", getAdminPayments);
+router.get("/payments/:paymentId", getAdminPaymentById);
+router.get("/sessions/:sessionId/revenue", getSessionRevenue);
+router.get("/trainer-earnings", getAdminTrainerEarnings);
+router.post("/trainer-earnings/:earningId/mark-paid", markTrainerEarningPaid);
+router.post("/trainer-earnings/:earningId/hold", toggleTrainerEarningHold);
+router.post("/payments/:paymentId/refund", refundPayment);
+router.patch("/payment-settings", updatePaymentSettings);
 
 module.exports = router;

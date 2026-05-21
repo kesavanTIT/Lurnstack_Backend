@@ -1,4 +1,6 @@
 const prisma = require("../config/db");
+const razorpay = require("../config/razorpay");
+const crypto = require("crypto");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TIMEZONE & STATUS HELPERS (Asia/Kolkata)
@@ -133,6 +135,33 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
     thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
   }
 
+  // Pricing calculations
+  const pricing = session.pricing || null;
+  const amountPaise = pricing ? pricing.amountPaise : 0;
+  const currency = pricing ? pricing.currency : "INR";
+  const paymentRequired = pricing ? pricing.isActive : false;
+
+  // Booking calculations
+  const latestBooking = session.billingBookings && session.billingBookings.length > 0 ? session.billingBookings[0] : null;
+  const bookingStatus = latestBooking ? latestBooking.status : null;
+  const isPaid = latestBooking ? latestBooking.status === "paid" : false;
+
+  // Join logic rules
+  const isSessionActive = session.status === "active";
+  const isNotCancelled = todayStatus !== "cancelled" && todayStatus !== "cancelled_today";
+  const isInsideWindow = todayStatus === "join_open" || todayStatus === "live";
+  
+  let hasPaidBookingForToday = false;
+  if (paymentRequired) {
+    hasPaidBookingForToday = session.billingBookings ? session.billingBookings.some(b => {
+      return b.status === "paid" && getKolkataDateString(new Date(b.sessionDate)) === todayStr;
+    }) : false;
+  } else {
+    hasPaidBookingForToday = true;
+  }
+
+  const canJoin = isSessionActive && isNotCancelled && isInsideWindow && hasPaidBookingForToday;
+
   return {
     id: session.id,
     courseId: session.courseId,
@@ -162,6 +191,12 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     endedAt: session.endedAt,
+    amountPaise,
+    currency,
+    paymentRequired,
+    isPaid,
+    canJoin,
+    bookingStatus
   };
 };
 
@@ -205,7 +240,12 @@ const getAllLiveClasses = async (req, res) => {
       include: {
         trainer: true,
         cards: { where: { studentId } },
-        attendances: { where: { studentId } }
+        attendances: { where: { studentId } },
+        pricing: true,
+        billingBookings: {
+          where: { studentId },
+          orderBy: { createdAt: 'desc' }
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -465,7 +505,12 @@ const getStudentSessions = async (req, res) => {
       include: {
         trainer: true,
         cards: { where: { studentId } },
-        attendances: { where: { studentId } }
+        attendances: { where: { studentId } },
+        pricing: true,
+        billingBookings: {
+          where: { studentId },
+          orderBy: { createdAt: 'desc' }
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -504,7 +549,12 @@ const getStudentSessionDetails = async (req, res) => {
       include: {
         trainer: true,
         cards: { where: { studentId } },
-        attendances: { where: { studentId } }
+        attendances: { where: { studentId } },
+        pricing: true,
+        billingBookings: {
+          where: { studentId },
+          orderBy: { createdAt: 'desc' }
+        }
       }
     });
 
@@ -657,12 +707,22 @@ const joinSession = async (req, res) => {
     const studentId = parseInt(req.user.id);
 
     const session = await prisma.liveSession.findUnique({
-      where: { id: sessionId }
+      where: { id: sessionId },
+      include: {
+        pricing: true,
+        billingBookings: {
+          where: { studentId },
+          orderBy: { createdAt: "desc" }
+        }
+      }
     });
 
     if (!session) {
       return res.status(404).json({ success: false, message: "Session not found." });
     }
+
+    const pricing = session.pricing || null;
+    const paymentRequired = pricing ? pricing.isActive : false;
 
     // Validation safeguards
     const now = new Date();
@@ -692,6 +752,20 @@ const joinSession = async (req, res) => {
     // - after today's end time (completed_today)
     if (todayStatus === "completed_today") {
       return res.status(400).json({ success: false, message: "Cannot join. Session has already ended for today." });
+    }
+
+    // Check paid booking
+    if (paymentRequired) {
+      const todayStr = getKolkataDateString(now);
+      const hasPaidBooking = session.billingBookings.some(b => {
+        return b.status === "paid" && getKolkataDateString(new Date(b.sessionDate)) === todayStr;
+      });
+      if (!hasPaidBooking) {
+        return res.status(400).json({
+          success: false,
+          message: "Please complete payment before joining."
+        });
+      }
     }
 
     const todayStr = getKolkataDateString(now);
@@ -782,6 +856,260 @@ const getMyJoinedSessions = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// @desc    Create Session Booking (Razorpay Order creation)
+// @route   POST /api/student/sessions/:sessionId/bookings
+// ─────────────────────────────────────────────
+const createBooking = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { sessionDate } = req.body;
+    const studentId = parseInt(req.user.id);
+
+    if (!sessionDate) {
+      return res.status(400).json({ success: false, message: "sessionDate is required." });
+    }
+
+    // Fetch active session pricing
+    const sessionPricing = await prisma.sessionPricing.findUnique({
+      where: { sessionId }
+    });
+
+    if (!sessionPricing || !sessionPricing.isActive) {
+      return res.status(404).json({ success: false, message: "Active session pricing not found for this session." });
+    }
+
+    const bookingDate = new Date(sessionDate);
+
+    // Create Booking row (pending_payment)
+    const booking = await prisma.booking.create({
+      data: {
+        studentId,
+        sessionId,
+        sessionDate: bookingDate,
+        amountPaise: sessionPricing.amountPaise,
+        currency: sessionPricing.currency,
+        status: "pending_payment"
+      }
+    });
+
+    // Request payment token from Razorpay
+    const orderOptions = {
+      amount: sessionPricing.amountPaise,
+      currency: sessionPricing.currency,
+      receipt: `rcpt_${booking.id.substring(0, 20)}`,
+      notes: {
+        bookingId: booking.id,
+        sessionId: sessionId,
+        studentId: studentId.toString(),
+        sessionDate: sessionDate
+      }
+    };
+
+    const razorpayOrder = await razorpay.orders.create(orderOptions);
+
+    // Create tracking Payment row
+    await prisma.payment.create({
+      data: {
+        bookingId: booking.id,
+        studentId,
+        sessionId,
+        razorpayOrderId: razorpayOrder.id,
+        amountPaise: sessionPricing.amountPaise,
+        currency: sessionPricing.currency,
+        status: "created"
+      }
+    });
+
+    // Fetch student details
+    const studentUser = await prisma.user.findUnique({
+      where: { id: studentId },
+      select: { fullName: true, email: true, phoneNumber: true }
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        bookingId: booking.id,
+        razorpayOrderId: razorpayOrder.id,
+        amountPaise: booking.amountPaise,
+        currency: booking.currency,
+        keyId: process.env.RAZORPAY_KEY_ID,
+        student: {
+          name: studentUser?.fullName || "Student",
+          email: studentUser?.email || "",
+          phone: studentUser?.phoneNumber || ""
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Create Booking Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to create booking.", error: error.message });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Verify Razorpay payment signature
+// @route   POST /api/student/payments/razorpay/verify
+// ─────────────────────────────────────────────
+const verifyPayment = async (req, res) => {
+  try {
+    const { bookingId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
+
+    if (!bookingId || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+      return res.status(400).json({ success: false, message: "bookingId, razorpayOrderId, razorpayPaymentId, and razorpaySignature are required." });
+    }
+
+    // HMAC verification
+    const text = razorpayOrderId + "|" + razorpayPaymentId;
+    const generatedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(text)
+      .digest("hex");
+
+    if (generatedSignature !== razorpaySignature) {
+      return res.status(400).json({ success: false, message: "Payment verification failed. Invalid signature." });
+    }
+
+    // Update state transactionally
+    const result = await prisma.$transaction(async (tx) => {
+      const booking = await tx.booking.findUnique({
+        where: { id: bookingId }
+      });
+
+      if (!booking) {
+        throw new Error("Booking not found");
+      }
+
+      if (booking.status === "paid") {
+        return booking;
+      }
+
+      // Update Booking status to paid
+      const updatedBooking = await tx.booking.update({
+        where: { id: bookingId },
+        data: { status: "paid" }
+      });
+
+      // Update Payment record
+      const payment = await tx.payment.findUnique({
+        where: { razorpayOrderId }
+      });
+
+      let updatedPayment;
+      if (payment) {
+        updatedPayment = await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: "captured",
+            razorpayPaymentId,
+            razorpaySignature,
+            paidAt: new Date()
+          }
+        });
+      } else {
+        updatedPayment = await tx.payment.create({
+          data: {
+            bookingId,
+            studentId: booking.studentId,
+            sessionId: booking.sessionId,
+            razorpayOrderId,
+            razorpayPaymentId,
+            razorpaySignature,
+            amountPaise: booking.amountPaise,
+            currency: booking.currency,
+            status: "captured",
+            paidAt: new Date()
+          }
+        });
+      }
+
+      // Calculate and create TrainerEarning
+      const sessionPricing = await tx.sessionPricing.findUnique({
+        where: { sessionId: booking.sessionId }
+      });
+
+      if (sessionPricing) {
+        const session = await tx.liveSession.findUnique({
+          where: { id: booking.sessionId }
+        });
+
+        if (session) {
+          const trainerSharePercent = sessionPricing.trainerSharePercent;
+          const grossAmountPaise = booking.amountPaise;
+          const trainerAmountPaise = Math.round(grossAmountPaise * (trainerSharePercent / 100));
+          const platformFeePaise = grossAmountPaise - trainerAmountPaise;
+
+          const sessionEnd = new Date(booking.sessionDate);
+          sessionEnd.setHours(sessionEnd.getHours() + 2); // available after 2 hours
+
+          const existingEarning = await tx.trainerEarning.findFirst({
+            where: { bookingId: booking.id }
+          });
+
+          if (!existingEarning) {
+            await tx.trainerEarning.create({
+              data: {
+                trainerId: session.trainerId,
+                sessionId: booking.sessionId,
+                sessionDate: booking.sessionDate,
+                bookingId: booking.id,
+                paymentId: updatedPayment.id,
+                grossAmountPaise,
+                platformFeePaise,
+                trainerAmountPaise,
+                status: "pending_session_completion",
+                availableAfter: sessionEnd
+              }
+            });
+          }
+        }
+      }
+
+      return updatedBooking;
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment verified.",
+      data: {
+        bookingId: result.id,
+        status: "paid",
+        canJoin: true
+      }
+    });
+  } catch (error) {
+    console.error("Verify Payment Error:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to verify payment." });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Get Student Payments History
+// @route   GET /api/student/payments
+// ─────────────────────────────────────────────
+const getStudentPayments = async (req, res) => {
+  try {
+    const studentId = parseInt(req.user.id);
+    const bookings = await prisma.booking.findMany({
+      where: { studentId },
+      include: {
+        session: true,
+        payments: true
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: bookings
+    });
+  } catch (error) {
+    console.error("Get Student Payments Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch payments." });
+  }
+};
+
 module.exports = {
   getAllLiveClasses,
   getLiveClassById,
@@ -793,4 +1121,8 @@ module.exports = {
   getMySessionCards,
   joinSession,
   getMyJoinedSessions,
+  createBooking,
+  verifyPayment,
+  getStudentPayments
 };
+

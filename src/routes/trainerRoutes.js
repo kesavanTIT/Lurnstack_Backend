@@ -16,6 +16,12 @@ const {
   uncancelTodaySession,
 } = require("../controllers/trainerSessionController");
 
+const {
+  getTrainerEarnings,
+  getTrainerSessionEarnings,
+  getTrainerPayouts,
+} = require("../controllers/trainerPaymentController");
+
 const { protect } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
 
@@ -58,5 +64,10 @@ router.delete("/sessions/:sessionId/cancel-today", uncancelTodaySession);
 
 // DELETE /api/trainer/sessions/:sessionId  → Delete a session permanently
 router.delete("/sessions/:sessionId", deleteTrainerSession);
+
+// ── Trainer Earnings & Payouts Endpoints ────────────────
+router.get("/earnings", getTrainerEarnings);
+router.get("/sessions/:sessionId/earnings", getTrainerSessionEarnings);
+router.get("/payouts", getTrainerPayouts);
 
 module.exports = router;
