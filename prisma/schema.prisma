@@ -98,6 +98,12 @@ model LiveSession {
   cards           SessionCard[]
   bookings        SessionBooking[]
   attendances     Attendance[]
+  
+  // Pricing fields added for new pricing flow
+  priceInPaise                 Int?
+  trainerSharePercentage       Float            @default(50)
+  platformCommissionPercentage Float            @default(50)
+
   pricing         SessionPricing?  @relation(name: "SessionPricingRelation")
   billingBookings Booking[]        @relation(name: "SessionBookingRelation")
   payments        Payment[]        @relation(name: "SessionPaymentRelation")

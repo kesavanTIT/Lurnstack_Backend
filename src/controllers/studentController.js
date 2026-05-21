@@ -150,9 +150,10 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
 
   // Pricing calculations
   const pricing = session.pricing || null;
-  const amountPaise = pricing ? pricing.amountPaise : 0;
+  const priceInPaise = session.priceInPaise !== undefined ? session.priceInPaise : null;
+  const amountPaise = priceInPaise !== null ? priceInPaise : (pricing ? pricing.amountPaise : 0);
   const currency = pricing ? pricing.currency : "INR";
-  const paymentRequired = pricing ? pricing.isActive : false;
+  const paymentRequired = priceInPaise !== null || (pricing ? pricing.isActive : false);
 
   // Booking calculations
   const latestBooking = session.billingBookings && session.billingBookings.length > 0 ? session.billingBookings[0] : null;
@@ -205,6 +206,7 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     endedAt: session.endedAt,
+    priceInPaise,
     amountPaise,
     currency,
     paymentRequired,

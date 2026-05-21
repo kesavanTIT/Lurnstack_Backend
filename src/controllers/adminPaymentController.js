@@ -89,7 +89,18 @@ const updateSessionPricing = async (req, res) => {
 
     const adminId = parseInt(req.user.id);
 
-    const pricing = await prisma.sessionPricing.upsert({
+    const updatedSession = await prisma.liveSession.update({
+      where: { id: sessionId },
+      data: {
+        priceInPaise: parseInt(amountPaise),
+        trainerSharePercentage: parseFloat(trainerSharePercent),
+        platformCommissionPercentage: parseFloat(platformCommissionPercent),
+      },
+    });
+
+    // Also update the SessionPricing relation for backwards compatibility if needed, 
+    // or just rely on LiveSession fields going forward. We will upsert to keep it synced.
+    await prisma.sessionPricing.upsert({
       where: { sessionId },
       update: {
         amountPaise: parseInt(amountPaise),
@@ -113,14 +124,14 @@ const updateSessionPricing = async (req, res) => {
       success: true,
       message: "Session pricing updated.",
       data: {
-        sessionId: pricing.sessionId,
-        amountPaise: pricing.amountPaise,
-        currency: pricing.currency,
+        sessionId: updatedSession.id,
+        amountPaise: updatedSession.priceInPaise,
+        currency: currency || "INR",
         // Expose both name variants so frontend always resolves the field
-        trainerSharePercent: pricing.trainerSharePercent,
-        trainerSharePercentage: pricing.trainerSharePercent,
-        platformCommissionPercent: pricing.platformCommissionPercent,
-        platformCommissionPercentage: pricing.platformCommissionPercent,
+        trainerSharePercent: updatedSession.trainerSharePercentage,
+        trainerSharePercentage: updatedSession.trainerSharePercentage,
+        platformCommissionPercent: updatedSession.platformCommissionPercentage,
+        platformCommissionPercentage: updatedSession.platformCommissionPercentage,
       },
     });
   } catch (error) {
@@ -196,7 +207,7 @@ const getSessionRevenue = async (req, res) => {
       return res.status(404).json({ success: false, message: "Session not found." });
     }
 
-    if (!session.pricing) {
+    if (session.priceInPaise === null && !session.pricing) {
       // Return zero-revenue structure instead of 404 so the frontend
       // can show "No pricing configured" rather than a generic error.
       return res.status(200).json({
@@ -227,7 +238,10 @@ const getSessionRevenue = async (req, res) => {
       });
     }
 
-    const pricing = session.pricing;
+    const sessionPricePaise = session.priceInPaise !== null ? session.priceInPaise : session.pricing?.amountPaise || 0;
+    const currency = session.pricing?.currency || "INR";
+    const trainerSharePercent = session.trainerSharePercentage !== null ? session.trainerSharePercentage : session.pricing?.trainerSharePercent || 50;
+    const platformCommissionPercent = session.platformCommissionPercentage !== null ? session.platformCommissionPercentage : session.pricing?.platformCommissionPercent || 50;
 
     // Fetch all captured payments for this session
     // NOTE: orderBy on nullable paidAt uses nulls-last to avoid query errors
@@ -245,8 +259,6 @@ const getSessionRevenue = async (req, res) => {
 
     // Aggregate revenue figures
     const grossRevenuePaise = payments.reduce((sum, p) => sum + p.amountPaise, 0);
-    const trainerSharePercent = pricing.trainerSharePercent;
-    const platformCommissionPercent = pricing.platformCommissionPercent;
 
     const trainerEarningPaise = Math.round(grossRevenuePaise * (trainerSharePercent / 100));
     const platformEarningPaise = grossRevenuePaise - trainerEarningPaise;
@@ -278,9 +290,9 @@ const getSessionRevenue = async (req, res) => {
         platformEarningPaise,
 
         // Pricing config — expose both name variants for frontend compatibility
-        sessionPricePaise: pricing.amountPaise,
-        sessionPrice: pricing.amountPaise / 100,
-        currency: pricing.currency || "INR",
+        sessionPricePaise: sessionPricePaise,
+        sessionPrice: sessionPricePaise / 100,
+        currency: currency,
         trainerSharePercentage: trainerSharePercent,
         trainerSharePercent,
         platformCommissionPercentage: platformCommissionPercent,
