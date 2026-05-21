@@ -79,6 +79,17 @@ model LiveSession {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   endedAt         DateTime?
+  
+  // Preserving legacy columns to avoid data loss
+  courseTitle     String?
+  category        String?
+  classTitle      String?
+  thumbnail       String?
+  scheduledDate   String?
+  scheduledAt     String?
+  endsAt          String?
+  durationMinutes Int?
+
   cards           SessionCard[]
   bookings        SessionBooking[]
   attendances     Attendance[]
