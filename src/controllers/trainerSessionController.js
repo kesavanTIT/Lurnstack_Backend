@@ -15,41 +15,66 @@ const getKolkataDateString = (date = new Date()) => {
   return formatter.format(date);
 };
 
+// Helper to get today's time string in Asia/Kolkata timezone (format: HH:MM)
+const getKolkataTimeString = (date = new Date()) => {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return formatter.format(date);
+};
+
+const getKolkataDateTime = (dateStr, timeStr) => {
+  return new Date(`${dateStr}T${timeStr}:00+05:30`);
+};
+
+// Helper to calculate occurrences
+const getSessionOccurrences = (session, now = new Date()) => {
+  const todayStr = getKolkataDateString(now);
+  const createdDateStr = getKolkataDateString(new Date(session.createdAt));
+
+  const dateStr = session.isRecurring ? todayStr : createdDateStr;
+
+  const scheduledAt = session.startTime ? getKolkataDateTime(dateStr, session.startTime) : null;
+  const endsAt = session.endTime ? getKolkataDateTime(dateStr, session.endTime) : null;
+
+  return { scheduledAt, endsAt };
+};
+
 // Helper to calculate session status dynamically based on current server time
-const calculateSessionStatus = (session, now = new Date()) => {
+const calculateSessionTodayStatus = (session, now = new Date()) => {
   if (session.status === "paused") {
     return "paused";
   }
   if (session.status === "ended") {
     return "ended";
   }
-
-  const timezone = session.timezone || "Asia/Kolkata";
-  const todayStr = getKolkataDateString(now);
-
-  // Check if session is cancelled for today
-  if (session.cancelledDates && session.cancelledDates.includes(todayStr)) {
+  if (session.status === "cancelled") {
     return "cancelled";
   }
 
-  // Get current minutes since midnight in Asia/Kolkata
-  const timeFormatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  const timeStr = timeFormatter.format(now);
-  const [currentHours, currentMinutes] = timeStr.split(":").map(Number);
-  const currentTotalMinutes = currentHours * 60 + currentMinutes;
+  const todayStr = getKolkataDateString(now);
 
-  // Parse session start and end times (HH:MM)
-  const [startHours, startMinutes] = session.startTime.split(":").map(Number);
-  const [endHours, endMinutes] = session.endTime.split(":").map(Number);
-  const startTotalMinutes = startHours * 60 + startMinutes;
-  const endTotalMinutes = endHours * 60 + endMinutes;
-
-  const joinOpenMinutes = startTotalMinutes - 5;
+  // Check if today is in cancelledDates
+  let cancelledArray = [];
+  if (session.cancelledDates) {
+    if (Array.isArray(session.cancelledDates)) {
+      cancelledArray = session.cancelledDates;
+    } else {
+      try {
+        cancelledArray = typeof session.cancelledDates === 'string'
+          ? JSON.parse(session.cancelledDates)
+          : session.cancelledDates;
+      } catch (e) {
+        cancelledArray = [];
+      }
+    }
+  }
+  if (Array.isArray(cancelledArray) && cancelledArray.includes(todayStr)) {
+    return "cancelled_today";
+  }
 
   // For non-recurring sessions, check if today is the day of creation
   if (!session.isRecurring) {
@@ -61,6 +86,23 @@ const calculateSessionStatus = (session, now = new Date()) => {
       return "completed_today";
     }
   }
+
+  if (!session.startTime || !session.endTime) {
+    return "upcoming";
+  }
+
+  // Get current minutes since midnight in Asia/Kolkata
+  const timeStr = getKolkataTimeString(now);
+  const [currentHours, currentMinutes] = timeStr.split(":").map(Number);
+  const currentTotalMinutes = currentHours * 60 + currentMinutes;
+
+  // Parse session start and end times (HH:MM)
+  const [startHours, startMinutes] = session.startTime.split(":").map(Number);
+  const [endHours, endMinutes] = session.endTime.split(":").map(Number);
+  const startTotalMinutes = startHours * 60 + startMinutes;
+  const endTotalMinutes = endHours * 60 + endMinutes;
+
+  const joinOpenMinutes = startTotalMinutes - 5;
 
   // Calculate status
   if (currentTotalMinutes < joinOpenMinutes) {
@@ -75,24 +117,36 @@ const calculateSessionStatus = (session, now = new Date()) => {
 };
 
 // Helper: build response shape for session
-const formatSession = (session) => {
-  const dynamicStatus = calculateSessionStatus(session);
+const formatSession = (session, categoryMap = new Map()) => {
+  const now = new Date();
+  const todayStatus = calculateSessionTodayStatus(session, now);
+  const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
+  const courseTitle = categoryMap.get(session.courseId) || null;
+
   return {
     id: session.id,
     courseId: session.courseId,
     trainerId: `trainer_${session.trainerId}`,
     trainerName: session.trainer?.fullName ?? null,
     trainerEmail: session.trainer?.email ?? null,
+    courseTitle: courseTitle,
+    classTitle: session.title,
     title: session.title,
     subtitle: session.subtitle,
     description: session.description,
+    scheduledAt,
+    endsAt,
     startTime: session.startTime,
     endTime: session.endTime,
     timezone: session.timezone,
     meetingLink: session.meetingLink,
     isRecurring: session.isRecurring,
     recurrenceType: session.recurrenceType,
-    status: dynamicStatus,
+    status: session.status,
+    todayStatus,
+    cancellationReason: null,
+    isAddedToCard: false,
+    isJoined: false,
     cancelledDates: session.cancelledDates,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
@@ -249,16 +303,19 @@ const createSession = async (req, res) => {
         meetingLink,
         isRecurring,
         recurrenceType: isRecurring ? recurrenceType : null,
-        status: "published",
+        status: "active",
         cancelledDates: [],
       },
       include: { trainer: true },
     });
 
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
     return res.status(201).json({
       success: true,
       message: "Live class created successfully",
-      data: formatSession(session),
+      data: formatSession(session, categoryMap),
     });
   } catch (error) {
     console.error("createSession Error:", error);
@@ -283,10 +340,13 @@ const getTrainerSessions = async (req, res) => {
       orderBy: { createdAt: "desc" },
     });
 
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
     return res.status(200).json({
       success: true,
       message: "Trainer sessions fetched successfully",
-      data: sessions.map(formatSession),
+      data: sessions.map(s => formatSession(s, categoryMap)),
     });
   } catch (error) {
     console.error("getTrainerSessions Error:", error);
@@ -319,10 +379,13 @@ const getSingleTrainerSession = async (req, res) => {
       });
     }
 
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
     return res.status(200).json({
       success: true,
       message: "Trainer session fetched successfully",
-      data: formatSession(session),
+      data: formatSession(session, categoryMap),
     });
   } catch (error) {
     console.error("getSingleTrainerSession Error:", error);
@@ -392,10 +455,13 @@ const updateTrainerSession = async (req, res) => {
       include: { trainer: true },
     });
 
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
     return res.status(200).json({
       success: true,
       message: "Live class updated successfully",
-      data: formatSession(updated),
+      data: formatSession(updated, categoryMap),
     });
   } catch (error) {
     console.error("updateTrainerSession Error:", error);
@@ -464,10 +530,13 @@ const pauseSession = async (req, res) => {
       include: { trainer: true }
     });
 
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
     return res.status(200).json({
       success: true,
       message: "Session paused successfully.",
-      data: formatSession(updated)
+      data: formatSession(updated, categoryMap)
     });
   } catch (error) {
     console.error("pauseSession Error:", error);
@@ -490,14 +559,17 @@ const resumeSession = async (req, res) => {
 
     const updated = await prisma.liveSession.update({
       where: { id: sessionId },
-      data: { status: "published" },
+      data: { status: "active" },
       include: { trainer: true }
     });
+
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
 
     return res.status(200).json({
       success: true,
       message: "Session resumed successfully.",
-      data: formatSession(updated)
+      data: formatSession(updated, categoryMap)
     });
   } catch (error) {
     console.error("resumeSession Error:", error);
@@ -524,10 +596,13 @@ const endSession = async (req, res) => {
       include: { trainer: true }
     });
 
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
     return res.status(200).json({
       success: true,
       message: "Session ended successfully.",
-      data: formatSession(updated)
+      data: formatSession(updated, categoryMap)
     });
   } catch (error) {
     console.error("endSession Error:", error);
@@ -549,7 +624,21 @@ const cancelTodaySession = async (req, res) => {
     }
 
     const todayStr = getKolkataDateString();
-    let cancelledDates = [...existing.cancelledDates];
+    let cancelledDates = [];
+    if (existing.cancelledDates) {
+      if (Array.isArray(existing.cancelledDates)) {
+        cancelledDates = existing.cancelledDates;
+      } else {
+        try {
+          cancelledDates = typeof existing.cancelledDates === 'string'
+            ? JSON.parse(existing.cancelledDates)
+            : existing.cancelledDates;
+        } catch (e) {
+          cancelledDates = [];
+        }
+      }
+    }
+
     if (!cancelledDates.includes(todayStr)) {
       cancelledDates.push(todayStr);
     }
@@ -560,10 +649,13 @@ const cancelTodaySession = async (req, res) => {
       include: { trainer: true }
     });
 
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
     return res.status(200).json({
       success: true,
       message: "Session cancelled for today successfully.",
-      data: formatSession(updated)
+      data: formatSession(updated, categoryMap)
     });
   } catch (error) {
     console.error("cancelTodaySession Error:", error);
@@ -585,7 +677,22 @@ const uncancelTodaySession = async (req, res) => {
     }
 
     const todayStr = getKolkataDateString();
-    let cancelledDates = existing.cancelledDates.filter(d => d !== todayStr);
+    let cancelledDates = [];
+    if (existing.cancelledDates) {
+      if (Array.isArray(existing.cancelledDates)) {
+        cancelledDates = existing.cancelledDates;
+      } else {
+        try {
+          cancelledDates = typeof existing.cancelledDates === 'string'
+            ? JSON.parse(existing.cancelledDates)
+            : existing.cancelledDates;
+        } catch (e) {
+          cancelledDates = [];
+        }
+      }
+    }
+
+    cancelledDates = cancelledDates.filter(d => d !== todayStr);
 
     const updated = await prisma.liveSession.update({
       where: { id: sessionId },
@@ -593,10 +700,13 @@ const uncancelTodaySession = async (req, res) => {
       include: { trainer: true }
     });
 
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
     return res.status(200).json({
       success: true,
       message: "Session uncancelled for today successfully.",
-      data: formatSession(updated)
+      data: formatSession(updated, categoryMap)
     });
   } catch (error) {
     console.error("uncancelTodaySession Error:", error);

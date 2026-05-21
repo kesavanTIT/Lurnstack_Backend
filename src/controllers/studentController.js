@@ -15,41 +15,66 @@ const getKolkataDateString = (date = new Date()) => {
   return formatter.format(date);
 };
 
+// Helper to get today's time string in Asia/Kolkata timezone (format: HH:MM)
+const getKolkataTimeString = (date = new Date()) => {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return formatter.format(date);
+};
+
+const getKolkataDateTime = (dateStr, timeStr) => {
+  return new Date(`${dateStr}T${timeStr}:00+05:30`);
+};
+
+// Helper to calculate occurrences
+const getSessionOccurrences = (session, now = new Date()) => {
+  const todayStr = getKolkataDateString(now);
+  const createdDateStr = getKolkataDateString(new Date(session.createdAt));
+
+  const dateStr = session.isRecurring ? todayStr : createdDateStr;
+
+  const scheduledAt = session.startTime ? getKolkataDateTime(dateStr, session.startTime) : null;
+  const endsAt = session.endTime ? getKolkataDateTime(dateStr, session.endTime) : null;
+
+  return { scheduledAt, endsAt };
+};
+
 // Helper to calculate session status dynamically based on current server time
-const calculateSessionStatus = (session, now = new Date()) => {
+const calculateSessionTodayStatus = (session, now = new Date()) => {
   if (session.status === "paused") {
     return "paused";
   }
   if (session.status === "ended") {
     return "ended";
   }
-
-  const timezone = session.timezone || "Asia/Kolkata";
-  const todayStr = getKolkataDateString(now);
-
-  // Check if session is cancelled for today
-  if (session.cancelledDates && session.cancelledDates.includes(todayStr)) {
+  if (session.status === "cancelled") {
     return "cancelled";
   }
 
-  // Get current minutes since midnight in Asia/Kolkata
-  const timeFormatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  const timeStr = timeFormatter.format(now);
-  const [currentHours, currentMinutes] = timeStr.split(":").map(Number);
-  const currentTotalMinutes = currentHours * 60 + currentMinutes;
+  const todayStr = getKolkataDateString(now);
 
-  // Parse session start and end times (HH:MM)
-  const [startHours, startMinutes] = session.startTime.split(":").map(Number);
-  const [endHours, endMinutes] = session.endTime.split(":").map(Number);
-  const startTotalMinutes = startHours * 60 + startMinutes;
-  const endTotalMinutes = endHours * 60 + endMinutes;
-
-  const joinOpenMinutes = startTotalMinutes - 5;
+  // Check if today is in cancelledDates
+  let cancelledArray = [];
+  if (session.cancelledDates) {
+    if (Array.isArray(session.cancelledDates)) {
+      cancelledArray = session.cancelledDates;
+    } else {
+      try {
+        cancelledArray = typeof session.cancelledDates === 'string'
+          ? JSON.parse(session.cancelledDates)
+          : session.cancelledDates;
+      } catch (e) {
+        cancelledArray = [];
+      }
+    }
+  }
+  if (Array.isArray(cancelledArray) && cancelledArray.includes(todayStr)) {
+    return "cancelled_today";
+  }
 
   // For non-recurring sessions, check if today is the day of creation
   if (!session.isRecurring) {
@@ -62,6 +87,23 @@ const calculateSessionStatus = (session, now = new Date()) => {
     }
   }
 
+  if (!session.startTime || !session.endTime) {
+    return "upcoming";
+  }
+
+  // Get current minutes since midnight in Asia/Kolkata
+  const timeStr = getKolkataTimeString(now);
+  const [currentHours, currentMinutes] = timeStr.split(":").map(Number);
+  const currentTotalMinutes = currentHours * 60 + currentMinutes;
+
+  // Parse session start and end times (HH:MM)
+  const [startHours, startMinutes] = session.startTime.split(":").map(Number);
+  const [endHours, endMinutes] = session.endTime.split(":").map(Number);
+  const startTotalMinutes = startHours * 60 + startMinutes;
+  const endTotalMinutes = endHours * 60 + endMinutes;
+
+  const joinOpenMinutes = startTotalMinutes - 5;
+
   // Calculate status
   if (currentTotalMinutes < joinOpenMinutes) {
     return "upcoming";
@@ -72,6 +114,49 @@ const calculateSessionStatus = (session, now = new Date()) => {
   } else {
     return "completed_today";
   }
+};
+
+// Helper: build response shape for student session
+const formatSession = (session, categoryMap = new Map(), studentId = null) => {
+  const now = new Date();
+  const todayStatus = calculateSessionTodayStatus(session, now);
+  const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
+  const courseTitle = categoryMap.get(session.courseId) || null;
+
+  const isAddedToCard = session.cards ? session.cards.length > 0 : false;
+  
+  const todayStr = getKolkataDateString(now);
+  const isJoined = session.attendances ? session.attendances.some(att => att.joinDate === todayStr) : false;
+
+  return {
+    id: session.id,
+    courseId: session.courseId,
+    trainerId: `trainer_${session.trainerId}`,
+    trainerName: session.trainer?.fullName ?? null,
+    trainerEmail: session.trainer?.email ?? null,
+    courseTitle: courseTitle,
+    classTitle: session.title,
+    title: session.title,
+    subtitle: session.subtitle,
+    description: session.description,
+    scheduledAt,
+    endsAt,
+    startTime: session.startTime,
+    endTime: session.endTime,
+    timezone: session.timezone,
+    meetingLink: session.meetingLink,
+    isRecurring: session.isRecurring,
+    recurrenceType: session.recurrenceType,
+    status: session.status,
+    todayStatus,
+    cancellationReason: null,
+    isAddedToCard,
+    isJoined,
+    cancelledDates: session.cancelledDates,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    endedAt: session.endedAt,
+  };
 };
 
 // ─────────────────────────────────────────────
@@ -108,9 +193,80 @@ const getAllLiveClasses = async (req, res) => {
       };
     });
 
+    // Merge sessions into live-classes query for backwards compatibility
+    const studentId = parseInt(req.user.id);
+    const sessions = await prisma.liveSession.findMany({
+      include: {
+        trainer: true,
+        cards: { where: { studentId } },
+        attendances: { where: { studentId } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
+    const todayStr = getKolkataDateString(now);
+
+    const sessionMappedClasses = sessions.map(session => {
+      const todayStatus = calculateSessionTodayStatus(session, now);
+      const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
+      const isJoinedToday = session.attendances.some(att => att.joinDate === todayStr);
+      const courseTitle = categoryMap.get(session.courseId) || null;
+
+      let durationMinutes = 60;
+      if (session.startTime && session.endTime) {
+        const [sh, sm] = session.startTime.split(":").map(Number);
+        const [eh, em] = session.endTime.split(":").map(Number);
+        durationMinutes = (eh * 60 + em) - (sh * 60 + sm);
+        if (durationMinutes < 0) durationMinutes += 1440;
+      }
+
+      let legacyStatus = "upcoming";
+      if (todayStatus === "live" || todayStatus === "join_open") {
+        legacyStatus = "live";
+      } else if (todayStatus === "completed_today" || todayStatus === "ended") {
+        legacyStatus = "completed";
+      } else if (todayStatus === "paused") {
+        legacyStatus = "paused";
+      } else if (todayStatus === "cancelled" || todayStatus === "cancelled_today") {
+        legacyStatus = "cancelled";
+      }
+
+      return {
+        id: session.id,
+        courseName: courseTitle || "Live Session",
+        classTitle: session.title,
+        instructor: session.trainer?.fullName || "Trainer",
+        description: session.description || "",
+        scheduledAt: scheduledAt,
+        endsAt: endsAt,
+        durationMinutes: durationMinutes,
+        date: scheduledAt ? getKolkataDateString(scheduledAt) : "",
+        time: session.startTime || "",
+        duration: `${durationMinutes} mins`,
+        meetLink: session.meetingLink || "",
+        meetingLink: session.meetingLink || "",
+        thumbnail: null,
+        status: legacyStatus,
+        isRecurring: session.isRecurring,
+        recurrenceType: session.recurrenceType,
+        courseId: session.courseId,
+        trainerId: `trainer_${session.trainerId}`,
+        title: session.title,
+        subtitle: session.subtitle,
+        timezone: session.timezone,
+        todayStatus: todayStatus,
+        cancellationReason: null,
+        isAddedToCard: session.cards.length > 0,
+        isJoined: isJoinedToday
+      };
+    });
+
     res.status(200).json({
       success: true,
-      data: enrichedClasses,
+      data: [...enrichedClasses, ...sessionMappedClasses],
     });
 
   } catch (error) {
@@ -132,28 +288,103 @@ const getLiveClassById = async (req, res) => {
   try {
     const { classId } = req.params;
 
-    const liveClass = await prisma.liveClass.findUnique({
-      where: { id: parseInt(classId) },
-    });
-
-    if (!liveClass) {
-      return res.status(404).json({
-        success: false,
-        message: "Live class not found.",
+    let liveClass = null;
+    const classIdInt = parseInt(classId, 10);
+    if (!isNaN(classIdInt)) {
+      liveClass = await prisma.liveClass.findUnique({
+        where: { id: classIdInt },
       });
     }
 
-    if (liveClass.thumbnail) {
-      liveClass.thumbnail = `${req.protocol}://${req.get("host")}/${liveClass.thumbnail.replace(/\\/g, "/")}`;
+    if (liveClass) {
+      if (liveClass.thumbnail) {
+        liveClass.thumbnail = `${req.protocol}://${req.get("host")}/${liveClass.thumbnail.replace(/\\/g, "/")}`;
+      }
+      return res.status(200).json({
+        success: true,
+        data: {
+          ...liveClass,
+          isRecurring: liveClass.isRecurring,
+          recurrenceType: liveClass.recurrenceType
+        },
+      });
     }
 
-    res.status(200).json({
+    // Try finding in LiveSession for backwards compatibility
+    const studentId = parseInt(req.user.id);
+    const session = await prisma.liveSession.findUnique({
+      where: { id: classId },
+      include: {
+        trainer: true,
+        cards: { where: { studentId } },
+        attendances: { where: { studentId } }
+      }
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: "Live class or session not found.",
+      });
+    }
+
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    const courseTitle = categoryMap.get(session.courseId) || null;
+    const now = new Date();
+    const todayStatus = calculateSessionTodayStatus(session, now);
+    const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
+    const isJoinedToday = session.attendances.some(att => att.joinDate === getKolkataDateString(now));
+
+    let durationMinutes = 60;
+    if (session.startTime && session.endTime) {
+      const [sh, sm] = session.startTime.split(":").map(Number);
+      const [eh, em] = session.endTime.split(":").map(Number);
+      durationMinutes = (eh * 60 + em) - (sh * 60 + sm);
+      if (durationMinutes < 0) durationMinutes += 1440;
+    }
+
+    let legacyStatus = "upcoming";
+    if (todayStatus === "live" || todayStatus === "join_open") {
+      legacyStatus = "live";
+    } else if (todayStatus === "completed_today" || todayStatus === "ended") {
+      legacyStatus = "completed";
+    } else if (todayStatus === "paused") {
+      legacyStatus = "paused";
+    } else if (todayStatus === "cancelled" || todayStatus === "cancelled_today") {
+      legacyStatus = "cancelled";
+    }
+
+    return res.status(200).json({
       success: true,
       data: {
-        ...liveClass,
-        isRecurring: liveClass.isRecurring,
-        recurrenceType: liveClass.recurrenceType
-      },
+        id: session.id,
+        courseName: courseTitle || "Live Session",
+        classTitle: session.title,
+        instructor: session.trainer?.fullName || "Trainer",
+        description: session.description || "",
+        scheduledAt: scheduledAt,
+        endsAt: endsAt,
+        durationMinutes: durationMinutes,
+        date: scheduledAt ? getKolkataDateString(scheduledAt) : "",
+        time: session.startTime || "",
+        duration: `${durationMinutes} mins`,
+        meetLink: session.meetingLink || "",
+        meetingLink: session.meetingLink || "",
+        thumbnail: null,
+        status: legacyStatus,
+        isRecurring: session.isRecurring,
+        recurrenceType: session.recurrenceType,
+        courseId: session.courseId,
+        trainerId: `trainer_${session.trainerId}`,
+        title: session.title,
+        subtitle: session.subtitle,
+        timezone: session.timezone,
+        todayStatus: todayStatus,
+        cancellationReason: null,
+        isAddedToCard: session.cards.length > 0,
+        isJoined: isJoinedToday
+      }
     });
 
   } catch (error) {
@@ -174,23 +405,27 @@ const joinLiveClass = async (req, res) => {
   try {
     const { classId } = req.params;
 
-    const liveClass = await prisma.liveClass.findUnique({
-      where: { id: parseInt(classId) },
-      select: { meetLink: true },
-    });
-
-    if (!liveClass) {
-      return res.status(404).json({
-        success: false,
-        message: "Live class not found.",
+    let liveClass = null;
+    const classIdInt = parseInt(classId, 10);
+    if (!isNaN(classIdInt)) {
+      liveClass = await prisma.liveClass.findUnique({
+        where: { id: classIdInt },
+        select: { meetLink: true },
       });
     }
 
-    res.status(200).json({
-      success: true,
-      message: "Successfully joined the class!",
-      meetLink: liveClass.meetLink,
-    });
+    if (liveClass) {
+      return res.status(200).json({
+        success: true,
+        message: "Successfully joined the class!",
+        meetLink: liveClass.meetLink,
+      });
+    }
+
+    // Try joining via the new join session logic
+    req.params.sessionId = classId;
+    return joinSession(req, res);
+
   } catch (error) {
     console.error("Join Live Class Error:", error);
     res.status(500).json({
@@ -229,34 +464,13 @@ const getStudentSessions = async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    const todayStr = getKolkataDateString();
-    let formattedSessions = sessions.map(session => {
-      const isJoinedToday = session.attendances.some(att => att.joinDate === todayStr);
-      return {
-        id: session.id,
-        courseId: session.courseId,
-        trainerId: `trainer_${session.trainerId}`,
-        trainerName: session.trainer?.fullName ?? null,
-        title: session.title,
-        subtitle: session.subtitle,
-        description: session.description,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        timezone: session.timezone,
-        meetingLink: session.meetingLink,
-        isRecurring: session.isRecurring,
-        recurrenceType: session.recurrenceType,
-        status: calculateSessionStatus(session),
-        cancelledDates: session.cancelledDates,
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt,
-        isAddedToCard: session.cards.length > 0,
-        isJoined: isJoinedToday
-      };
-    });
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
+    let formattedSessions = sessions.map(session => formatSession(session, categoryMap, studentId));
 
     if (filter) {
-      formattedSessions = formattedSessions.filter(s => s.status === filter);
+      formattedSessions = formattedSessions.filter(s => s.todayStatus === filter || s.status === filter);
     }
 
     res.status(200).json({
@@ -292,36 +506,13 @@ const getStudentSessionDetails = async (req, res) => {
       return res.status(404).json({ success: false, message: "Session not found." });
     }
 
-    const todayStr = getKolkataDateString();
-    const isJoinedToday = session.attendances.some(att => att.joinDate === todayStr);
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
 
     res.status(200).json({
       success: true,
       message: "Session details fetched successfully",
-      data: {
-        id: session.id,
-        courseId: session.courseId,
-        trainer: {
-          id: `trainer_${session.trainer.id}`,
-          name: session.trainer.fullName,
-          email: session.trainer.email,
-        },
-        title: session.title,
-        subtitle: session.subtitle,
-        description: session.description,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        timezone: session.timezone,
-        meetingLink: session.meetingLink,
-        isRecurring: session.isRecurring,
-        recurrenceType: session.recurrenceType,
-        status: calculateSessionStatus(session),
-        cancelledDates: session.cancelledDates,
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt,
-        isAddedToCard: session.cards.length > 0,
-        isJoined: isJoinedToday
-      }
+      data: formatSession(session, categoryMap, studentId)
     });
   } catch (error) {
     console.error("Get Student Session Details Error:", error);
@@ -423,27 +614,19 @@ const getMySessionCards = async (req, res) => {
       orderBy: { addedAt: 'desc' }
     });
 
-    const todayStr = getKolkataDateString();
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
     const formattedCards = cards.map(card => {
       const session = card.session;
-      const isJoinedToday = session.attendances.some(att => att.joinDate === todayStr);
+      const sessionEnriched = {
+        ...session,
+        cards: [card]
+      };
+      const formatted = formatSession(sessionEnriched, categoryMap, studentId);
       return {
         cardId: card.id,
-        sessionId: session.id,
-        courseId: session.courseId,
-        title: session.title,
-        subtitle: session.subtitle,
-        description: session.description,
-        trainerName: session.trainer?.fullName,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        timezone: session.timezone,
-        meetingLink: session.meetingLink,
-        isRecurring: session.isRecurring,
-        recurrenceType: session.recurrenceType,
-        status: calculateSessionStatus(session),
-        addedAt: card.addedAt,
-        isJoined: isJoinedToday
+        ...formatted
       };
     });
 
@@ -476,57 +659,36 @@ const joinSession = async (req, res) => {
     }
 
     // Validation safeguards
-    // 1. Session is paused or ended
-    if (session.status === "paused") {
+    const now = new Date();
+    const todayStatus = calculateSessionTodayStatus(session, now);
+
+    // Block join if:
+    // - session inactive (status is not active)
+    if (session.status !== "active") {
+      return res.status(400).json({ success: false, message: `Cannot join. Session is ${session.status}.` });
+    }
+    // - session paused
+    if (todayStatus === "paused") {
       return res.status(400).json({ success: false, message: "Cannot join. Session is paused." });
     }
-    if (session.status === "ended") {
+    // - session ended
+    if (todayStatus === "ended") {
       return res.status(400).json({ success: false, message: "Cannot join. Session has permanently ended." });
     }
-
-    const todayStr = getKolkataDateString();
-
-    // 2. Today exists in cancelledDates
-    if (session.cancelledDates && session.cancelledDates.includes(todayStr)) {
+    // - session cancelled today
+    if (todayStatus === "cancelled" || todayStatus === "cancelled_today") {
       return res.status(400).json({ success: false, message: "Cannot join. Session is cancelled today." });
     }
-
-    // 3. Time validation based on session.timezone
-    const timezone = session.timezone || "Asia/Kolkata";
-    const now = new Date();
-    
-    const timeFormatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-    const timeStr = timeFormatter.format(now);
-    const [currentHours, currentMinutes] = timeStr.split(":").map(Number);
-    const currentTotalMinutes = currentHours * 60 + currentMinutes;
-
-    const [startHours, startMinutes] = session.startTime.split(":").map(Number);
-    const [endHours, endMinutes] = session.endTime.split(":").map(Number);
-    const startTotalMinutes = startHours * 60 + startMinutes;
-    const endTotalMinutes = endHours * 60 + endMinutes;
-
-    const joinOpenMinutes = startTotalMinutes - 5;
-
-    // Check non-recurring session date
-    if (!session.isRecurring) {
-      const createdDateStr = getKolkataDateString(new Date(session.createdAt));
-      if (todayStr !== createdDateStr) {
-        return res.status(400).json({ success: false, message: "Cannot join. This session is not active today." });
-      }
-    }
-
-    if (currentTotalMinutes < joinOpenMinutes) {
+    // - before join window (upcoming)
+    if (todayStatus === "upcoming") {
       return res.status(400).json({ success: false, message: "Cannot join yet. Join window is not open." });
     }
-
-    if (currentTotalMinutes > endTotalMinutes) {
+    // - after today's end time (completed_today)
+    if (todayStatus === "completed_today") {
       return res.status(400).json({ success: false, message: "Cannot join. Session has already ended for today." });
     }
+
+    const todayStr = getKolkataDateString(now);
 
     // Create or update attendance row (composite sessionId + studentId + joinDate ensures one row per student per day)
     const attendance = await prisma.attendance.upsert({
@@ -588,20 +750,15 @@ const getMyJoinedSessions = async (req, res) => {
       orderBy: { joinedAt: 'desc' }
     });
 
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
     const formattedBookings = attendances.map(att => {
       const session = att.session;
+      const formatted = formatSession(session, categoryMap, studentId);
       return {
         bookingId: att.id,
-        sessionId: session.id,
-        courseId: session.courseId,
-        title: session.title,
-        subtitle: session.subtitle,
-        description: session.description,
-        trainerName: session.trainer?.fullName,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        timezone: session.timezone,
-        meetingLink: session.meetingLink,
+        ...formatted,
         status: "joined",
         joinDate: att.joinDate,
         joinedAt: att.joinedAt

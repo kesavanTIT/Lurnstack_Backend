@@ -62,20 +62,20 @@ model Category {
 
 model LiveSession {
   id              String           @id @default(uuid())
-  courseId        String
+  courseId        String?
   trainerId       Int
   trainer         User             @relation(fields: [trainerId], references: [id])
-  title           String
+  title           String           @default("Live Session")
   subtitle        String?
   description     String?
-  startTime       String
-  endTime         String
+  startTime       String?
+  endTime         String?
   timezone        String           @default("Asia/Kolkata")
-  meetingLink     String
+  meetingLink     String?
   isRecurring     Boolean          @default(false)
   recurrenceType  String?
-  status          String           @default("published")
-  cancelledDates  String[]         @default([])
+  status          String           @default("active")
+  cancelledDates  Json?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   endedAt         DateTime?
