@@ -63,13 +63,27 @@ const getAdminSessionById = async (req, res) => {
 const updateSessionPricing = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { amountPaise, currency, trainerSharePercent, platformCommissionPercent } = req.body;
+    // Accept both camelCase variants: trainerSharePercent (legacy) and trainerSharePercentage (frontend)
+    const {
+      amountPaise,
+      currency,
+      trainerSharePercent: _trainerSharePercent,
+      trainerSharePercentage: _trainerSharePercentage,
+      platformCommissionPercent: _platformCommissionPercent,
+      platformCommissionPercentage: _platformCommissionPercentage,
+    } = req.body;
+
+    const trainerSharePercent = _trainerSharePercent ?? _trainerSharePercentage;
+    const platformCommissionPercent = _platformCommissionPercent ?? _platformCommissionPercentage;
 
     if (amountPaise === undefined || trainerSharePercent === undefined || platformCommissionPercent === undefined) {
-      return res.status(400).json({ success: false, message: "amountPaise, trainerSharePercent, and platformCommissionPercent are required." });
+      return res.status(400).json({
+        success: false,
+        message: "amountPaise, trainerSharePercent(age), and platformCommissionPercent(age) are required.",
+      });
     }
 
-    if (parseFloat(trainerSharePercent) + parseFloat(platformCommissionPercent) !== 100) {
+    if (Math.round(parseFloat(trainerSharePercent) + parseFloat(platformCommissionPercent)) !== 100) {
       return res.status(400).json({ success: false, message: "Shares must add up to 100%." });
     }
 
@@ -82,7 +96,7 @@ const updateSessionPricing = async (req, res) => {
         currency: currency || "INR",
         trainerSharePercent: parseFloat(trainerSharePercent),
         platformCommissionPercent: parseFloat(platformCommissionPercent),
-        createdByAdminId: adminId
+        createdByAdminId: adminId,
       },
       create: {
         sessionId,
@@ -91,8 +105,8 @@ const updateSessionPricing = async (req, res) => {
         trainerSharePercent: parseFloat(trainerSharePercent),
         platformCommissionPercent: parseFloat(platformCommissionPercent),
         createdByAdminId: adminId,
-        isActive: true
-      }
+        isActive: true,
+      },
     });
 
     return res.status(200).json({
@@ -102,9 +116,12 @@ const updateSessionPricing = async (req, res) => {
         sessionId: pricing.sessionId,
         amountPaise: pricing.amountPaise,
         currency: pricing.currency,
+        // Expose both name variants so frontend always resolves the field
         trainerSharePercent: pricing.trainerSharePercent,
-        platformCommissionPercent: pricing.platformCommissionPercent
-      }
+        trainerSharePercentage: pricing.trainerSharePercent,
+        platformCommissionPercent: pricing.platformCommissionPercent,
+        platformCommissionPercentage: pricing.platformCommissionPercent,
+      },
     });
   } catch (error) {
     console.error("updateSessionPricing error:", error);
@@ -180,15 +197,40 @@ const getSessionRevenue = async (req, res) => {
     }
 
     if (!session.pricing) {
-      return res.status(404).json({
-        success: false,
+      // Return zero-revenue structure instead of 404 so the frontend
+      // can show "No pricing configured" rather than a generic error.
+      return res.status(200).json({
+        success: true,
+        noPricing: true,
         message: "Pricing not configured for this session.",
+        data: {
+          sessionId: session.id,
+          classTitle: session.classTitle || session.title || session.courseTitle || "Untitled Session",
+          trainerName: session.trainer?.fullName || "-",
+          trainerEmail: session.trainer?.email || "-",
+          grossRevenue: 0,
+          trainerEarning: 0,
+          platformEarning: 0,
+          grossRevenuePaise: 0,
+          trainerEarningPaise: 0,
+          platformEarningPaise: 0,
+          sessionPricePaise: 0,
+          sessionPrice: 0,
+          currency: "INR",
+          trainerSharePercentage: 50,
+          trainerSharePercent: 50,
+          platformCommissionPercentage: 50,
+          platformCommissionPercent: 50,
+          paidStudentCount: 0,
+          payments: [],
+        },
       });
     }
 
     const pricing = session.pricing;
 
     // Fetch all captured payments for this session
+    // NOTE: orderBy on nullable paidAt uses nulls-last to avoid query errors
     const payments = await prisma.payment.findMany({
       where: {
         sessionId,
@@ -198,7 +240,7 @@ const getSessionRevenue = async (req, res) => {
         student: { select: { id: true, fullName: true, email: true } },
         booking: { select: { id: true, sessionDate: true, status: true } },
       },
-      orderBy: { paidAt: "desc" },
+      orderBy: { createdAt: "desc" },
     });
 
     // Aggregate revenue figures
@@ -235,12 +277,14 @@ const getSessionRevenue = async (req, res) => {
         trainerEarningPaise,
         platformEarningPaise,
 
-        // Pricing config
+        // Pricing config — expose both name variants for frontend compatibility
         sessionPricePaise: pricing.amountPaise,
         sessionPrice: pricing.amountPaise / 100,
         currency: pricing.currency || "INR",
         trainerSharePercentage: trainerSharePercent,
+        trainerSharePercent,
         platformCommissionPercentage: platformCommissionPercent,
+        platformCommissionPercent,
 
         // Student count
         paidStudentCount,
