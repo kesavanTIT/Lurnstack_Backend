@@ -749,8 +749,10 @@ const getMySessionCards = async (req, res) => {
 const joinSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
+    const { occurrenceDate, sessionDate } = req.body || {};
     const studentId = parseInt(req.user.id);
 
+    // 1. Load session by sessionId
     const session = await prisma.liveSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -766,43 +768,21 @@ const joinSession = async (req, res) => {
       return res.status(404).json({ success: false, message: "Session not found." });
     }
 
-    const pricing = session.pricing || null;
-    const paymentRequired = pricing ? pricing.isActive : false;
-
-    // Validation safeguards
-    const now = new Date();
-    const todayStatus = calculateSessionTodayStatus(session, now);
-
-    // Block join if:
-    // - session inactive (status is not active)
+    // 2. Validate session status is published/active
     if (session.status !== "active") {
       return res.status(400).json({ success: false, message: `Cannot join. Session is ${session.status}.` });
     }
-    // - session paused
-    if (todayStatus === "paused") {
-      return res.status(400).json({ success: false, message: "Cannot join. Session is paused." });
-    }
-    // - session ended
-    if (todayStatus === "ended") {
-      return res.status(400).json({ success: false, message: "Cannot join. Session has permanently ended." });
-    }
-    // - session cancelled today
-    if (todayStatus === "cancelled" || todayStatus === "cancelled_today") {
-      return res.status(400).json({ success: false, message: "Cannot join. Session is cancelled today." });
-    }
-    // - outside the valid execution time window (upcoming or completed_today)
-    if (todayStatus === "upcoming" || todayStatus === "completed_today") {
-      return res.status(400).json({
-        success: false,
-        message: `Session is not active now. Class starts at ${session.startTime} and ends at ${session.endTime}`
-      });
-    }
+
+    const pricing = session.pricing || null;
+    const paymentRequired = pricing ? pricing.isActive : false;
 
     // Check paid booking
+    const now = new Date();
+    const todayStrKolkata = getKolkataDateString(now);
+    
     if (paymentRequired) {
-      const todayStr = getKolkataDateString(now);
       const hasPaidBooking = session.billingBookings.some(b => {
-        return b.status === "paid" && getKolkataDateString(new Date(b.sessionDate)) === todayStr;
+        return b.status === "paid" && getKolkataDateString(new Date(b.sessionDate)) === todayStrKolkata;
       });
       if (!hasPaidBooking) {
         return res.status(400).json({
@@ -812,60 +792,90 @@ const joinSession = async (req, res) => {
       }
     }
 
-    // --- NEW ATTENDANCE LOGIC ---
-    // Look for an active or scheduled SessionOccurrence for this sessionId
-    // where the current system time falls within or immediately around the class window.
-    const bufferTime = new Date(now.getTime() + 15 * 60 * 1000); // 15 mins before start buffer
+    // 3. Determine occurrence date
+    const targetDateStr = occurrenceDate || sessionDate || todayStrKolkata;
+    const targetDate = new Date(targetDateStr);
+
+    // 4. Find occurrence by sessionId and occurrenceDate
     let occurrence = await prisma.sessionOccurrence.findFirst({
       where: {
         sessionId: sessionId,
-        startsAt: { lte: bufferTime },
-        endsAt: { gte: now }
-      },
-      orderBy: { startsAt: "asc" }
+        occurrenceDate: targetDate
+      }
     });
 
+    // 5. If occurrence does not exist but session is valid for that date, create it
     if (!occurrence) {
-      if (session.isRecurring) {
-        // Automatically create/resolve today's occurrence row
-        const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
-        const todayStr = getKolkataDateString(now);
+      const startsAt = session.startTime ? getKolkataDateTime(targetDateStr, session.startTime) : null;
+      const endsAt = session.endTime ? getKolkataDateTime(targetDateStr, session.endTime) : null;
+      
+      if (!startsAt || !endsAt) {
+        return res.status(400).json({ success: false, message: "Session schedule is invalid." });
+      }
 
-        occurrence = await prisma.sessionOccurrence.upsert({
-          where: {
-            sessionId_occurrenceDate: {
-              sessionId: sessionId,
-              occurrenceDate: new Date(todayStr)
-            }
-          },
-          update: {},
-          create: {
-            sessionId: session.id,
-            trainerId: session.trainerId,
-            courseId: session.courseId || "",
-            occurrenceDate: new Date(todayStr),
-            startsAt: scheduledAt,
-            endsAt: endsAt,
-            status: "scheduled"
+      occurrence = await prisma.sessionOccurrence.upsert({
+        where: {
+          sessionId_occurrenceDate: {
+            sessionId: sessionId,
+            occurrenceDate: targetDate
           }
-        });
-      }
+        },
+        update: {},
+        create: {
+          sessionId: session.id,
+          trainerId: session.trainerId,
+          courseId: session.courseId || "",
+          occurrenceDate: targetDate,
+          startsAt: startsAt,
+          endsAt: endsAt,
+          status: "scheduled"
+        }
+      });
+    }
 
-      if (!occurrence) {
-        return res.status(400).json({ success: false, message: "No active session occurrence found at this time." });
+    // 6. Use server time in Asia/Kolkata to check window
+    const bufferStartsAt = new Date(occurrence.startsAt.getTime() - 5 * 60 * 1000); // 5 mins before
+    if (now < bufferStartsAt || now > occurrence.endsAt) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Session is not active now. Class starts at ${session.startTime} and ends at ${session.endTime}` 
+      });
+    }
+
+    // 7 & 8 & 9. Create/update attendance using unique key
+    const graceMinutes = 10;
+    const graceEndTime = new Date(occurrence.startsAt.getTime() + graceMinutes * 60 * 1000);
+
+    const existingAttendance = await prisma.studentAttendance.findUnique({
+      where: {
+        occurrenceId_studentId: {
+          occurrenceId: occurrence.id,
+          studentId: studentId
+        }
+      }
+    });
+
+    let status = "present";
+    let firstJoinedAt = now;
+    let joinCount = 1;
+
+    if (existingAttendance) {
+      firstJoinedAt = existingAttendance.firstJoinedAt;
+      joinCount = existingAttendance.joinCount + 1;
+      // status rule: if firstJoinedAt <= startsAt + graceMinutes: present else late
+      if (firstJoinedAt <= graceEndTime) {
+        status = "present";
+      } else {
+        status = "late";
+      }
+    } else {
+      if (now <= graceEndTime) {
+        status = "present";
+      } else {
+        status = "late";
       }
     }
 
-    // Calculate attendance status using the 10-minute grace time logic
-    const graceEndTime = new Date(occurrence.startsAt.getTime() + 10 * 60 * 1000);
-    let attendanceStatus = "absent";
-    if (now <= graceEndTime) {
-      attendanceStatus = "present";
-    } else if (now <= occurrence.endsAt) {
-      attendanceStatus = "late";
-    }
-
-    // Upsert the StudentAttendance record
     const studentAttendance = await prisma.studentAttendance.upsert({
       where: {
         occurrenceId_studentId: {
@@ -875,7 +885,8 @@ const joinSession = async (req, res) => {
       },
       update: {
         lastJoinedAt: now,
-        joinCount: { increment: 1 }
+        joinCount: joinCount,
+        status: status
       },
       create: {
         courseId: occurrence.courseId || session.courseId || "",
@@ -884,50 +895,51 @@ const joinSession = async (req, res) => {
         occurrenceDate: occurrence.occurrenceDate,
         studentId: studentId,
         trainerId: occurrence.trainerId,
-        firstJoinedAt: now,
+        firstJoinedAt: firstJoinedAt,
         lastJoinedAt: now,
-        joinCount: 1,
-        status: attendanceStatus,
+        joinCount: joinCount,
+        status: status,
         source: "join_button"
       }
     });
 
-    const todayStr = getKolkataDateString(now);
-
     // Keep legacy attendance row for backwards compatibility
-    const attendance = await prisma.attendance.upsert({
+    await prisma.attendance.upsert({
       where: {
         sessionId_studentId_joinDate: {
           sessionId,
           studentId,
-          joinDate: todayStr
+          joinDate: targetDateStr
         }
       },
       update: {
         status: "joined",
-        joinedAt: new Date()
+        joinedAt: now
       },
       create: {
         sessionId,
         studentId,
-        joinDate: todayStr,
+        joinDate: targetDateStr,
         status: "joined",
-        joinedAt: new Date()
+        joinedAt: now
       }
     });
 
+    // 10. Return meeting link and attendance
     res.status(200).json({
       success: true,
-      message: "Successfully joined the session!",
-      meetLink: session.meetingLink, // Keep legacy property name in outer response if frontend references meetLink
-      meetingLink: session.meetingLink,
+      message: "Attendance recorded",
       data: {
-        attendanceId: attendance.id,
-        sessionId: attendance.sessionId,
-        studentId: `student_${attendance.studentId}`,
+        sessionId: session.id,
+        occurrenceId: occurrence.id,
         meetingLink: session.meetingLink,
-        joinDate: attendance.joinDate,
-        joinedAt: attendance.joinedAt
+        joinedAt: now.toISOString(),
+        attendance: {
+          status: studentAttendance.status,
+          firstJoinedAt: studentAttendance.firstJoinedAt.toISOString(),
+          lastJoinedAt: studentAttendance.lastJoinedAt.toISOString(),
+          joinCount: studentAttendance.joinCount
+        }
       }
     });
   } catch (error) {
