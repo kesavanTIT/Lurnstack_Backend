@@ -1312,7 +1312,16 @@ const getStudentAttendance = async (req, res) => {
       orderBy: { occurrenceDate: "desc" }
     });
 
-    return res.status(200).json({ success: true, data: attendance });
+    const formattedData = attendance.map(a => ({
+      attendanceId: a.id,
+      sessionTitle: a.session?.title || "Unknown Session",
+      firstJoinedAt: a.firstJoinedAt,
+      lastJoinedAt: a.lastJoinedAt,
+      joinCount: a.joinCount,
+      status: a.status === 'joined' ? 'present' : a.status
+    }));
+
+    return res.status(200).json({ success: true, data: formattedData });
   } catch (error) {
     console.error("Get Student Attendance Error:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch student attendance." });

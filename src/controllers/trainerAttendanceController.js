@@ -17,7 +17,7 @@ const getCourseAttendanceSummary = async (req, res) => {
     });
 
     const summary = occurrences.map(occ => {
-      const presentCount = occ.attendances.filter(a => a.status === "present").length;
+      const presentCount = occ.attendances.filter(a => a.status === "present" || a.status === "joined").length;
       const lateCount = occ.attendances.filter(a => a.status === "late").length;
       const absentCount = occ.attendances.filter(a => a.status === "absent").length;
       return {
@@ -51,7 +51,17 @@ const getSessionAttendance = async (req, res) => {
       orderBy: { occurrenceDate: "desc" }
     });
 
-    return res.status(200).json({ success: true, data: attendances });
+    const formattedData = attendances.map(a => ({
+      attendanceId: a.id,
+      name: a.student?.fullName || "Unknown",
+      email: a.student?.email || "N/A",
+      firstJoinedAt: a.firstJoinedAt,
+      lastJoinedAt: a.lastJoinedAt,
+      joinCount: a.joinCount,
+      status: a.status === 'joined' ? 'present' : a.status
+    }));
+
+    return res.status(200).json({ success: true, data: formattedData });
   } catch (error) {
     console.error("Trainer Session Attendance Error:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch session attendance." });
@@ -71,7 +81,12 @@ const getStudentAttendanceInCourse = async (req, res) => {
       orderBy: { occurrenceDate: "desc" }
     });
 
-    return res.status(200).json({ success: true, data: attendances });
+    const formattedData = attendances.map(a => ({
+      ...a,
+      status: a.status === 'joined' ? 'present' : a.status
+    }));
+
+    return res.status(200).json({ success: true, data: formattedData });
   } catch (error) {
     console.error("Trainer Student Attendance In Course Error:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch student attendance." });
@@ -101,7 +116,7 @@ const getAttendanceEligibility = async (req, res) => {
         };
       }
       studentMap[a.studentId].total += 1;
-      if (a.status === "present" || a.status === "late") {
+      if (a.status === "present" || a.status === "joined" || a.status === "late") {
         studentMap[a.studentId].attended += 1;
       }
     });

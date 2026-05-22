@@ -36,13 +36,14 @@ const getAttendanceOverview = async (req, res) => {
     
     let presentCount = 0, lateCount = 0, absentCount = 0;
     grouped.forEach(g => {
-      if (g.status === "present") presentCount = g._count.id;
-      if (g.status === "late") lateCount = g._count.id;
-      if (g.status === "absent") absentCount = g._count.id;
+      if (g.status === "present" || g.status === "joined") presentCount += g._count.id;
+      else if (g.status === "late") lateCount += g._count.id;
+      else if (g.status === "absent") absentCount += g._count.id;
     });
     
-    const total = presentCount + lateCount + absentCount;
-    const averageAttendancePercentage = total > 0 ? ((presentCount + lateCount) / total) * 100 : 0;
+    const attendedCount = presentCount + lateCount;
+    const total = attendedCount + absentCount;
+    const averageAttendancePercentage = total > 0 ? (attendedCount / total) * 100 : 0;
     
     // Get top level counts
     const totalCoursesArray = await prisma.liveSession.findMany({ distinct: ['courseId'], select: { courseId: true } });
@@ -51,7 +52,63 @@ const getAttendanceOverview = async (req, res) => {
     const totalTrainers = await prisma.user.count({ where: { role: 'TRAINER' } });
     const totalStudents = await prisma.user.count({ where: { role: 'STUDENT' } });
     const totalSessions = await prisma.sessionOccurrence.count({ where: filter });
+    const completedSessions = await prisma.sessionOccurrence.count({ where: { ...filter, status: 'completed' } });
     
+    // Course-wise summary
+    const occurrences = await prisma.sessionOccurrence.findMany({
+      where: filter,
+      include: {
+        session: { select: { courseTitle: true } },
+        trainer: { select: { id: true, fullName: true } },
+        attendances: true
+      }
+    });
+
+    const courseMap = {};
+    occurrences.forEach(occ => {
+      if (!courseMap[occ.courseId]) {
+        courseMap[occ.courseId] = {
+          courseId: occ.courseId,
+          courseTitle: occ.session?.courseTitle || "Unknown Course",
+          trainerId: occ.trainerId,
+          trainerName: occ.trainer?.fullName || "Unassigned",
+          totalStudents: 0,
+          totalSessions: 0,
+          completedSessions: 0,
+          presentCount: 0,
+          lateCount: 0,
+          absentCount: 0,
+          uniqueStudents: new Set()
+        };
+      }
+      
+      const c = courseMap[occ.courseId];
+      c.totalSessions += 1;
+      if (occ.status === "completed") c.completedSessions += 1;
+      
+      occ.attendances.forEach(a => {
+        c.uniqueStudents.add(a.studentId);
+        if (a.status === "present" || a.status === "joined") c.presentCount += 1;
+        else if (a.status === "late") c.lateCount += 1;
+        else if (a.status === "absent") c.absentCount += 1;
+      });
+    });
+
+    const courses = Object.values(courseMap).map(c => {
+      const cTotal = c.presentCount + c.lateCount + c.absentCount;
+      const cAttended = c.presentCount + c.lateCount;
+      return {
+        courseId: c.courseId,
+        courseTitle: c.courseTitle,
+        trainerId: c.trainerId,
+        trainerName: c.trainerName,
+        totalStudents: c.uniqueStudents.size,
+        totalSessions: c.totalSessions,
+        completedSessions: c.completedSessions,
+        attendancePercentage: cTotal > 0 ? parseFloat(((cAttended / cTotal) * 100).toFixed(2)) : 0
+      };
+    });
+
     return res.status(200).json({
       success: true,
       data: {
@@ -59,10 +116,13 @@ const getAttendanceOverview = async (req, res) => {
         totalTrainers,
         totalStudents,
         totalSessions,
+        completedSessions,
         presentCount,
         lateCount,
         absentCount,
-        averageAttendancePercentage: parseFloat(averageAttendancePercentage.toFixed(2))
+        attendedCount,
+        averageAttendancePercentage: parseFloat(averageAttendancePercentage.toFixed(2)),
+        courses
       }
     });
   } catch (error) {
@@ -88,7 +148,12 @@ const getTrainerAttendanceAdmin = async (req, res) => {
       orderBy: { occurrenceDate: "desc" }
     });
 
-    return res.status(200).json({ success: true, data: attendances });
+    const formattedData = attendances.map(a => ({
+      ...a,
+      status: a.status === 'joined' ? 'present' : a.status
+    }));
+
+    return res.status(200).json({ success: true, data: formattedData });
   } catch (error) {
     console.error("Admin Trainer Attendance Error:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch trainer attendance." });
@@ -124,7 +189,7 @@ const getAllCoursesAttendance = async (req, res) => {
       courseMap[occ.courseId].totalOccurrences += 1;
       
       occ.attendances.forEach(a => {
-        if (a.status === "present") courseMap[occ.courseId].presentCount += 1;
+        if (a.status === "present" || a.status === "joined") courseMap[occ.courseId].presentCount += 1;
         else if (a.status === "late") courseMap[occ.courseId].lateCount += 1;
         else if (a.status === "absent") courseMap[occ.courseId].absentCount += 1;
       });
@@ -160,7 +225,7 @@ const getCourseAttendanceSummaryAdmin = async (req, res) => {
     });
 
     const summary = occurrences.map(occ => {
-      const presentCount = occ.attendances.filter(a => a.status === "present").length;
+      const presentCount = occ.attendances.filter(a => a.status === "present" || a.status === "joined").length;
       const lateCount = occ.attendances.filter(a => a.status === "late").length;
       const absentCount = occ.attendances.filter(a => a.status === "absent").length;
       return {
@@ -199,17 +264,49 @@ const getSessionAttendanceAdmin = async (req, res) => {
       orderBy: { occurrenceDate: "desc" }
     });
     
-    const formattedData = attendances.map(a => ({
-      attendanceId: a.id,
-      name: a.student?.fullName || "Unknown",
-      email: a.student?.email || "N/A",
-      firstJoinedAt: a.firstJoinedAt,
-      lastJoinedAt: a.lastJoinedAt,
-      joinCount: a.joinCount,
-      status: a.status
-    }));
+    let presentCount = 0, lateCount = 0, absentCount = 0;
+    
+    const students = attendances.map(a => {
+      const status = (a.status === 'joined') ? 'present' : a.status;
+      if (status === "present") presentCount++;
+      else if (status === "late") lateCount++;
+      else if (status === "absent") absentCount++;
+      
+      return {
+        attendanceId: a.id,
+        studentId: a.studentId,
+        fullName: a.student?.fullName || "Unknown",
+        email: a.student?.email || "N/A",
+        firstJoinedAt: a.firstJoinedAt,
+        lastJoinedAt: a.lastJoinedAt,
+        joinCount: a.joinCount,
+        status: status
+      };
+    });
 
-    return res.status(200).json({ success: true, data: formattedData });
+    const attendedCount = presentCount + lateCount;
+    const totalStudents = students.length;
+    const attendancePercentage = totalStudents > 0 ? parseFloat(((attendedCount / totalStudents) * 100).toFixed(2)) : 0;
+    
+    // Fetch session title if available
+    const session = await prisma.liveSession.findUnique({
+      where: { id: sessionId },
+      select: { title: true }
+    });
+
+    const responseData = {
+      sessionId: sessionId,
+      sessionTitle: session?.title || "Unknown Session",
+      totalStudents: totalStudents,
+      presentCount: presentCount,
+      lateCount: lateCount,
+      absentCount: absentCount,
+      attendedCount: attendedCount,
+      attendancePercentage: attendancePercentage,
+      students: students
+    };
+
+    return res.status(200).json({ success: true, data: responseData });
   } catch (error) {
     console.error("Admin Session Attendance Error:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch session attendance." });
