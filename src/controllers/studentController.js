@@ -1296,6 +1296,29 @@ const getSessionAttendance = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// @desc    Get All Attendance for Student
+// @route   GET /api/student/attendance
+// ─────────────────────────────────────────────
+const getStudentAttendance = async (req, res) => {
+  try {
+    const studentId = parseInt(req.user.id);
+    const attendance = await prisma.studentAttendance.findMany({
+      where: { studentId },
+      include: {
+        occurrence: true,
+        session: { select: { title: true, courseId: true } }
+      },
+      orderBy: { occurrenceDate: "desc" }
+    });
+
+    return res.status(200).json({ success: true, data: attendance });
+  } catch (error) {
+    console.error("Get Student Attendance Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch student attendance." });
+  }
+};
+
 module.exports = {
   getAllLiveClasses,
   getLiveClassById,
@@ -1311,6 +1334,7 @@ module.exports = {
   verifyPayment,
   getStudentPayments,
   getCourseAttendance,
-  getSessionAttendance
+  getSessionAttendance,
+  getStudentAttendance
 };
 

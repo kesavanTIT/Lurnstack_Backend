@@ -49,6 +49,9 @@ router.get("/me/session-cards", getMySessionCards);
 // @route   POST /api/student/sessions/:sessionId/join
 router.post("/sessions/:sessionId/join", joinSession);
 
+// @route   GET /api/student/attendance
+router.get("/attendance", require("../controllers/studentController").getStudentAttendance);
+
 // @route   GET /api/student/courses/:courseId/attendance
 router.get("/courses/:courseId/attendance", require("../controllers/studentController").getCourseAttendance);
 

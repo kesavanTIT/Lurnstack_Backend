@@ -34,24 +34,35 @@ const getAttendanceOverview = async (req, res) => {
       }
     });
     
-    let present = 0, late = 0, absent = 0;
+    let presentCount = 0, lateCount = 0, absentCount = 0;
     grouped.forEach(g => {
-      if (g.status === "present") present = g._count.id;
-      if (g.status === "late") late = g._count.id;
-      if (g.status === "absent") absent = g._count.id;
+      if (g.status === "present") presentCount = g._count.id;
+      if (g.status === "late") lateCount = g._count.id;
+      if (g.status === "absent") absentCount = g._count.id;
     });
     
-    const total = present + late + absent;
-    const averageAttendancePercent = total > 0 ? ((present + late) / total) * 100 : 0;
+    const total = presentCount + lateCount + absentCount;
+    const averageAttendancePercentage = total > 0 ? ((presentCount + lateCount) / total) * 100 : 0;
+    
+    // Get top level counts
+    const totalCoursesArray = await prisma.liveSession.findMany({ distinct: ['courseId'], select: { courseId: true } });
+    const totalCourses = totalCoursesArray.filter(c => c.courseId).length;
+    
+    const totalTrainers = await prisma.user.count({ where: { role: 'TRAINER' } });
+    const totalStudents = await prisma.user.count({ where: { role: 'STUDENT' } });
+    const totalSessions = await prisma.sessionOccurrence.count({ where: filter });
     
     return res.status(200).json({
       success: true,
       data: {
-        present,
-        late,
-        absent,
-        total,
-        averageAttendancePercent: parseFloat(averageAttendancePercent.toFixed(2))
+        totalCourses,
+        totalTrainers,
+        totalStudents,
+        totalSessions,
+        presentCount,
+        lateCount,
+        absentCount,
+        averageAttendancePercentage: parseFloat(averageAttendancePercentage.toFixed(2))
       }
     });
   } catch (error) {
@@ -187,8 +198,18 @@ const getSessionAttendanceAdmin = async (req, res) => {
       },
       orderBy: { occurrenceDate: "desc" }
     });
+    
+    const formattedData = attendances.map(a => ({
+      attendanceId: a.id,
+      name: a.student?.fullName || "Unknown",
+      email: a.student?.email || "N/A",
+      firstJoinedAt: a.firstJoinedAt,
+      lastJoinedAt: a.lastJoinedAt,
+      joinCount: a.joinCount,
+      status: a.status
+    }));
 
-    return res.status(200).json({ success: true, data: attendances });
+    return res.status(200).json({ success: true, data: formattedData });
   } catch (error) {
     console.error("Admin Session Attendance Error:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch session attendance." });
