@@ -1,12 +1,100 @@
 const prisma = require("../config/db");
 
+// Helper for parsing global attendance filters
+const buildGlobalFilters = (query) => {
+  const { trainerId, courseId, studentId, status, startDate, endDate } = query;
+  const filter = {};
+
+  if (trainerId) filter.trainerId = parseInt(trainerId);
+  if (courseId) filter.courseId = courseId;
+  if (studentId) filter.studentId = parseInt(studentId);
+  if (status) filter.status = status;
+
+  if (startDate || endDate) {
+    filter.occurrenceDate = {};
+    if (startDate) filter.occurrenceDate.gte = new Date(startDate);
+    if (endDate) filter.occurrenceDate.lte = new Date(endDate);
+  }
+
+  return filter;
+};
+
+// @desc    Get global overview (metrics)
+// @route   GET /api/admin/attendance/overview
+const getAttendanceOverview = async (req, res) => {
+  try {
+    const filter = buildGlobalFilters(req.query);
+    
+    // Group by status to calculate metrics
+    const grouped = await prisma.studentAttendance.groupBy({
+      by: ['status'],
+      where: filter,
+      _count: {
+        id: true
+      }
+    });
+    
+    let present = 0, late = 0, absent = 0;
+    grouped.forEach(g => {
+      if (g.status === "present") present = g._count.id;
+      if (g.status === "late") late = g._count.id;
+      if (g.status === "absent") absent = g._count.id;
+    });
+    
+    const total = present + late + absent;
+    const averageAttendancePercent = total > 0 ? ((present + late) / total) * 100 : 0;
+    
+    return res.status(200).json({
+      success: true,
+      data: {
+        present,
+        late,
+        absent,
+        total,
+        averageAttendancePercent: parseFloat(averageAttendancePercent.toFixed(2))
+      }
+    });
+  } catch (error) {
+    console.error("Admin Attendance Overview Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch attendance overview." });
+  }
+};
+
+// @desc    Get trainer attendance
+// @route   GET /api/admin/trainers/:trainerId/attendance
+const getTrainerAttendanceAdmin = async (req, res) => {
+  try {
+    const { trainerId } = req.params;
+    const filter = buildGlobalFilters(req.query);
+    filter.trainerId = parseInt(trainerId);
+    
+    const attendances = await prisma.studentAttendance.findMany({
+      where: filter,
+      include: { 
+        student: { select: { id: true, fullName: true, email: true } }, 
+        occurrence: true 
+      },
+      orderBy: { occurrenceDate: "desc" }
+    });
+
+    return res.status(200).json({ success: true, data: attendances });
+  } catch (error) {
+    console.error("Admin Trainer Attendance Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch trainer attendance." });
+  }
+};
+
 // @desc    Get attendance summary for all courses
 // @route   GET /api/admin/attendance/courses
 const getAllCoursesAttendance = async (req, res) => {
   try {
+    const filter = buildGlobalFilters(req.query);
+    
     const occurrences = await prisma.sessionOccurrence.findMany({
       include: {
-        attendances: true
+        attendances: {
+          where: filter
+        }
       }
     });
 
@@ -43,12 +131,19 @@ const getAllCoursesAttendance = async (req, res) => {
 const getCourseAttendanceSummaryAdmin = async (req, res) => {
   try {
     const { courseId } = req.params;
+    const filter = buildGlobalFilters(req.query);
+    
+    const occFilter = { courseId };
+    if (filter.occurrenceDate) occFilter.occurrenceDate = filter.occurrenceDate;
+    if (filter.trainerId) occFilter.trainerId = filter.trainerId;
 
     const occurrences = await prisma.sessionOccurrence.findMany({
-      where: { courseId },
+      where: occFilter,
       orderBy: { startsAt: "desc" },
       include: {
-        attendances: true,
+        attendances: {
+          where: filter
+        },
         trainer: { select: { id: true, fullName: true, email: true } }
       }
     });
@@ -81,9 +176,11 @@ const getCourseAttendanceSummaryAdmin = async (req, res) => {
 const getSessionAttendanceAdmin = async (req, res) => {
   try {
     const { sessionId } = req.params;
+    const filter = buildGlobalFilters(req.query);
+    filter.sessionId = sessionId;
 
     const attendances = await prisma.studentAttendance.findMany({
-      where: { sessionId },
+      where: filter,
       include: { 
         student: { select: { id: true, fullName: true, email: true } }, 
         occurrence: true 
@@ -103,9 +200,11 @@ const getSessionAttendanceAdmin = async (req, res) => {
 const getStudentAttendanceAdmin = async (req, res) => {
   try {
     const { studentId } = req.params;
+    const filter = buildGlobalFilters(req.query);
+    filter.studentId = parseInt(studentId);
 
     const attendances = await prisma.studentAttendance.findMany({
-      where: { studentId: parseInt(studentId) },
+      where: filter,
       include: { occurrence: true },
       orderBy: { occurrenceDate: "desc" }
     });
@@ -145,6 +244,8 @@ const updateAttendanceRecord = async (req, res) => {
 };
 
 module.exports = {
+  getAttendanceOverview,
+  getTrainerAttendanceAdmin,
   getAllCoursesAttendance,
   getCourseAttendanceSummaryAdmin,
   getSessionAttendanceAdmin,

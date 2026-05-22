@@ -55,7 +55,7 @@ cron.schedule('*/5 * * * *', async () => {
             studentId: studentId,
             trainerId: occurrence.trainerId,
             status: "absent",
-            source: "system_job",
+            source: "system_finalized",
             finalizedAt: now
           });
         }

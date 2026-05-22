@@ -30,6 +30,8 @@ const {
   updatePaymentSettings,
 } = require("../controllers/adminPaymentController");
 const {
+  getAttendanceOverview,
+  getTrainerAttendanceAdmin,
   getAllCoursesAttendance,
   getCourseAttendanceSummaryAdmin,
   getSessionAttendanceAdmin,
@@ -80,9 +82,11 @@ router.post("/payments/:paymentId/refund", refundPayment);
 router.patch("/payment-settings", updatePaymentSettings);
 
 // ── Admin Attendance Endpoints ────────────────────
+router.get("/attendance/overview", getAttendanceOverview);
 router.get("/attendance/courses", getAllCoursesAttendance);
 router.get("/courses/:courseId/attendance-summary", getCourseAttendanceSummaryAdmin);
 router.get("/sessions/:sessionId/attendance", getSessionAttendanceAdmin);
+router.get("/trainers/:trainerId/attendance", getTrainerAttendanceAdmin);
 router.get("/students/:studentId/attendance", getStudentAttendanceAdmin);
 router.patch("/attendance/:attendanceId", updateAttendanceRecord);
 

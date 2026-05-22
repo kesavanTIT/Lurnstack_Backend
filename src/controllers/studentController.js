@@ -862,8 +862,10 @@ const joinSession = async (req, res) => {
     if (existingAttendance) {
       firstJoinedAt = existingAttendance.firstJoinedAt;
       joinCount = existingAttendance.joinCount + 1;
-      // status rule: if firstJoinedAt <= startsAt + graceMinutes: present else late
-      if (firstJoinedAt <= graceEndTime) {
+      // CRITICAL REJOIN RULE: do NOT downgrade status if already present
+      if (existingAttendance.status === 'present') {
+        status = 'present';
+      } else if (firstJoinedAt <= graceEndTime) {
         status = "present";
       } else {
         status = "late";
