@@ -101,6 +101,10 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   try {
     const prisma = require("./config/db");
+
+    // Initialize scheduled jobs
+    require("./jobs/attendanceJob");
+
     
     // Self-healing: Ensure 'updatedAt' column exists if migration skipped it
     console.log("🛠️ Checking database schema consistency...");

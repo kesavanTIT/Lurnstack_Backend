@@ -29,6 +29,14 @@ const {
   refundPayment,
   updatePaymentSettings,
 } = require("../controllers/adminPaymentController");
+const {
+  getAllCoursesAttendance,
+  getCourseAttendanceSummaryAdmin,
+  getSessionAttendanceAdmin,
+  getStudentAttendanceAdmin,
+  updateAttendanceRecord
+} = require("../controllers/adminAttendanceController");
+
 const { protect, isAdmin } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
 
@@ -70,5 +78,12 @@ router.post("/trainer-earnings/:earningId/mark-paid", markTrainerEarningPaid);
 router.post("/trainer-earnings/:earningId/hold", toggleTrainerEarningHold);
 router.post("/payments/:paymentId/refund", refundPayment);
 router.patch("/payment-settings", updatePaymentSettings);
+
+// ── Admin Attendance Endpoints ────────────────────
+router.get("/attendance/courses", getAllCoursesAttendance);
+router.get("/courses/:courseId/attendance-summary", getCourseAttendanceSummaryAdmin);
+router.get("/sessions/:sessionId/attendance", getSessionAttendanceAdmin);
+router.get("/students/:studentId/attendance", getStudentAttendanceAdmin);
+router.patch("/attendance/:attendanceId", updateAttendanceRecord);
 
 module.exports = router;

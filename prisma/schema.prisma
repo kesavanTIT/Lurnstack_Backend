@@ -2,7 +2,7 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
 }
 
@@ -25,11 +25,13 @@ model User {
   sessionBookings SessionBooking[]
   attendances     Attendance[]
   bookings        Booking[]        @relation(name: "UserBookingRelation")
-  payments        Payment[]        @relation(name: "UserPaymentRelation")
-  trainerEarnings TrainerEarning[] @relation(name: "TrainerEarningRelation")
-  trainerPayouts  TrainerPayout[]  @relation(name: "TrainerPayoutRelation")
+  payments                  Payment[]           @relation(name: "UserPaymentRelation")
+  trainerEarnings           TrainerEarning[]    @relation(name: "TrainerEarningRelation")
+  trainerPayouts            TrainerPayout[]     @relation(name: "TrainerPayoutRelation")
+  trainerOccurrences        SessionOccurrence[] @relation(name: "TrainerSessionOccurrence")
+  studentAttendances        StudentAttendance[] @relation(name: "StudentAttendance")
+  trainerStudentAttendances StudentAttendance[] @relation(name: "TrainerStudentAttendance")
 }
-
 
 enum Role {
   STUDENT
@@ -38,21 +40,21 @@ enum Role {
 }
 
 model LiveClass {
-  id              Int      @id @default(autoincrement())
+  id              Int       @id @default(autoincrement())
   courseName      String
   classTitle      String
   instructor      String
   description     String?
   scheduledAt     DateTime? // Combined date and time for robust sorting/filtering
-  durationMinutes Int?      // Duration in minutes for easier calculations
+  durationMinutes Int? // Duration in minutes for easier calculations
   date            String
   time            String
   duration        String
   meetLink        String
   thumbnail       String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @default(now()) @updatedAt
-  isRecurring     Boolean  @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
+  isRecurring     Boolean   @default(false)
   recurrenceType  String?
 }
 
@@ -66,25 +68,25 @@ model Category {
 }
 
 model LiveSession {
-  id              String           @id @default(uuid())
-  courseId        String?
-  trainerId       Int
-  trainer         User             @relation(fields: [trainerId], references: [id])
-  title           String           @default("Live Session")
-  subtitle        String?
-  description     String?
-  startTime       String?
-  endTime         String?
-  timezone        String           @default("Asia/Kolkata")
-  meetingLink     String?
-  isRecurring     Boolean          @default(false)
-  recurrenceType  String?
-  status          String           @default("active")
-  cancelledDates  Json?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  endedAt         DateTime?
-  
+  id             String    @id @default(uuid())
+  courseId       String?
+  trainerId      Int
+  trainer        User      @relation(fields: [trainerId], references: [id])
+  title          String    @default("Live Session")
+  subtitle       String?
+  description    String?
+  startTime      String?
+  endTime        String?
+  timezone       String    @default("Asia/Kolkata")
+  meetingLink    String?
+  isRecurring    Boolean   @default(false)
+  recurrenceType String?
+  status         String    @default("active")
+  cancelledDates Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  endedAt        DateTime?
+
   // Preserving legacy columns to avoid data loss
   courseTitle     String?
   category        String?
@@ -95,25 +97,26 @@ model LiveSession {
   endsAt          String?
   durationMinutes Int?
 
-  cards           SessionCard[]
-  bookings        SessionBooking[]
-  attendances     Attendance[]
-  
+  cards       SessionCard[]
+  bookings    SessionBooking[]
+  attendances Attendance[]
+
   // Pricing fields added for new pricing flow
   priceInPaise                 Int?
-  trainerSharePercentage       Float            @default(50)
-  platformCommissionPercentage Float            @default(50)
+  trainerSharePercentage       Float @default(50)
+  platformCommissionPercentage Float @default(50)
 
   pricing         SessionPricing?  @relation(name: "SessionPricingRelation")
   billingBookings Booking[]        @relation(name: "SessionBookingRelation")
   payments        Payment[]        @relation(name: "SessionPaymentRelation")
   trainerEarnings TrainerEarning[] @relation(name: "SessionEarningRelation")
   trainerPayouts  TrainerPayout[]  @relation(name: "SessionPayoutRelation")
+  occurrences        SessionOccurrence[]
+  studentAttendances StudentAttendance[]
 }
 
-
 model SessionCard {
-  id        String   @id @default(uuid())
+  id        String      @id @default(uuid())
   sessionId String
   studentId Int
   session   LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -124,7 +127,7 @@ model SessionCard {
 }
 
 model SessionBooking {
-  id          String   @id @default(uuid())
+  id          String      @id @default(uuid())
   sessionId   String
   studentId   Int
   session     LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -136,14 +139,14 @@ model SessionBooking {
 }
 
 model Attendance {
-  id          String      @id @default(uuid())
-  sessionId   String
-  studentId   Int
-  session     LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  student     User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  joinDate    String      // YYYY-MM-DD
-  joinedAt    DateTime    @default(now())
-  status      String      @default("joined")
+  id        String      @id @default(uuid())
+  sessionId String
+  studentId Int
+  session   LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student   User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  joinDate  String // YYYY-MM-DD
+  joinedAt  DateTime    @default(now())
+  status    String      @default("joined")
 
   @@unique([sessionId, studentId, joinDate])
 }
@@ -261,3 +264,43 @@ model TrainerPayout {
   updatedAt          DateTime    @updatedAt
 }
 
+model SessionOccurrence {
+  id             String              @id @default(uuid())
+  courseId       String
+  sessionId      String
+  session        LiveSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  trainerId      Int
+  trainer        User                @relation(name: "TrainerSessionOccurrence", fields: [trainerId], references: [id])
+  occurrenceDate DateTime            // Date-only representation for grouping
+  startsAt       DateTime
+  endsAt         DateTime
+  status         String              @default("scheduled") // scheduled, live, completed
+  finalizedAt    DateTime?
+  attendances    StudentAttendance[]
+
+  @@unique([sessionId, occurrenceDate])
+}
+
+model StudentAttendance {
+  id             String            @id @default(uuid())
+  courseId       String
+  sessionId      String
+  session        LiveSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  occurrenceId   String
+  occurrence     SessionOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  occurrenceDate DateTime
+  studentId      Int
+  student        User              @relation(name: "StudentAttendance", fields: [studentId], references: [id], onDelete: Cascade)
+  trainerId      Int
+  trainer        User              @relation(name: "TrainerStudentAttendance", fields: [trainerId], references: [id], onDelete: Cascade)
+  firstJoinedAt  DateTime          @default(now())
+  lastJoinedAt   DateTime          @default(now())
+  joinCount      Int               @default(1)
+  status         String            // present, late, absent
+  source         String            @default("join_button") // join_button, admin_manual
+  finalizedAt    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([occurrenceId, studentId])
+}

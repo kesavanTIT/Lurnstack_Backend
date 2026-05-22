@@ -22,6 +22,13 @@ const {
   getTrainerPayouts,
 } = require("../controllers/trainerPaymentController");
 
+const {
+  getCourseAttendanceSummary,
+  getSessionAttendance,
+  getStudentAttendanceInCourse,
+  getAttendanceEligibility
+} = require("../controllers/trainerAttendanceController");
+
 const { protect } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
 
@@ -72,5 +79,11 @@ router.delete("/sessions/:sessionId", deleteTrainerSession);
 router.get("/earnings", getTrainerEarnings);
 router.get("/sessions/:sessionId/earnings", getTrainerSessionEarnings);
 router.get("/payouts", getTrainerPayouts);
+
+// ── Trainer Attendance Endpoints ─────────────────────────
+router.get("/courses/:courseId/attendance-summary", getCourseAttendanceSummary);
+router.get("/sessions/:sessionId/attendance", getSessionAttendance);
+router.get("/courses/:courseId/student-attendance", getStudentAttendanceInCourse);
+router.get("/courses/:courseId/attendance-eligibility", getAttendanceEligibility);
 
 module.exports = router;

@@ -813,9 +813,62 @@ const joinSession = async (req, res) => {
       }
     }
 
+    // --- NEW ATTENDANCE LOGIC ---
+    // Look for an active or scheduled SessionOccurrence for this sessionId
+    // where the current system time falls within or immediately around the class window.
+    const bufferTime = new Date(now.getTime() + 15 * 60 * 1000); // 15 mins before start buffer
+    const occurrence = await prisma.sessionOccurrence.findFirst({
+      where: {
+        sessionId: sessionId,
+        startsAt: { lte: bufferTime },
+        endsAt: { gte: now }
+      },
+      orderBy: { startsAt: "asc" }
+    });
+
+    if (!occurrence) {
+      return res.status(400).json({ success: false, message: "No active session occurrence found at this time." });
+    }
+
+    // Calculate attendance status using the 10-minute grace time logic
+    const graceEndTime = new Date(occurrence.startsAt.getTime() + 10 * 60 * 1000);
+    let attendanceStatus = "absent";
+    if (now <= graceEndTime) {
+      attendanceStatus = "present";
+    } else if (now <= occurrence.endsAt) {
+      attendanceStatus = "late";
+    }
+
+    // Upsert the StudentAttendance record
+    const studentAttendance = await prisma.studentAttendance.upsert({
+      where: {
+        occurrenceId_studentId: {
+          occurrenceId: occurrence.id,
+          studentId: studentId
+        }
+      },
+      update: {
+        lastJoinedAt: now,
+        joinCount: { increment: 1 }
+      },
+      create: {
+        courseId: occurrence.courseId || session.courseId || "",
+        sessionId: sessionId,
+        occurrenceId: occurrence.id,
+        occurrenceDate: occurrence.occurrenceDate,
+        studentId: studentId,
+        trainerId: occurrence.trainerId,
+        firstJoinedAt: now,
+        lastJoinedAt: now,
+        joinCount: 1,
+        status: attendanceStatus,
+        source: "join_button"
+      }
+    });
+
     const todayStr = getKolkataDateString(now);
 
-    // Create or update attendance row (composite sessionId + studentId + joinDate ensures one row per student per day)
+    // Keep legacy attendance row for backwards compatibility
     const attendance = await prisma.attendance.upsert({
       where: {
         sessionId_studentId_joinDate: {
@@ -1155,6 +1208,54 @@ const getStudentPayments = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// @desc    Get Course Attendance for Student
+// @route   GET /api/student/courses/:courseId/attendance
+// ─────────────────────────────────────────────
+const getCourseAttendance = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const studentId = parseInt(req.user.id);
+
+    const attendance = await prisma.studentAttendance.findMany({
+      where: { courseId, studentId },
+      include: {
+        occurrence: true
+      },
+      orderBy: { occurrenceDate: "desc" }
+    });
+
+    return res.status(200).json({ success: true, data: attendance });
+  } catch (error) {
+    console.error("Get Course Attendance Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch attendance." });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Get Session Attendance for Student
+// @route   GET /api/student/sessions/:sessionId/attendance
+// ─────────────────────────────────────────────
+const getSessionAttendance = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const studentId = parseInt(req.user.id);
+
+    const attendance = await prisma.studentAttendance.findMany({
+      where: { sessionId, studentId },
+      include: {
+        occurrence: true
+      },
+      orderBy: { occurrenceDate: "desc" }
+    });
+
+    return res.status(200).json({ success: true, data: attendance });
+  } catch (error) {
+    console.error("Get Session Attendance Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch session attendance." });
+  }
+};
+
 module.exports = {
   getAllLiveClasses,
   getLiveClassById,
@@ -1168,6 +1269,8 @@ module.exports = {
   getMyJoinedSessions,
   createBooking,
   verifyPayment,
-  getStudentPayments
+  getStudentPayments,
+  getCourseAttendance,
+  getSessionAttendance
 };
 
