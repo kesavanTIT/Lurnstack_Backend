@@ -152,7 +152,7 @@ const getAdminPayments = async (req, res) => {
         session: { select: { id: true, title: true } },
         booking: {
           include: {
-            liveSession: {
+            session: {
               include: {
                 trainer: {
                   select: { fullName: true }
@@ -167,8 +167,11 @@ const getAdminPayments = async (req, res) => {
 
     const payments = paymentsRaw.map(p => {
       const mapped = { ...p, amount: p.amountPaise };
-      if (mapped.booking?.liveSession?.trainer) {
-        mapped.booking.liveSession.trainer.name = mapped.booking.liveSession.trainer.fullName;
+      if (mapped.booking?.session) {
+        mapped.booking.liveSession = mapped.booking.session;
+        if (mapped.booking.liveSession.trainer) {
+          mapped.booking.liveSession.trainer.name = mapped.booking.liveSession.trainer.fullName;
+        }
       }
       return mapped;
     });
