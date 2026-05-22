@@ -146,15 +146,42 @@ const updateSessionPricing = async (req, res) => {
 // ─────────────────────────────────────────────
 const getAdminPayments = async (req, res) => {
   try {
-    const payments = await prisma.payment.findMany({
+    const paymentsRaw = await prisma.payment.findMany({
       include: {
         student: { select: { id: true, fullName: true, email: true } },
         session: { select: { id: true, title: true } },
-        booking: true
+        booking: {
+          include: {
+            liveSession: {
+              include: {
+                trainer: {
+                  select: { fullName: true }
+                }
+              }
+            }
+          }
+        }
       },
       orderBy: { createdAt: "desc" }
     });
-    return res.status(200).json({ success: true, data: payments });
+
+    const payments = paymentsRaw.map(p => {
+      const mapped = { ...p, amount: p.amountPaise };
+      if (mapped.booking?.liveSession?.trainer) {
+        mapped.booking.liveSession.trainer.name = mapped.booking.liveSession.trainer.fullName;
+      }
+      return mapped;
+    });
+
+    const totalGrossSettlement = payments
+      .filter((p) => p.status === "captured")
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+    return res.status(200).json({ 
+      success: true, 
+      data: payments,
+      totalGrossSettlement 
+    });
   } catch (error) {
     console.error("getAdminPayments error:", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
