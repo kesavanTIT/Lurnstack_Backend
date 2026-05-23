@@ -23,56 +23,52 @@ const buildGlobalFilters = (query) => {
 // @route   GET /api/admin/attendance/overview
 const getAttendanceOverview = async (req, res) => {
   try {
-    const filter = buildGlobalFilters(req.query);
-    
-    // Group by status to calculate metrics
-    const grouped = await prisma.studentAttendance.groupBy({
-      by: ['status'],
-      where: filter,
-      _count: {
-        id: true
+    const totalTrainers = await prisma.user.count({ where: { role: 'TRAINER' } });
+    const totalStudents = await prisma.user.count({ where: { role: 'STUDENT' } });
+    const totalSessions = await prisma.liveSession.count();
+    const completedSessions = await prisma.liveSession.count({
+      where: {
+        OR: [
+          { status: 'completed' },
+          { endedAt: { not: null } }
+        ]
       }
     });
     
-    let presentCount = 0, lateCount = 0, absentCount = 0;
-    grouped.forEach(g => {
-      if (g.status === "present" || g.status === "joined") presentCount += g._count.id;
-      else if (g.status === "late") lateCount += g._count.id;
-      else if (g.status === "absent") absentCount += g._count.id;
-    });
-    
-    const attendedCount = presentCount + lateCount;
-    const total = attendedCount + absentCount;
-    const averageAttendancePercentage = total > 0 ? (attendedCount / total) * 100 : 0;
-    
-    // Get top level counts
-    const totalCoursesArray = await prisma.liveSession.findMany({ distinct: ['courseId'], select: { courseId: true } });
-    const totalCourses = totalCoursesArray.filter(c => c.courseId).length;
-    
-    const totalTrainers = await prisma.user.count({ where: { role: 'TRAINER' } });
-    const totalStudents = await prisma.user.count({ where: { role: 'STUDENT' } });
-    const totalSessions = await prisma.sessionOccurrence.count({ where: filter });
-    const completedSessions = await prisma.sessionOccurrence.count({ where: { ...filter, status: 'completed' } });
-    
-    // Course-wise summary
-    const occurrences = await prisma.sessionOccurrence.findMany({
-      where: filter,
+    const allCourses = await prisma.liveSession.findMany({ distinct: ['courseId'], select: { courseId: true } });
+    const totalCourses = allCourses.filter(c => c.courseId).length;
+
+    const attendances = await prisma.attendance.findMany({
       include: {
-        session: { select: { courseTitle: true } },
-        trainer: { select: { id: true, fullName: true } },
-        attendances: true
+        session: {
+          include: {
+            trainer: { select: { id: true, fullName: true } }
+          }
+        }
       }
     });
 
+    const allSessionsFull = await prisma.liveSession.findMany({
+      include: {
+        trainer: { select: { id: true, fullName: true } }
+      }
+    });
+
+    const bookings = await prisma.sessionBooking.findMany();
+
+    let presentCount = 0, lateCount = 0, absentCount = 0;
     const courseMap = {};
-    occurrences.forEach(occ => {
-      if (!courseMap[occ.courseId]) {
-        courseMap[occ.courseId] = {
-          courseId: occ.courseId,
-          courseTitle: occ.session?.courseTitle || "Unknown Course",
-          trainerId: occ.trainerId,
-          trainerName: occ.trainer?.fullName || "Unassigned",
-          totalStudents: 0,
+    const allSessionsMap = {};
+
+    allSessionsFull.forEach(s => {
+      allSessionsMap[s.id] = s;
+      const cId = s.courseId || "unknown";
+      if (!courseMap[cId]) {
+        courseMap[cId] = {
+          courseId: s.courseId,
+          courseTitle: s.courseTitle || "Unknown Course",
+          trainerId: s.trainerId,
+          trainerName: s.trainer?.fullName || "Unassigned",
           totalSessions: 0,
           completedSessions: 0,
           presentCount: 0,
@@ -82,32 +78,82 @@ const getAttendanceOverview = async (req, res) => {
         };
       }
       
-      const c = courseMap[occ.courseId];
-      c.totalSessions += 1;
-      if (occ.status === "completed") c.completedSessions += 1;
-      
-      occ.attendances.forEach(a => {
-        c.uniqueStudents.add(a.studentId);
-        if (a.status === "present" || a.status === "joined") c.presentCount += 1;
-        else if (a.status === "late") c.lateCount += 1;
-        else if (a.status === "absent") c.absentCount += 1;
-      });
+      courseMap[cId].totalSessions++;
+      if (s.status === 'completed' || s.endedAt != null) {
+        courseMap[cId].completedSessions++;
+      }
     });
 
-    const courses = Object.values(courseMap).map(c => {
-      const cTotal = c.presentCount + c.lateCount + c.absentCount;
+    const attendanceSet = new Set();
+    
+    attendances.forEach(a => {
+      attendanceSet.add(`${a.sessionId}-${a.studentId}`);
+      
+      const status = a.status === 'joined' ? 'present' : a.status;
+      if (status === 'present') presentCount++;
+      else if (status === 'late') lateCount++;
+      else if (status === 'absent') absentCount++;
+
+      const s = a.session;
+      if (s) {
+        const cId = s.courseId || "unknown";
+        if (courseMap[cId]) {
+          courseMap[cId].uniqueStudents.add(a.studentId);
+          if (status === 'present') courseMap[cId].presentCount++;
+          else if (status === 'late') courseMap[cId].lateCount++;
+          else if (status === 'absent') courseMap[cId].absentCount++;
+        }
+      }
+    });
+
+    // Dynamically calculate absents from bookings if session is completed
+    bookings.forEach(b => {
+      const s = allSessionsMap[b.sessionId];
+      const isEnded = s?.status === 'completed' || s?.endedAt != null;
+      if (isEnded && !attendanceSet.has(`${b.sessionId}-${b.studentId}`)) {
+        absentCount++;
+        if (s) {
+          const cId = s.courseId || "unknown";
+          if (courseMap[cId]) {
+            courseMap[cId].absentCount++;
+          }
+        }
+      }
+    });
+
+    const attendedCount = presentCount + lateCount;
+    const totalAttendances = attendedCount + absentCount;
+    const averageAttendancePercentage = totalAttendances > 0 
+      ? parseFloat(((attendedCount / totalAttendances) * 100).toFixed(2)) 
+      : 0;
+
+    let coursesArray = Object.values(courseMap).filter(c => c.courseId !== null && c.courseId !== "unknown");
+    
+    coursesArray = coursesArray.map(c => {
       const cAttended = c.presentCount + c.lateCount;
+      const cTotal = cAttended + c.absentCount;
+      const cPercentage = cTotal > 0 ? parseFloat(((cAttended / cTotal) * 100).toFixed(2)) : 0;
+      
       return {
         courseId: c.courseId,
         courseTitle: c.courseTitle,
         trainerId: c.trainerId,
         trainerName: c.trainerName,
-        totalStudents: c.uniqueStudents.size,
         totalSessions: c.totalSessions,
         completedSessions: c.completedSessions,
-        attendancePercentage: cTotal > 0 ? parseFloat(((cAttended / cTotal) * 100).toFixed(2)) : 0
+        presentCount: c.presentCount,
+        lateCount: c.lateCount,
+        absentCount: c.absentCount,
+        attendedCount: cAttended,
+        attendancePercentage: cPercentage
       };
     });
+
+    if (attendances.length === 0 && bookings.length === 0) {
+      coursesArray = [];
+    } else {
+      coursesArray = coursesArray.filter(c => (c.presentCount + c.lateCount + c.absentCount) > 0);
+    }
 
     return res.status(200).json({
       success: true,
@@ -121,8 +167,8 @@ const getAttendanceOverview = async (req, res) => {
         lateCount,
         absentCount,
         attendedCount,
-        averageAttendancePercentage: parseFloat(averageAttendancePercentage.toFixed(2)),
-        courses
+        averageAttendancePercentage,
+        courses: coursesArray
       }
     });
   } catch (error) {
@@ -252,58 +298,90 @@ const getCourseAttendanceSummaryAdmin = async (req, res) => {
 const getSessionAttendanceAdmin = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const filter = buildGlobalFilters(req.query);
-    filter.sessionId = sessionId;
 
-    const attendances = await prisma.studentAttendance.findMany({
-      where: filter,
-      include: { 
-        student: { select: { id: true, fullName: true, email: true } }, 
-        occurrence: true 
-      },
-      orderBy: { occurrenceDate: "desc" }
+    const session = await prisma.liveSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        trainer: { select: { id: true, fullName: true } }
+      }
     });
-    
+
+    const attendances = await prisma.attendance.findMany({
+      where: { sessionId },
+      include: {
+        student: { select: { id: true, fullName: true, email: true } }
+      }
+    });
+
+    const bookings = await prisma.sessionBooking.findMany({
+      where: { sessionId },
+      include: {
+        student: { select: { id: true, fullName: true, email: true } }
+      }
+    });
+
+    const isSessionEnded = session?.status === 'completed' || session?.endedAt != null;
+
     let presentCount = 0, lateCount = 0, absentCount = 0;
     
-    const students = attendances.map(a => {
-      const status = (a.status === 'joined') ? 'present' : a.status;
-      if (status === "present") presentCount++;
-      else if (status === "late") lateCount++;
-      else if (status === "absent") absentCount++;
-      
-      return {
+    const attendanceMap = new Map();
+    const studentsArray = [];
+
+    attendances.forEach(a => {
+      const status = a.status === 'joined' ? 'present' : a.status;
+      if (status === 'present') presentCount++;
+      else if (status === 'late') lateCount++;
+      else if (status === 'absent') absentCount++;
+
+      const studentData = {
         attendanceId: a.id,
         studentId: a.studentId,
         fullName: a.student?.fullName || "Unknown",
         email: a.student?.email || "N/A",
-        firstJoinedAt: a.firstJoinedAt,
-        lastJoinedAt: a.lastJoinedAt,
-        joinCount: a.joinCount,
-        status: status
+        status: status,
+        firstJoinedAt: a.joinedAt,
+        lastJoinedAt: a.joinedAt,
+        joinCount: 1
       };
+      
+      attendanceMap.set(a.studentId, studentData);
+      studentsArray.push(studentData);
     });
 
-    const attendedCount = presentCount + lateCount;
-    const totalStudents = students.length;
-    const attendancePercentage = totalStudents > 0 ? parseFloat(((attendedCount / totalStudents) * 100).toFixed(2)) : 0;
-    
-    // Fetch session title if available
-    const session = await prisma.liveSession.findUnique({
-      where: { id: sessionId },
-      select: { title: true }
+    bookings.forEach(b => {
+      if (!attendanceMap.has(b.studentId) && isSessionEnded) {
+        absentCount++;
+        studentsArray.push({
+          attendanceId: `absent-${b.id}`,
+          studentId: b.studentId,
+          fullName: b.student?.fullName || "Unknown",
+          email: b.student?.email || "N/A",
+          status: 'absent',
+          firstJoinedAt: null,
+          lastJoinedAt: null,
+          joinCount: 0
+        });
+      }
     });
+
+    const totalStudents = Math.max(bookings.length, studentsArray.length);
+    const attendedCount = presentCount + lateCount;
+    const attendancePercentage = totalStudents > 0 ? parseFloat(((attendedCount / totalStudents) * 100).toFixed(2)) : 0;
 
     const responseData = {
       sessionId: sessionId,
-      sessionTitle: session?.title || "Unknown Session",
-      totalStudents: totalStudents,
-      presentCount: presentCount,
-      lateCount: lateCount,
-      absentCount: absentCount,
-      attendedCount: attendedCount,
-      attendancePercentage: attendancePercentage,
-      students: students
+      sessionTitle: session?.title || session?.courseTitle || "Unknown Session",
+      courseId: session?.courseId || null,
+      courseTitle: session?.courseTitle || null,
+      trainerId: session?.trainerId || null,
+      trainerName: session?.trainer?.fullName || null,
+      totalStudents,
+      presentCount,
+      lateCount,
+      absentCount,
+      attendedCount,
+      attendancePercentage,
+      students: studentsArray
     };
 
     return res.status(200).json({ success: true, data: responseData });
