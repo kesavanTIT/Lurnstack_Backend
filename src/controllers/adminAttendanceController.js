@@ -127,7 +127,7 @@ const getAttendanceOverview = async (req, res) => {
       ? parseFloat(((attendedCount / totalAttendances) * 100).toFixed(2)) 
       : 0;
 
-    let coursesArray = Object.values(courseMap).filter(c => c.courseId !== null && c.courseId !== "unknown");
+    let coursesArray = Object.values(courseMap);
     
     coursesArray = coursesArray.map(c => {
       const cAttended = c.presentCount + c.lateCount;
