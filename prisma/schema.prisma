@@ -158,7 +158,8 @@ model Attendance {
 
   events               AttendanceEvent[]
 
-  @@unique([studentId, sessionId, occurrenceDate])
+  // TEMPORARILY COMMENTED OUT FOR MIGRATION
+  // @@unique([studentId, sessionId, occurrenceDate])
 }
 
 model AttendanceEvent {
