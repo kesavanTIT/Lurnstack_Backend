@@ -183,20 +183,22 @@ const getTrainerAttendanceAdmin = async (req, res) => {
   try {
     const { trainerId } = req.params;
     const filter = buildGlobalFilters(req.query);
-    filter.trainerId = parseInt(trainerId);
     
-    const attendances = await prisma.studentAttendance.findMany({
-      where: filter,
+    const attendances = await prisma.attendance.findMany({
+      where: {
+        ...filter,
+        session: { trainerId: parseInt(trainerId) }
+      },
       include: { 
         student: { select: { id: true, fullName: true, email: true } }, 
-        occurrence: true 
+        session: true 
       },
       orderBy: { occurrenceDate: "desc" }
     });
 
     const formattedData = attendances.map(a => ({
       ...a,
-      status: a.status === 'joined' ? 'present' : a.status
+      status: a.status
     }));
 
     return res.status(200).json({ success: true, data: formattedData });
@@ -212,33 +214,29 @@ const getAllCoursesAttendance = async (req, res) => {
   try {
     const filter = buildGlobalFilters(req.query);
     
-    const occurrences = await prisma.sessionOccurrence.findMany({
-      include: {
-        attendances: {
-          where: filter
-        }
-      }
+    const attendances = await prisma.attendance.findMany({
+      where: filter,
+      include: { session: true }
     });
 
     const courseMap = {};
 
-    occurrences.forEach(occ => {
-      if (!courseMap[occ.courseId]) {
-        courseMap[occ.courseId] = {
-          courseId: occ.courseId,
-          totalOccurrences: 0,
+    attendances.forEach(a => {
+      const cId = a.session?.courseId || 'unknown';
+      if (!courseMap[cId]) {
+        courseMap[cId] = {
+          courseId: cId,
+          totalAttendances: 0,
           presentCount: 0,
           lateCount: 0,
           absentCount: 0
         };
       }
-      courseMap[occ.courseId].totalOccurrences += 1;
+      courseMap[cId].totalAttendances += 1;
       
-      occ.attendances.forEach(a => {
-        if (a.status === "present" || a.status === "joined") courseMap[occ.courseId].presentCount += 1;
-        else if (a.status === "late") courseMap[occ.courseId].lateCount += 1;
-        else if (a.status === "absent") courseMap[occ.courseId].absentCount += 1;
-      });
+      if (a.status === "present") courseMap[cId].presentCount += 1;
+      else if (a.status === "late") courseMap[cId].lateCount += 1;
+      else if (a.status === "absent") courseMap[cId].absentCount += 1;
     });
 
     return res.status(200).json({ success: true, data: Object.values(courseMap) });
@@ -254,39 +252,40 @@ const getCourseAttendanceSummaryAdmin = async (req, res) => {
   try {
     const { courseId } = req.params;
     const filter = buildGlobalFilters(req.query);
-    
-    const occFilter = { courseId };
-    if (filter.occurrenceDate) occFilter.occurrenceDate = filter.occurrenceDate;
-    if (filter.trainerId) occFilter.trainerId = filter.trainerId;
 
-    const occurrences = await prisma.sessionOccurrence.findMany({
-      where: occFilter,
-      orderBy: { startsAt: "desc" },
+    const attendances = await prisma.attendance.findMany({
+      where: {
+        ...filter,
+        session: { courseId }
+      },
       include: {
-        attendances: {
-          where: filter
-        },
-        trainer: { select: { id: true, fullName: true, email: true } }
+        session: { include: { trainer: { select: { id: true, fullName: true, email: true } } } }
+      },
+      orderBy: { occurrenceDate: "desc" }
+    });
+
+    const summaryMap = {};
+    attendances.forEach(a => {
+      const key = `${a.sessionId}-${a.occurrenceDate}`;
+      if (!summaryMap[key]) {
+        summaryMap[key] = {
+          occurrenceId: key,
+          sessionId: a.sessionId,
+          trainer: a.session?.trainer,
+          date: a.occurrenceDate,
+          status: "completed",
+          presentCount: 0,
+          lateCount: 0,
+          absentCount: 0
+        };
       }
+      
+      if (a.status === "present") summaryMap[key].presentCount++;
+      else if (a.status === "late") summaryMap[key].lateCount++;
+      else if (a.status === "absent") summaryMap[key].absentCount++;
     });
 
-    const summary = occurrences.map(occ => {
-      const presentCount = occ.attendances.filter(a => a.status === "present" || a.status === "joined").length;
-      const lateCount = occ.attendances.filter(a => a.status === "late").length;
-      const absentCount = occ.attendances.filter(a => a.status === "absent").length;
-      return {
-        occurrenceId: occ.id,
-        sessionId: occ.sessionId,
-        trainer: occ.trainer,
-        date: occ.occurrenceDate,
-        status: occ.status,
-        presentCount,
-        lateCount,
-        absentCount
-      };
-    });
-
-    return res.status(200).json({ success: true, data: summary });
+    return res.status(200).json({ success: true, data: Object.values(summaryMap) });
   } catch (error) {
     console.error("Admin Course Attendance Summary Error:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch course attendance summary." });
@@ -328,7 +327,7 @@ const getSessionAttendanceAdmin = async (req, res) => {
     const studentsArray = [];
 
     attendances.forEach(a => {
-      const status = a.status === 'joined' ? 'present' : a.status;
+      const status = a.status;
       if (status === 'present') presentCount++;
       else if (status === 'late') lateCount++;
       else if (status === 'absent') absentCount++;
@@ -339,9 +338,10 @@ const getSessionAttendanceAdmin = async (req, res) => {
         fullName: a.student?.fullName || "Unknown",
         email: a.student?.email || "N/A",
         status: status,
-        firstJoinedAt: a.joinedAt,
-        lastJoinedAt: a.joinedAt,
-        joinCount: 1
+        firstJoinedAt: a.firstJoinedAt,
+        lastJoinedAt: a.lastJoinedAt,
+        joinCount: a.joinCount,
+        totalDurationSeconds: a.totalDurationSeconds
       };
       
       attendanceMap.set(a.studentId, studentData);
@@ -359,7 +359,8 @@ const getSessionAttendanceAdmin = async (req, res) => {
           status: 'absent',
           firstJoinedAt: null,
           lastJoinedAt: null,
-          joinCount: 0
+          joinCount: 0,
+          totalDurationSeconds: 0
         });
       }
     });
@@ -399,9 +400,9 @@ const getStudentAttendanceAdmin = async (req, res) => {
     const filter = buildGlobalFilters(req.query);
     filter.studentId = parseInt(studentId);
 
-    const attendances = await prisma.studentAttendance.findMany({
+    const attendances = await prisma.attendance.findMany({
       where: filter,
-      include: { occurrence: true },
+      include: { session: true },
       orderBy: { occurrenceDate: "desc" }
     });
 
@@ -419,15 +420,14 @@ const updateAttendanceRecord = async (req, res) => {
     const { attendanceId } = req.params;
     const { status } = req.body;
 
-    if (!["present", "late", "absent"].includes(status)) {
+    if (!["pending", "present", "late", "absent"].includes(status)) {
       return res.status(400).json({ success: false, message: "Invalid status." });
     }
 
-    const updated = await prisma.studentAttendance.update({
+    const updated = await prisma.attendance.update({
       where: { id: attendanceId },
       data: { 
         status,
-        source: "admin_manual",
         updatedAt: new Date()
       }
     });
@@ -439,8 +439,49 @@ const updateAttendanceRecord = async (req, res) => {
   }
 };
 
+// @desc    Get all attendance records
+// @route   GET /api/admin/attendance
+const getAllAttendanceRecords = async (req, res) => {
+  try {
+    const filter = buildGlobalFilters(req.query);
+    
+    const attendances = await prisma.attendance.findMany({
+      where: filter,
+      include: {
+        session: { include: { trainer: { select: { id: true, fullName: true } } } },
+        student: { select: { id: true, fullName: true, email: true } }
+      },
+      orderBy: { occurrenceDate: "desc" }
+    });
+
+    const formattedData = attendances.map(a => {
+      let durationMinutes = Math.round(a.totalDurationSeconds / 60);
+      return {
+        id: a.id,
+        date: a.occurrenceDate,
+        courseName: a.session?.courseTitle || "Standalone Session",
+        sessionTitle: a.session?.title || "Unknown Session",
+        trainerName: a.session?.trainer?.fullName || "Unassigned",
+        studentName: a.student?.fullName || "Unknown",
+        status: a.status,
+        durationMinutes,
+        firstJoinedAt: a.firstJoinedAt,
+        lastJoinedAt: a.lastJoinedAt,
+        joinCount: a.joinCount,
+        totalDurationSeconds: a.totalDurationSeconds
+      };
+    });
+
+    return res.status(200).json({ success: true, data: formattedData });
+  } catch (error) {
+    console.error("Admin Get All Attendance Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch attendance records." });
+  }
+};
+
 module.exports = {
   getAttendanceOverview,
+  getAllAttendanceRecords,
   getTrainerAttendanceAdmin,
   getAllCoursesAttendance,
   getCourseAttendanceSummaryAdmin,

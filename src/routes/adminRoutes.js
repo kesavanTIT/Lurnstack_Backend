@@ -31,6 +31,7 @@ const {
 } = require("../controllers/adminPaymentController");
 const {
   getAttendanceOverview,
+  getAllAttendanceRecords,
   getTrainerAttendanceAdmin,
   getAllCoursesAttendance,
   getCourseAttendanceSummaryAdmin,
@@ -82,6 +83,7 @@ router.post("/payments/:paymentId/refund", refundPayment);
 router.patch("/payment-settings", updatePaymentSettings);
 
 // ── Admin Attendance Endpoints ────────────────────
+router.get("/attendance", getAllAttendanceRecords);
 router.get("/attendance/overview", getAttendanceOverview);
 router.get("/attendance/courses", getAllCoursesAttendance);
 router.get("/courses/:courseId/attendance-summary", getCourseAttendanceSummaryAdmin);

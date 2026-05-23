@@ -49,6 +49,12 @@ router.get("/me/session-cards", getMySessionCards);
 // @route   POST /api/student/sessions/:sessionId/join
 router.post("/sessions/:sessionId/join", joinSession);
 
+// @route   POST /api/student/sessions/:sessionId/heartbeat
+router.post("/sessions/:sessionId/heartbeat", require("../controllers/studentController").heartbeatSession);
+
+// @route   POST /api/student/sessions/:sessionId/leave
+router.post("/sessions/:sessionId/leave", require("../controllers/studentController").leaveSession);
+
 // @route   GET /api/student/attendance
 router.get("/attendance", require("../controllers/studentController").getStudentAttendance);
 

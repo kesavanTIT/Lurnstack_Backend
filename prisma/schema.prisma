@@ -139,16 +139,39 @@ model SessionBooking {
 }
 
 model Attendance {
-  id        String      @id @default(uuid())
-  sessionId String
-  studentId Int
-  session   LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  student   User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  joinDate  String // YYYY-MM-DD
-  joinedAt  DateTime    @default(now())
-  status    String      @default("joined")
+  id                   String            @id @default(uuid())
+  studentId            Int
+  sessionId            String
+  occurrenceDate       DateTime
+  status               String            @default("pending") // pending, present, late, absent
+  firstJoinedAt        DateTime          @default(now())
+  lastJoinedAt         DateTime          @default(now())
+  joinCount            Int               @default(1)
+  totalDurationSeconds Int               @default(0)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
-  @@unique([sessionId, studentId, joinDate])
+  session              LiveSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student              User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  events               AttendanceEvent[]
+
+  @@unique([studentId, sessionId, occurrenceDate])
+}
+
+model AttendanceEvent {
+  id              String      @id @default(uuid())
+  attendanceId    String
+  studentId       Int
+  sessionId       String
+  occurrenceDate  DateTime
+  joinedAt        DateTime    @default(now())
+  leftAt          DateTime?
+  durationSeconds Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  attendance      Attendance  @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
 }
 
 model SessionPricing {

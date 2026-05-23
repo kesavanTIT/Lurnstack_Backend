@@ -752,7 +752,6 @@ const joinSession = async (req, res) => {
     const { occurrenceDate, sessionDate } = req.body || {};
     const studentId = parseInt(req.user.id);
 
-    // 1. Load session by sessionId
     const session = await prisma.liveSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -768,7 +767,6 @@ const joinSession = async (req, res) => {
       return res.status(404).json({ success: false, message: "Session not found." });
     }
 
-    // 2. Validate session status is published/active
     if (session.status !== "active") {
       return res.status(400).json({ success: false, message: `Cannot join. Session is ${session.status}.` });
     }
@@ -776,7 +774,6 @@ const joinSession = async (req, res) => {
     const pricing = session.pricing || null;
     const paymentRequired = pricing ? pricing.isActive : false;
 
-    // Check paid booking
     const now = new Date();
     const todayStrKolkata = getKolkataDateString(now);
     
@@ -792,160 +789,208 @@ const joinSession = async (req, res) => {
       }
     }
 
-    // 3. Determine occurrence date
     const targetDateStr = occurrenceDate || sessionDate || todayStrKolkata;
     const targetDate = new Date(targetDateStr);
+    targetDate.setUTCHours(0,0,0,0);
 
-    // 4. Find occurrence by sessionId and occurrenceDate
-    let occurrence = await prisma.sessionOccurrence.findFirst({
+    let attendance = await prisma.attendance.findUnique({
       where: {
-        sessionId: sessionId,
-        occurrenceDate: targetDate
-      }
-    });
-
-    // 5. If occurrence does not exist but session is valid for that date, create it
-    if (!occurrence) {
-      const startsAt = session.startTime ? getKolkataDateTime(targetDateStr, session.startTime) : null;
-      const endsAt = session.endTime ? getKolkataDateTime(targetDateStr, session.endTime) : null;
-      
-      if (!startsAt || !endsAt) {
-        return res.status(400).json({ success: false, message: "Session schedule is invalid." });
-      }
-
-      occurrence = await prisma.sessionOccurrence.upsert({
-        where: {
-          sessionId_occurrenceDate: {
-            sessionId: sessionId,
-            occurrenceDate: targetDate
-          }
-        },
-        update: {},
-        create: {
-          sessionId: session.id,
-          trainerId: session.trainerId,
-          courseId: session.courseId || "",
-          occurrenceDate: targetDate,
-          startsAt: startsAt,
-          endsAt: endsAt,
-          status: "scheduled"
-        }
-      });
-    }
-
-    // 6. Use server time in Asia/Kolkata to check window
-    const bufferStartsAt = new Date(occurrence.startsAt.getTime() - 5 * 60 * 1000); // 5 mins before
-    if (now < bufferStartsAt || now > occurrence.endsAt) {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Session is not active now. Class starts at ${session.startTime} and ends at ${session.endTime}` 
-      });
-    }
-
-    // 7 & 8 & 9. Create/update attendance using unique key
-    const graceMinutes = 10;
-    const graceEndTime = new Date(occurrence.startsAt.getTime() + graceMinutes * 60 * 1000);
-
-    const existingAttendance = await prisma.studentAttendance.findUnique({
-      where: {
-        occurrenceId_studentId: {
-          occurrenceId: occurrence.id,
-          studentId: studentId
-        }
-      }
-    });
-
-    let status = "present";
-    let firstJoinedAt = now;
-    let joinCount = 1;
-
-    if (existingAttendance) {
-      firstJoinedAt = existingAttendance.firstJoinedAt;
-      joinCount = existingAttendance.joinCount + 1;
-      // CRITICAL REJOIN RULE: do NOT downgrade status if already present
-      if (existingAttendance.status === 'present') {
-        status = 'present';
-      } else if (firstJoinedAt <= graceEndTime) {
-        status = "present";
-      } else {
-        status = "late";
-      }
-    } else {
-      if (now <= graceEndTime) {
-        status = "present";
-      } else {
-        status = "late";
-      }
-    }
-
-    const studentAttendance = await prisma.studentAttendance.upsert({
-      where: {
-        occurrenceId_studentId: {
-          occurrenceId: occurrence.id,
-          studentId: studentId
-        }
-      },
-      update: {
-        lastJoinedAt: now,
-        joinCount: joinCount,
-        status: status
-      },
-      create: {
-        courseId: occurrence.courseId || session.courseId || "",
-        sessionId: sessionId,
-        occurrenceId: occurrence.id,
-        occurrenceDate: occurrence.occurrenceDate,
-        studentId: studentId,
-        trainerId: occurrence.trainerId,
-        firstJoinedAt: firstJoinedAt,
-        lastJoinedAt: now,
-        joinCount: joinCount,
-        status: status,
-        source: "join_button"
-      }
-    });
-
-    // Keep legacy attendance row for backwards compatibility
-    await prisma.attendance.upsert({
-      where: {
-        sessionId_studentId_joinDate: {
-          sessionId,
+        studentId_sessionId_occurrenceDate: {
           studentId,
-          joinDate: targetDateStr
+          sessionId,
+          occurrenceDate: targetDate
         }
-      },
-      update: {
-        status: "joined",
-        joinedAt: now
-      },
-      create: {
-        sessionId,
+      }
+    });
+
+    if (!attendance) {
+      attendance = await prisma.attendance.create({
+        data: {
+          studentId,
+          sessionId,
+          occurrenceDate: targetDate,
+          status: "pending",
+          firstJoinedAt: now,
+          lastJoinedAt: now,
+          joinCount: 1,
+          totalDurationSeconds: 0
+        }
+      });
+    } else {
+      attendance = await prisma.attendance.update({
+        where: { id: attendance.id },
+        data: {
+          joinCount: attendance.joinCount + 1,
+          lastJoinedAt: now
+        }
+      });
+    }
+
+    await prisma.attendanceEvent.create({
+      data: {
+        attendanceId: attendance.id,
         studentId,
-        joinDate: targetDateStr,
-        status: "joined",
+        sessionId,
+        occurrenceDate: targetDate,
         joinedAt: now
       }
     });
 
-    // 10. Return meeting link and attendance
     res.status(200).json({
       success: true,
-      message: "Attendance recorded",
+      message: "Successfully joined the class!",
       data: {
         sessionId: session.id,
-        occurrenceId: occurrence.id,
         meetingLink: session.meetingLink,
         joinedAt: now.toISOString(),
-        attendance: {
-          status: studentAttendance.status,
-          firstJoinedAt: studentAttendance.firstJoinedAt.toISOString(),
-          lastJoinedAt: studentAttendance.lastJoinedAt.toISOString(),
-          joinCount: studentAttendance.joinCount
-        }
+        attendance
       }
     });
   } catch (error) {
     console.error("Join Session Error:", error);
+    res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+const heartbeatSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const studentId = parseInt(req.user.id);
+    const now = new Date();
+
+    const latestEvent = await prisma.attendanceEvent.findFirst({
+      where: { studentId, sessionId, leftAt: null },
+      orderBy: { joinedAt: "desc" }
+    });
+
+    if (!latestEvent) {
+      return res.status(400).json({ success: false, message: "No active attendance event found." });
+    }
+
+    const attendance = await prisma.attendance.findUnique({
+      where: { id: latestEvent.attendanceId }
+    });
+
+    if (!attendance) {
+      return res.status(404).json({ success: false, message: "Attendance not found." });
+    }
+
+    const eventDurationSeconds = Math.floor((now.getTime() - latestEvent.joinedAt.getTime()) / 1000);
+    
+    await prisma.attendanceEvent.update({
+      where: { id: latestEvent.id },
+      data: { durationSeconds: eventDurationSeconds }
+    });
+
+    const allEvents = await prisma.attendanceEvent.findMany({
+      where: { attendanceId: attendance.id }
+    });
+    
+    let totalSeconds = 0;
+    allEvents.forEach(e => {
+      totalSeconds += e.durationSeconds;
+    });
+
+    let newStatus = attendance.status;
+    if (totalSeconds >= 600) {
+      const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
+      let graceEndTime = new Date(attendance.occurrenceDate);
+      if (session && session.startTime) {
+        graceEndTime = getKolkataDateTime(getKolkataDateString(attendance.occurrenceDate), session.startTime);
+      }
+      graceEndTime = new Date(graceEndTime.getTime() + 15 * 60 * 1000);
+
+      if (attendance.status === "pending") {
+        if (attendance.firstJoinedAt <= graceEndTime) {
+          newStatus = "present";
+        } else {
+          newStatus = "late";
+        }
+      }
+    }
+
+    const updatedAttendance = await prisma.attendance.update({
+      where: { id: attendance.id },
+      data: {
+        totalDurationSeconds: totalSeconds,
+        status: newStatus
+      }
+    });
+
+    res.status(200).json({ success: true, data: updatedAttendance });
+  } catch (error) {
+    console.error("Heartbeat Error:", error);
+    res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+const leaveSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const studentId = parseInt(req.user.id);
+    const now = new Date();
+
+    const latestEvent = await prisma.attendanceEvent.findFirst({
+      where: { studentId, sessionId, leftAt: null },
+      orderBy: { joinedAt: "desc" }
+    });
+
+    if (!latestEvent) {
+      return res.status(200).json({ success: true, message: "No active event to leave." });
+    }
+
+    const attendance = await prisma.attendance.findUnique({
+      where: { id: latestEvent.attendanceId }
+    });
+
+    const eventDurationSeconds = Math.floor((now.getTime() - latestEvent.joinedAt.getTime()) / 1000);
+
+    await prisma.attendanceEvent.update({
+      where: { id: latestEvent.id },
+      data: {
+        leftAt: now,
+        durationSeconds: eventDurationSeconds
+      }
+    });
+
+    const allEvents = await prisma.attendanceEvent.findMany({
+      where: { attendanceId: attendance.id }
+    });
+    
+    let totalSeconds = 0;
+    allEvents.forEach(e => {
+      totalSeconds += e.durationSeconds;
+    });
+
+    let newStatus = attendance.status;
+    if (totalSeconds >= 600) {
+      const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
+      let graceEndTime = new Date(attendance.occurrenceDate);
+      if (session && session.startTime) {
+        graceEndTime = getKolkataDateTime(getKolkataDateString(attendance.occurrenceDate), session.startTime);
+      }
+      graceEndTime = new Date(graceEndTime.getTime() + 15 * 60 * 1000);
+
+      if (attendance.status === "pending") {
+        if (attendance.firstJoinedAt <= graceEndTime) {
+          newStatus = "present";
+        } else {
+          newStatus = "late";
+        }
+      }
+    }
+
+    const updatedAttendance = await prisma.attendance.update({
+      where: { id: attendance.id },
+      data: {
+        totalDurationSeconds: totalSeconds,
+        status: newStatus
+      }
+    });
+
+    res.status(200).json({ success: true, data: updatedAttendance });
+  } catch (error) {
+    console.error("Leave Session Error:", error);
     res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
@@ -1257,11 +1302,12 @@ const getCourseAttendance = async (req, res) => {
     const { courseId } = req.params;
     const studentId = parseInt(req.user.id);
 
-    const attendance = await prisma.studentAttendance.findMany({
-      where: { courseId, studentId },
-      include: {
-        occurrence: true
+    const attendance = await prisma.attendance.findMany({
+      where: { 
+        session: { courseId },
+        studentId 
       },
+      include: { session: true },
       orderBy: { occurrenceDate: "desc" }
     });
 
@@ -1272,20 +1318,14 @@ const getCourseAttendance = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// @desc    Get Session Attendance for Student
-// @route   GET /api/student/sessions/:sessionId/attendance
-// ─────────────────────────────────────────────
 const getSessionAttendance = async (req, res) => {
   try {
     const { sessionId } = req.params;
     const studentId = parseInt(req.user.id);
 
-    const attendance = await prisma.studentAttendance.findMany({
+    const attendance = await prisma.attendance.findMany({
       where: { sessionId, studentId },
-      include: {
-        occurrence: true
-      },
+      include: { session: true },
       orderBy: { occurrenceDate: "desc" }
     });
 
@@ -1296,10 +1336,6 @@ const getSessionAttendance = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// @desc    Get All Attendance for Student
-// @route   GET /api/student/attendance
-// ─────────────────────────────────────────────
 const getStudentAttendance = async (req, res) => {
   try {
     const studentId = parseInt(req.user.id);
@@ -1308,15 +1344,18 @@ const getStudentAttendance = async (req, res) => {
       include: {
         session: { select: { title: true, courseId: true, courseTitle: true } }
       },
-      orderBy: { joinedAt: "desc" }
+      orderBy: { occurrenceDate: "desc" }
     });
 
     const formattedData = attendance.map(a => ({
       id: a.id,
       sessionId: a.sessionId,
       studentId: a.studentId,
-      joinDate: a.joinDate,
-      joinedAt: a.joinedAt,
+      occurrenceDate: a.occurrenceDate,
+      firstJoinedAt: a.firstJoinedAt,
+      lastJoinedAt: a.lastJoinedAt,
+      joinCount: a.joinCount,
+      totalDurationSeconds: a.totalDurationSeconds,
       status: a.status,
       sessionTitle: a.session?.title || "Unknown Session",
       courseId: a.session?.courseId || null,
@@ -1346,6 +1385,8 @@ module.exports = {
   getStudentPayments,
   getCourseAttendance,
   getSessionAttendance,
-  getStudentAttendance
+  getStudentAttendance,
+  heartbeatSession,
+  leaveSession
 };
 
