@@ -45,23 +45,56 @@ const getSessionAttendance = async (req, res) => {
     const { sessionId } = req.params;
     const trainerId = parseInt(req.user.id);
 
-    const attendances = await prisma.studentAttendance.findMany({
-      where: { sessionId, trainerId },
-      include: { student: { select: { id: true, fullName: true, email: true } }, occurrence: true },
-      orderBy: { occurrenceDate: "desc" }
+    const session = await prisma.liveSession.findUnique({
+      where: { id: sessionId }
     });
 
-    const formattedData = attendances.map(a => ({
+    if (!session || session.trainerId !== trainerId) {
+      return res.status(403).json({ success: false, message: "Forbidden" });
+    }
+
+    const attendances = await prisma.attendance.findMany({
+      where: { sessionId },
+      include: { student: { select: { id: true, fullName: true, email: true } } },
+      orderBy: { joinedAt: "desc" }
+    });
+
+    const totalBookings = await prisma.sessionBooking.count({
+      where: { sessionId }
+    });
+
+    const totalStudents = Math.max(totalBookings, attendances.length);
+    const presentCount = attendances.length;
+    const lateCount = 0;
+    const absentCount = totalStudents - presentCount;
+    const attendedCount = presentCount;
+    const attendancePercentage = totalStudents > 0 ? parseFloat(((presentCount / totalStudents) * 100).toFixed(2)) : 0;
+
+    const formattedStudents = attendances.map(a => ({
       attendanceId: a.id,
-      name: a.student?.fullName || "Unknown",
+      studentId: a.studentId,
+      fullName: a.student?.fullName || "Unknown",
       email: a.student?.email || "N/A",
-      firstJoinedAt: a.firstJoinedAt,
-      lastJoinedAt: a.lastJoinedAt,
-      joinCount: a.joinCount,
-      status: a.status === 'joined' ? 'present' : a.status
+      status: a.status,
+      firstJoinedAt: a.joinedAt,
+      lastJoinedAt: a.joinedAt,
+      joinCount: 1
     }));
 
-    return res.status(200).json({ success: true, data: formattedData });
+    return res.status(200).json({
+      success: true,
+      data: {
+        sessionId: session.id,
+        sessionTitle: session.title || "Live Session",
+        totalStudents,
+        presentCount,
+        lateCount,
+        absentCount,
+        attendedCount,
+        attendancePercentage,
+        students: formattedStudents
+      }
+    });
   } catch (error) {
     console.error("Trainer Session Attendance Error:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch session attendance." });

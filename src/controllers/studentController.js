@@ -1303,22 +1303,24 @@ const getSessionAttendance = async (req, res) => {
 const getStudentAttendance = async (req, res) => {
   try {
     const studentId = parseInt(req.user.id);
-    const attendance = await prisma.studentAttendance.findMany({
+    const attendance = await prisma.attendance.findMany({
       where: { studentId },
       include: {
-        occurrence: true,
-        session: { select: { title: true, courseId: true } }
+        session: { select: { title: true, courseId: true, courseTitle: true } }
       },
-      orderBy: { occurrenceDate: "desc" }
+      orderBy: { joinedAt: "desc" }
     });
 
     const formattedData = attendance.map(a => ({
-      attendanceId: a.id,
+      id: a.id,
+      sessionId: a.sessionId,
+      studentId: a.studentId,
+      joinDate: a.joinDate,
+      joinedAt: a.joinedAt,
+      status: a.status,
       sessionTitle: a.session?.title || "Unknown Session",
-      firstJoinedAt: a.firstJoinedAt,
-      lastJoinedAt: a.lastJoinedAt,
-      joinCount: a.joinCount,
-      status: a.status === 'joined' ? 'present' : a.status
+      courseId: a.session?.courseId || null,
+      courseTitle: a.session?.courseTitle || null
     }));
 
     return res.status(200).json({ success: true, data: formattedData });
