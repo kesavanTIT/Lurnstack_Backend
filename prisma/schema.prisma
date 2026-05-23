@@ -142,6 +142,8 @@ model Attendance {
   id                   String            @id @default(uuid())
   studentId            Int
   sessionId            String
+  joinDate             String?           // Restored to prevent data loss
+  joinedAt             DateTime?         @default(now()) // Restored to prevent data loss
   occurrenceDate       DateTime          @default(now())
   status               String            @default("pending") // pending, present, late, absent
   firstJoinedAt        DateTime          @default(now())
