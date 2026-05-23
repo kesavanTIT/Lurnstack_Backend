@@ -142,14 +142,14 @@ model Attendance {
   id                   String            @id @default(uuid())
   studentId            Int
   sessionId            String
-  occurrenceDate       DateTime
+  occurrenceDate       DateTime          @default(now())
   status               String            @default("pending") // pending, present, late, absent
   firstJoinedAt        DateTime          @default(now())
   lastJoinedAt         DateTime          @default(now())
   joinCount            Int               @default(1)
   totalDurationSeconds Int               @default(0)
   createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
+  updatedAt            DateTime          @default(now()) @updatedAt
 
   session              LiveSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   student              User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -164,12 +164,12 @@ model AttendanceEvent {
   attendanceId    String
   studentId       Int
   sessionId       String
-  occurrenceDate  DateTime
+  occurrenceDate  DateTime    @default(now())
   joinedAt        DateTime    @default(now())
   leftAt          DateTime?
   durationSeconds Int         @default(0)
   createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  updatedAt       DateTime    @default(now()) @updatedAt
 
   attendance      Attendance  @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
 }
