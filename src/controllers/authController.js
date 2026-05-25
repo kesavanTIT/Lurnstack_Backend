@@ -128,4 +128,131 @@ const loginUser = async (req, res) => {
   }
 };
 
-module.exports = { registerUser, loginUser };
+// ─────────────────────────────────────────────
+// @desc    Generate & send a 6-digit OTP
+// @route   POST /api/auth/send-otp
+// @access  Public
+// ─────────────────────────────────────────────
+const { generateOTP, sendSmsOTP, sendEmailOTP } = require("../services/otpService");
+
+const sendOTP = async (req, res) => {
+  try {
+    // 1. Accept either an email or a phone number as the identifier
+    const { identifier, type } = req.body;
+    //    type: "email" | "sms"  (defaults to "email" if omitted)
+
+    if (!identifier) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an identifier (email or phone number).",
+      });
+    }
+
+    const deliveryType = type === "sms" ? "sms" : "email";
+
+    // 2. Generate OTP and calculate a 5-minute expiry window
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // now + 5 min
+
+    // 3. Deliver the OTP via the requested channel
+    if (deliveryType === "sms") {
+      await sendSmsOTP(identifier, otp);
+    } else {
+      await sendEmailOTP(identifier, otp);
+    }
+
+    // 4. Persist the OTP record (upsert to avoid duplicate entries per identifier)
+    //    Delete any previous OTP for the same identifier first to keep the table lean.
+    await prisma.oTPVerification.deleteMany({
+      where: { identifier },
+    });
+
+    await prisma.oTPVerification.create({
+      data: {
+        identifier,
+        code: otp,
+        expiresAt,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `OTP sent successfully via ${deliveryType.toUpperCase()}.`,
+      // Expose expiresAt so the client can show a countdown
+      expiresAt,
+    });
+  } catch (error) {
+    console.error("sendOTP Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to send OTP. Please try again.",
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Verify the submitted OTP code
+// @route   POST /api/auth/verify-otp
+// @access  Public
+// ─────────────────────────────────────────────
+const verifyOTP = async (req, res) => {
+  try {
+    const { identifier, code } = req.body;
+
+    if (!identifier || !code) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide both identifier and code.",
+      });
+    }
+
+    // 1. Look up the most recent OTP record for this identifier
+    const otpRecord = await prisma.oTPVerification.findFirst({
+      where: { identifier },
+      orderBy: { createdAt: "desc" }, // always validate against the latest one
+    });
+
+    // 2. No record found — either never sent or already consumed
+    if (!otpRecord) {
+      return res.status(404).json({
+        success: false,
+        message: "No OTP found for this identifier. Please request a new one.",
+      });
+    }
+
+    // 3. Check expiry
+    if (new Date() > otpRecord.expiresAt) {
+      // Clean up the stale record
+      await prisma.oTPVerification.delete({ where: { id: otpRecord.id } });
+      return res.status(410).json({
+        success: false,
+        message: "OTP has expired. Please request a new one.",
+      });
+    }
+
+    // 4. Validate the code
+    if (otpRecord.code !== code.trim()) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid OTP. Please check the code and try again.",
+      });
+    }
+
+    // 5. OTP is valid — delete it to prevent replay attacks
+    await prisma.oTPVerification.delete({ where: { id: otpRecord.id } });
+
+    return res.status(200).json({
+      success: true,
+      message: "OTP verified successfully!",
+    });
+  } catch (error) {
+    console.error("verifyOTP Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Please try again.",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = { registerUser, loginUser, sendOTP, verifyOTP };
