@@ -189,27 +189,55 @@ const sendOTP = async (req, res) => {
     }
 
     const deliveryType = type === "sms" ? "sms" : "email";
+    let normalizedIdentifier = String(identifier).trim();
 
-    // 2. Generate OTP and calculate a 5-minute expiry window
+    // 2. Prevent OTP waste: check duplicate checks before delivery
+    if (deliveryType === "email") {
+      normalizedIdentifier = normalizedIdentifier.toLowerCase();
+      
+      const existingUser = await prisma.user.findUnique({
+        where: { email: normalizedIdentifier },
+      });
+
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          message: "Email address is already registered.",
+        });
+      }
+    } else {
+      const existingUser = await prisma.user.findUnique({
+        where: { phoneNumber: normalizedIdentifier },
+      });
+
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          message: "Mobile number is already registered.",
+        });
+      }
+    }
+
+    // 3. Generate OTP and calculate a 5-minute expiry window
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // now + 5 min
 
-    // 3. Deliver the OTP via the requested channel
+    // 4. Deliver the OTP via the requested channel
     if (deliveryType === "sms") {
-      await sendSmsOTP(identifier, otp);
+      await sendSmsOTP(normalizedIdentifier, otp);
     } else {
-      await sendEmailOTP(identifier, otp);
+      await sendEmailOTP(normalizedIdentifier, otp);
     }
 
-    // 4. Persist the OTP record (upsert to avoid duplicate entries per identifier)
+    // 5. Persist the OTP record (upsert to avoid duplicate entries per identifier)
     //    Delete any previous OTP for the same identifier first to keep the table lean.
     await prisma.oTPVerification.deleteMany({
-      where: { identifier },
+      where: { identifier: normalizedIdentifier },
     });
 
     await prisma.oTPVerification.create({
       data: {
-        identifier,
+        identifier: normalizedIdentifier,
         code: otp,
         expiresAt,
       },
@@ -246,9 +274,12 @@ const verifyOTP = async (req, res) => {
       });
     }
 
+    const trimmed = String(identifier).trim();
+    const normalizedIdentifier = trimmed.includes("@") ? trimmed.toLowerCase() : trimmed;
+
     // 1. Look up the most recent OTP record for this identifier
     const otpRecord = await prisma.oTPVerification.findFirst({
-      where: { identifier },
+      where: { identifier: normalizedIdentifier },
       orderBy: { createdAt: "desc" }, // always validate against the latest one
     });
 
