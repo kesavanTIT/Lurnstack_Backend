@@ -16,7 +16,7 @@ model User {
   fullName        String
   email           String           @unique
   password        String
-  phoneNumber     String?
+  phoneNumber     String?          @unique
   role            Role             @default(STUDENT)
   isActive        Boolean          @default(true)
   createdAt       DateTime         @default(now())

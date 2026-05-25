@@ -21,37 +21,55 @@ const registerUser = async (req, res) => {
       });
     }
 
-    // 3. Resolve role — accept 'TRAINER' from UI toggle; default everything else to STUDENT
+    // 3. Normalize values
+    const email = String(EMAIL_ADDRESS || "").trim().toLowerCase();
+    const phone = PHONE_NUMBER ? String(PHONE_NUMBER).trim() : null;
+
+    // 4. Resolve role — accept 'TRAINER' from UI toggle; default everything else to STUDENT
     const userRole = role === "TRAINER" ? "TRAINER" : "STUDENT";
 
-    // 4. Duplicate check — make sure the email is not already registered
-    const existingUser = await prisma.user.findUnique({
-      where: { email: EMAIL_ADDRESS },
+    // 5. Duplicate check — make sure the email is not already registered
+    const existingEmail = await prisma.user.findUnique({
+      where: { email },
     });
 
-    if (existingUser) {
-      return res.status(400).json({
+    if (existingEmail) {
+      return res.status(409).json({
         success: false,
-        message: "An account with this email already exists. Please log in.",
+        message: "Email address is already registered.",
       });
     }
 
-    // 5. Security — hash the password before saving (salt rounds: 12)
+    // 6. Duplicate check — make sure the phone number is not already registered
+    if (phone) {
+      const existingPhone = await prisma.user.findUnique({
+        where: { phoneNumber: phone },
+      });
+
+      if (existingPhone) {
+        return res.status(409).json({
+          success: false,
+          message: "Mobile number is already registered.",
+        });
+      }
+    }
+
+    // 7. Security — hash the password before saving (salt rounds: 12)
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(PASSWORD, salt);
 
-    // 6. Create the new user record in the database
+    // 8. Create the new user record in the database
     const newUser = await prisma.user.create({
       data: {
         fullName: FULL_NAME,
-        email: EMAIL_ADDRESS,
+        email: email,
         password: hashedPassword,
-        phoneNumber: PHONE_NUMBER,
+        phoneNumber: phone,
         role: userRole, // Enum: STUDENT | TRAINER
       },
     });
 
-    // 7. Return user data excluding password with 201 Created status
+    // 9. Return user data excluding password with 201 Created status
     const { password: _pw, ...userWithoutPassword } = newUser;
 
     return res.status(201).json({
@@ -61,6 +79,28 @@ const registerUser = async (req, res) => {
     });
   } catch (error) {
     console.error("Register Error:", error);
+
+    // Handle database unique constraint violation errors nicely
+    if (error.code === "P2002") {
+      const targets = error.meta?.target || [];
+      if (targets.includes("email")) {
+        return res.status(409).json({
+          success: false,
+          message: "Email address is already registered.",
+        });
+      }
+      if (targets.includes("phoneNumber")) {
+        return res.status(409).json({
+          success: false,
+          message: "Mobile number is already registered.",
+        });
+      }
+      return res.status(409).json({
+        success: false,
+        message: "Email address or mobile number is already registered.",
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: "Internal server error. Please try again.",
