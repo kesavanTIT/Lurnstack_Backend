@@ -53,16 +53,23 @@ const sendSmsOTP = async (phone, otp) => {
     );
   }
 
+  // Read route from .env — defaults to 'q' (Quick SMS, no DLT needed)
+  const smsRoute = process.env.FAST2SMS_ROUTE || "q";
+
   try {
+    const payload = {
+      route: smsRoute,
+      message: `Your LurnStack OTP is: ${otp}. Valid for 5 minutes. Do not share it with anyone.`,
+      language: "english",
+      flash: 0,
+      numbers: phone,
+    };
+
+    console.log(`[SMS] Sending via Fast2SMS | Route: ${smsRoute} | To: ${phone}`);
+
     const response = await axios.post(
       "https://www.fast2sms.com/dev/bulkV2",
-      {
-        route: "q",             // Quick-SMS route
-        message: `Your LurnStack OTP is: ${otp}. Valid for 5 minutes. Do not share it with anyone.`,
-        language: "english",
-        flash: 0,
-        numbers: phone,
-      },
+      payload,
       {
         headers: {
           authorization: apiKey,
@@ -72,15 +79,21 @@ const sendSmsOTP = async (phone, otp) => {
       }
     );
 
+    // Log the full Fast2SMS response so you can debug easily
+    console.log("[SMS] Fast2SMS raw response:", JSON.stringify(response.data));
+
     if (!response.data?.return) {
       throw new Error(
-        `Fast2SMS returned an error: ${JSON.stringify(response.data)}`
+        `Fast2SMS rejected the request: ${JSON.stringify(response.data)}`
       );
     }
 
-    console.log(`[SMS] OTP sent successfully to ${phone}`);
+    console.log(`[SMS] ✅ OTP delivered successfully to ${phone}`);
   } catch (error) {
-    console.error("[SMS] Delivery failed:", error.message);
+    // Log the full error including Fast2SMS error body if available
+    const f2sError = error.response?.data;
+    console.error("[SMS] ❌ Delivery failed:", error.message);
+    if (f2sError) console.error("[SMS] Fast2SMS error details:", JSON.stringify(f2sError));
     throw new Error("Failed to send OTP via SMS. Please try again.");
   }
 };
