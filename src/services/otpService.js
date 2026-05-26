@@ -167,12 +167,9 @@ const sendEmailOTP = async (email, otp) => {
                 <tr>
                   <td align="center"
                     style="background:linear-gradient(135deg,#22c55e 0%,#15803d 100%);padding:32px 40px;">
-                    <img src="https://api.lurnstack.com/uploads/logo.png" alt="LurnStack Logo" width="48" height="48"
-                      style="display:block;margin:0 auto 12px;border-radius:50%;background:#ffffff;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,0.15);" />
-                    <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:-0.5px;">
-                      LurnStack
-                    </h1>
-                    <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">
+                    <img src="https://api.lurnstack.com/uploads/logo.png" alt="LurnStack Logo" width="100"
+                      style="display:block;margin:0 auto 12px;" />
+                    <p style="margin:4px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">
                       Verification Code
                     </p>
                   </td>

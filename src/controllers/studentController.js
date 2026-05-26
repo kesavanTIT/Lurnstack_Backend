@@ -156,9 +156,10 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
   const paymentRequired = priceInPaise !== null || (pricing ? pricing.isActive : false);
 
   // Booking calculations
+  const hasPaidBooking = session.billingBookings ? session.billingBookings.some(b => b.status === "paid") : false;
   const latestBooking = session.billingBookings && session.billingBookings.length > 0 ? session.billingBookings[0] : null;
-  const bookingStatus = latestBooking ? latestBooking.status : null;
-  const isPaid = latestBooking ? latestBooking.status === "paid" : false;
+  const bookingStatus = hasPaidBooking ? "paid" : (latestBooking ? latestBooking.status : null);
+  const isPaid = hasPaidBooking;
 
   // Join logic rules
   const isSessionActive = session.status === "active";
@@ -167,9 +168,7 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
   
   let hasPaidBookingForToday = false;
   if (paymentRequired) {
-    hasPaidBookingForToday = session.billingBookings ? session.billingBookings.some(b => {
-      return b.status === "paid" && getKolkataDateString(new Date(b.sessionDate)) === todayStr;
-    }) : false;
+    hasPaidBookingForToday = hasPaidBooking;
   } else {
     hasPaidBookingForToday = true;
   }
@@ -778,9 +777,7 @@ const joinSession = async (req, res) => {
     const todayStrKolkata = getKolkataDateString(now);
     
     if (paymentRequired) {
-      const hasPaidBooking = session.billingBookings.some(b => {
-        return b.status === "paid" && getKolkataDateString(new Date(b.sessionDate)) === todayStrKolkata;
-      });
+      const hasPaidBooking = session.billingBookings.some(b => b.status === "paid");
       if (!hasPaidBooking) {
         return res.status(400).json({
           success: false,
@@ -1051,6 +1048,26 @@ const createBooking = async (req, res) => {
 
     if (!sessionDate) {
       return res.status(400).json({ success: false, message: "sessionDate is required." });
+    }
+
+    // Check if student already has active paid access for this session
+    const existingPaidBooking = await prisma.booking.findFirst({
+      where: {
+        studentId,
+        sessionId,
+        status: "paid"
+      }
+    });
+
+    if (existingPaidBooking) {
+      return res.status(409).json({
+        success: false,
+        message: "You already have active access for this session.",
+        alreadyPaid: true,
+        bookingStatus: "paid",
+        paymentRequired: false,
+        sessionId
+      });
     }
 
     // Fetch active session pricing
