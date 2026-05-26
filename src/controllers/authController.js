@@ -1,6 +1,7 @@
 const prisma = require("../config/db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { normalizePhone } = require("../utils/phone");
 
 // ─────────────────────────────────────────────
 // @desc    Register a new user (STUDENT or TRAINER)
@@ -24,6 +25,7 @@ const registerUser = async (req, res) => {
     // 3. Normalize values
     const email = String(EMAIL_ADDRESS || "").trim().toLowerCase();
     const phone = PHONE_NUMBER ? String(PHONE_NUMBER).trim() : null;
+    const phoneNormalized = phone ? normalizePhone(phone) : null;
 
     // 4. Resolve role — accept 'TRAINER' from UI toggle; default everything else to STUDENT
     const userRole = role === "TRAINER" ? "TRAINER" : "STUDENT";
@@ -41,9 +43,16 @@ const registerUser = async (req, res) => {
     }
 
     // 6. Duplicate check — make sure the phone number is not already registered
-    if (phone) {
-      const existingPhone = await prisma.user.findUnique({
-        where: { phoneNumber: phone },
+    if (phoneNormalized) {
+      const localNumber = phoneNormalized.length >= 10 ? phoneNormalized.slice(-10) : phoneNormalized;
+      const existingPhone = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { phoneNormalized: phoneNormalized },
+            { phoneNormalized: { endsWith: localNumber } },
+            { phoneNumber: { endsWith: localNumber } },
+          ],
+        },
       });
 
       if (existingPhone) {
@@ -65,6 +74,7 @@ const registerUser = async (req, res) => {
         email: email,
         password: hashedPassword,
         phoneNumber: phone,
+        phoneNormalized: phoneNormalized,
         role: userRole, // Enum: STUDENT | TRAINER
       },
     });
@@ -89,7 +99,7 @@ const registerUser = async (req, res) => {
           message: "Email address is already registered.",
         });
       }
-      if (targets.includes("phoneNumber")) {
+      if (targets.includes("phoneNumber") || targets.includes("phoneNormalized")) {
         return res.status(409).json({
           success: false,
           message: "Mobile number is already registered.",
@@ -206,8 +216,17 @@ const sendOTP = async (req, res) => {
         });
       }
     } else {
-      const existingUser = await prisma.user.findUnique({
-        where: { phoneNumber: normalizedIdentifier },
+      normalizedIdentifier = normalizePhone(normalizedIdentifier);
+      const localNumber = normalizedIdentifier.length >= 10 ? normalizedIdentifier.slice(-10) : normalizedIdentifier;
+
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { phoneNormalized: normalizedIdentifier },
+            { phoneNormalized: { endsWith: localNumber } },
+            { phoneNumber: { endsWith: localNumber } },
+          ],
+        },
       });
 
       if (existingUser) {
@@ -224,7 +243,8 @@ const sendOTP = async (req, res) => {
 
     // 4. Deliver the OTP via the requested channel
     if (deliveryType === "sms") {
-      await sendSmsOTP(normalizedIdentifier, otp);
+      const smsPhone = normalizedIdentifier.length >= 10 ? normalizedIdentifier.slice(-10) : normalizedIdentifier;
+      await sendSmsOTP(smsPhone, otp);
     } else {
       await sendEmailOTP(normalizedIdentifier, otp);
     }
@@ -275,7 +295,9 @@ const verifyOTP = async (req, res) => {
     }
 
     const trimmed = String(identifier).trim();
-    const normalizedIdentifier = trimmed.includes("@") ? trimmed.toLowerCase() : trimmed;
+    const normalizedIdentifier = trimmed.includes("@") 
+      ? trimmed.toLowerCase() 
+      : normalizePhone(trimmed);
 
     // 1. Look up the most recent OTP record for this identifier
     const otpRecord = await prisma.oTPVerification.findFirst({
