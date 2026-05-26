@@ -166,7 +166,9 @@ const sendEmailOTP = async (email, otp) => {
                 <!-- Header -->
                 <tr>
                   <td align="center"
-                    style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%);padding:32px 40px;">
+                    style="background:linear-gradient(135deg,#22c55e 0%,#15803d 100%);padding:32px 40px;">
+                    <img src="https://lurnstack.com/assets/logo.png" alt="LurnStack Logo" width="48" height="48"
+                      style="display:block;margin:0 auto 12px;border-radius:50%;background:#ffffff;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,0.15);" />
                     <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:-0.5px;">
                       LurnStack
                     </h1>
@@ -180,14 +182,14 @@ const sendEmailOTP = async (email, otp) => {
                   <td style="padding:40px;">
                     <p style="margin:0 0 24px;color:#374151;font-size:16px;line-height:1.6;">
                       Use the code below to verify your identity. It expires in
-                      <strong>5 minutes</strong>.
+                      <strong style="color:#15803d;">5 minutes</strong>.
                     </p>
                     <!-- OTP box -->
                     <div style="text-align:center;margin:32px 0;">
-                      <span style="display:inline-block;background:#f3f4f6;border:2px dashed #6366f1;
+                      <span style="display:inline-block;background:#f0fdf4;border:2px dashed #22c55e;
                         border-radius:12px;padding:20px 48px;font-size:36px;font-weight:800;
-                        letter-spacing:12px;color:#4f46e5;">
-                        ${otp}
+                        letter-spacing:12px;color:#16a34a;">
+                        \${otp}
                       </span>
                     </div>
                     <p style="margin:0 0 8px;color:#6b7280;font-size:13px;line-height:1.5;">
@@ -202,7 +204,7 @@ const sendEmailOTP = async (email, otp) => {
                 <tr>
                   <td align="center" style="background:#f9fafb;padding:20px 40px;border-top:1px solid #e5e7eb;">
                     <p style="margin:0;color:#9ca3af;font-size:12px;">
-                      © ${new Date().getFullYear()} LurnStack. All rights reserved.
+                      © \${new Date().getFullYear()} LurnStack. All rights reserved.
                     </p>
                   </td>
                 </tr>
