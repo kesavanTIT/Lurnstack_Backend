@@ -157,19 +157,19 @@ const sendEmailOTP = async (email, otp) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>LurnStack OTP</title>
       </head>
-      <body style="margin:0;padding:0;background:#f4f6f8;font-family:'Helvetica Neue',Arial,sans-serif;">
+      <body style="margin:0;padding:0;background:#ffffff;font-family:'Helvetica Neue',Arial,sans-serif;">
         <table width="100%" cellpadding="0" cellspacing="0">
           <tr>
             <td align="center" style="padding:40px 20px;">
               <table width="480" cellpadding="0" cellspacing="0"
-                style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+                style="background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
                 <!-- Header -->
                 <tr>
                   <td align="center"
-                    style="background:#ffffff;padding:40px 40px 10px;border-bottom:1px solid #f3f4f6;">
+                    style="background:#ffffff;padding:40px 40px 10px;border-bottom:1px solid #f1f5f9;">
                     <img src="https://api.lurnstack.com/uploads/logo.png" alt="LurnStack Logo" width="100"
                       style="display:block;margin:0 auto 12px;" />
-                    <p style="margin:4px 0 0;color:#6b7280;font-size:14px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;">
+                    <p style="margin:4px 0 0;color:#64748b;font-size:14px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;">
                       Verification Code
                     </p>
                   </td>
@@ -177,30 +177,30 @@ const sendEmailOTP = async (email, otp) => {
                 <!-- Body -->
                 <tr>
                   <td style="padding:40px;">
-                    <p style="margin:0 0 24px;color:#374151;font-size:16px;line-height:1.6;">
+                    <p style="margin:0 0 24px;color:#334155;font-size:16px;line-height:1.6;">
                       Use the code below to verify your identity. It expires in
-                      <strong style="color:#15803d;">5 minutes</strong>.
+                      <strong style="color:#0f172a;">5 minutes</strong>.
                     </p>
                     <!-- OTP box -->
                     <div style="text-align:center;margin:32px 0;">
-                      <span style="display:inline-block;background:#f0fdf4;border:2px dashed #22c55e;
+                      <span style="display:inline-block;background:#f8fafc;border:2px dashed #cbd5e1;
                         border-radius:12px;padding:20px 48px;font-size:36px;font-weight:800;
-                        letter-spacing:12px;color:#16a34a;">
+                        letter-spacing:12px;color:#0f172a;">
                         ${otp}
                       </span>
                     </div>
-                    <p style="margin:0 0 8px;color:#6b7280;font-size:13px;line-height:1.5;">
+                    <p style="margin:0 0 8px;color:#64748b;font-size:13px;line-height:1.5;">
                       ⚠️ Never share this code with anyone. LurnStack will never ask for it.
                     </p>
-                    <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.5;">
+                    <p style="margin:0;color:#64748b;font-size:13px;line-height:1.5;">
                       If you didn't request this code, you can safely ignore this email.
                     </p>
                   </td>
                 </tr>
                 <!-- Footer -->
                 <tr>
-                  <td align="center" style="background:#f9fafb;padding:20px 40px;border-top:1px solid #e5e7eb;">
-                    <p style="margin:0;color:#9ca3af;font-size:12px;">
+                  <td align="center" style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
+                    <p style="margin:0;color:#94a3b8;font-size:12px;">
                       © ${new Date().getFullYear()} LurnStack. All rights reserved.
                     </p>
                   </td>
