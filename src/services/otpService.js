@@ -181,7 +181,7 @@ const sendEmailOTP = async (email, otp) => {
                 <tr>
                   <td align="center"
                     style="background:#ffffff;padding:40px 40px 10px;border-bottom:1px solid #f1f5f9;">
-                    <img src="https://api.lurnstack.com/uploads/logo.png" alt="LurnStack Logo" width="100"
+                    <img src="https://api.lurnstack.com/uploads/logo.png" alt="LurnStack Logo" width="130"
                       style="display:block;margin:0 auto 12px;" />
                     <p style="margin:4px 0 0;color:#64748b;font-size:14px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;">
                       Verification Code
@@ -289,7 +289,7 @@ const sendPasswordResetEmail = async (email, token) => {
                   <td align="center"
                     style="background:linear-gradient(135deg,#16a34a,#22c55e);padding:40px 40px 32px;">
                     <img src="https://api.lurnstack.com/uploads/logo.png" alt="LurnStack Logo"
-                      width="90" style="display:block;margin:0 auto 16px;" />
+                      width="130" style="display:block;margin:0 auto 12px;" />
                     <p style="margin:0;color:#ffffff;font-size:13px;font-weight:600;
                       letter-spacing:1.5px;text-transform:uppercase;opacity:0.9;">
                       Account Recovery
