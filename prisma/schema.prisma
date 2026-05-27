@@ -21,11 +21,12 @@ model User {
   role            Role             @default(STUDENT)
   isActive        Boolean          @default(true)
   createdAt       DateTime         @default(now())
-  liveSessions    LiveSession[]
-  sessionCards    SessionCard[]
-  sessionBookings SessionBooking[]
-  attendances     Attendance[]
-  bookings        Booking[]        @relation(name: "UserBookingRelation")
+  liveSessions        LiveSession[]
+  sessionCards        SessionCard[]
+  sessionBookings     SessionBooking[]
+  attendances         Attendance[]
+  bookings            Booking[]             @relation(name: "UserBookingRelation")
+  passwordResetTokens PasswordResetToken[]
   payments                  Payment[]           @relation(name: "UserPaymentRelation")
   trainerEarnings           TrainerEarning[]    @relation(name: "TrainerEarningRelation")
   trainerPayouts            TrainerPayout[]     @relation(name: "TrainerPayoutRelation")
@@ -330,6 +331,18 @@ model StudentAttendance {
   updatedAt      DateTime          @updatedAt
 
   @@unique([occurrenceId, studentId])
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Password Reset Token — secure single-use token for forgot password
+// ─────────────────────────────────────────────────────────────────
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
 // ─────────────────────────────────────────────────────────────────

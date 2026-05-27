@@ -1,6 +1,7 @@
 const prisma = require("../config/db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const { normalizePhone } = require("../utils/phone");
 
 // ─────────────────────────────────────────────
@@ -183,7 +184,7 @@ const loginUser = async (req, res) => {
 // @route   POST /api/auth/send-otp
 // @access  Public
 // ─────────────────────────────────────────────
-const { generateOTP, sendSmsOTP, sendEmailOTP } = require("../services/otpService");
+const { generateOTP, sendSmsOTP, sendEmailOTP, sendPasswordResetEmail } = require("../services/otpService");
 
 const sendOTP = async (req, res) => {
   try {
@@ -348,4 +349,154 @@ const verifyOTP = async (req, res) => {
   }
 };
 
-module.exports = { registerUser, loginUser, sendOTP, verifyOTP };
+// ─────────────────────────────────────────────
+// @desc    Request a password reset link via email
+// @route   POST /api/auth/forgot-password
+// @body    { EMAIL_ADDRESS: string }
+// @access  Public
+// ─────────────────────────────────────────────
+const forgotPassword = async (req, res) => {
+  try {
+    const { EMAIL_ADDRESS } = req.body;
+
+    // 1. Validate input
+    if (!EMAIL_ADDRESS) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide your email address.",
+      });
+    }
+
+    const email = String(EMAIL_ADDRESS).trim().toLowerCase();
+
+    // 2. Look up the user
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    // 3. SECURITY: Always return the same message whether user exists or not.
+    //    This prevents attackers from discovering which emails are registered
+    //    (called "user enumeration attack" prevention).
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message: "If that email exists in our system, a password reset link has been sent.",
+      });
+    }
+
+    // 4. Generate a cryptographically secure 64-character hex token
+    const token = crypto.randomBytes(32).toString("hex");
+
+    // 5. Set expiry — 15 minutes from now
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    // 6. Delete any previous unused reset tokens for this user (keep DB clean)
+    await prisma.passwordResetToken.deleteMany({
+      where: { userId: user.id },
+    });
+
+    // 7. Save the new token in the database
+    await prisma.passwordResetToken.create({
+      data: {
+        token,
+        userId: user.id,
+        expiresAt,
+      },
+    });
+
+    // 8. Send the styled HTML reset email via Zeptomail SMTP
+    await sendPasswordResetEmail(user.email, token);
+
+    return res.status(200).json({
+      success: true,
+      message: "If that email exists in our system, a password reset link has been sent.",
+    });
+  } catch (error) {
+    console.error("Forgot Password Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Please try again.",
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Verify reset token & set new password
+// @route   POST /api/auth/reset-password
+// @body    { token: string, newPassword: string }
+// @access  Public
+// ─────────────────────────────────────────────
+const resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    // 1. Validate inputs
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Token and new password are required.",
+      });
+    }
+
+    // 2. Enforce minimum password strength (matches your existing registration rule)
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 8 characters long.",
+      });
+    }
+
+    // 3. Look up the token in the database
+    const resetRecord = await prisma.passwordResetToken.findUnique({
+      where: { token },
+      include: { user: true },
+    });
+
+    // 4. If token doesn't exist, it's invalid
+    if (!resetRecord) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired reset link. Please request a new one.",
+      });
+    }
+
+    // 5. Check if token has expired
+    if (new Date() > resetRecord.expiresAt) {
+      // Clean up the expired token
+      await prisma.passwordResetToken.delete({ where: { id: resetRecord.id } });
+      return res.status(400).json({
+        success: false,
+        message: "This reset link has expired (15 minutes). Please request a new one.",
+      });
+    }
+
+    // 6. Hash the new password (salt rounds: 12, matching your registration logic)
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // 7. Atomically: update password AND delete all reset tokens for this user
+    //    Using prisma.$transaction ensures both happen together or not at all.
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: resetRecord.userId },
+        data: { password: hashedPassword },
+      }),
+      prisma.passwordResetToken.deleteMany({
+        where: { userId: resetRecord.userId },
+      }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Your password has been reset successfully! You can now log in with your new password.",
+    });
+  } catch (error) {
+    console.error("Reset Password Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Please try again.",
+    });
+  }
+};
+
+module.exports = { registerUser, loginUser, sendOTP, verifyOTP, forgotPassword, resetPassword };
