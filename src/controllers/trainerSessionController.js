@@ -173,6 +173,8 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
     updatedAt: session.updatedAt,
     endedAt: session.endedAt,
     priceInPaise: session.priceInPaise !== undefined ? session.priceInPaise : null,
+    pricingState: session.pricingState,
+    publishState: session.publishState,
     trainerSharePercentage: session.trainerSharePercentage !== undefined ? session.trainerSharePercentage : 50,
   };
 };

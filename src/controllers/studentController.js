@@ -1046,11 +1046,34 @@ const createBooking = async (req, res) => {
     const { sessionDate } = req.body;
     const studentId = parseInt(req.user.id);
 
+    console.log(`[BOOKING] Initiating booking for session ${sessionId} by student ${studentId}`);
+
     if (!sessionDate) {
       return res.status(400).json({ success: false, message: "sessionDate is required." });
     }
 
-    // Check if student already has active paid access for this session
+    // 1. Session Lookup & Pricing State Check
+    const session = await prisma.liveSession.findUnique({
+      where: { id: sessionId },
+      include: { pricing: true }
+    });
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: "Session not found." });
+    }
+
+    const isFree = session.pricingState === "FREE" || session.pricingState === "PENDING_PRICE" || !session.priceInPaise || session.priceInPaise <= 0;
+
+    if (isFree) {
+      console.log(`[BOOKING] Session ${sessionId} is free. Booking flow rejected.`);
+      return res.status(400).json({ success: false, message: "This session is free. No booking required." });
+    }
+
+    const amountPaise = session.priceInPaise;
+    const currency = "INR";
+
+    // 2. Paid-access check
+    console.log(`[BOOKING] Checking active paid access for student ${studentId} on session ${sessionId}`);
     const existingPaidBooking = await prisma.booking.findFirst({
       where: {
         studentId,
@@ -1060,23 +1083,20 @@ const createBooking = async (req, res) => {
     });
 
     if (existingPaidBooking) {
+      console.log(`[BOOKING] Student ${studentId} already has active access to session ${sessionId}`);
       return res.status(409).json({
         success: false,
-        message: "You already have active access for this session.",
         alreadyPaid: true,
+        message: "You already have active access for this session.",
         bookingStatus: "paid",
         paymentRequired: false,
         sessionId
       });
     }
 
-    // Fetch active session pricing
-    const sessionPricing = await prisma.sessionPricing.findUnique({
-      where: { sessionId }
-    });
-
-    if (!sessionPricing || !sessionPricing.isActive) {
-      return res.status(404).json({ success: false, message: "Active session pricing not found for this session." });
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      console.error("[BOOKING] Missing Razorpay credentials in environment variables.");
+      return res.status(500).json({ success: false, message: "Server configuration error regarding payment gateway." });
     }
 
     const bookingDate = new Date(sessionDate);
@@ -1087,26 +1107,34 @@ const createBooking = async (req, res) => {
         studentId,
         sessionId,
         sessionDate: bookingDate,
-        amountPaise: sessionPricing.amountPaise,
-        currency: sessionPricing.currency,
+        amountPaise,
+        currency,
         status: "pending_payment"
       }
     });
 
     // Request payment token from Razorpay
+    console.log(`[BOOKING] Creating Razorpay order for booking ${booking.id}`);
     const orderOptions = {
-      amount: sessionPricing.amountPaise,
-      currency: sessionPricing.currency,
+      amount: amountPaise,
+      currency: currency,
       receipt: `rcpt_${booking.id.substring(0, 20)}`,
       notes: {
         bookingId: booking.id,
         sessionId: sessionId,
         studentId: studentId.toString(),
-        sessionDate: sessionDate
+        sessionDate: sessionDate,
+        accessScope: "session"
       }
     };
 
-    const razorpayOrder = await razorpay.orders.create(orderOptions);
+    let razorpayOrder;
+    try {
+      razorpayOrder = await razorpay.orders.create(orderOptions);
+    } catch (rzpError) {
+      console.error("[BOOKING] Razorpay order creation failed:", rzpError);
+      return res.status(502).json({ success: false, message: "Failed to communicate with payment gateway.", error: rzpError.message });
+    }
 
     // Create tracking Payment row
     await prisma.payment.create({
@@ -1115,8 +1143,8 @@ const createBooking = async (req, res) => {
         studentId,
         sessionId,
         razorpayOrderId: razorpayOrder.id,
-        amountPaise: sessionPricing.amountPaise,
-        currency: sessionPricing.currency,
+        amountPaise,
+        currency,
         status: "created"
       }
     });
@@ -1126,6 +1154,8 @@ const createBooking = async (req, res) => {
       where: { id: studentId },
       select: { fullName: true, email: true, phoneNumber: true }
     });
+
+    console.log(`[BOOKING] Successfully created order for booking ${booking.id}`);
 
     return res.status(201).json({
       success: true,
@@ -1139,12 +1169,13 @@ const createBooking = async (req, res) => {
           name: studentUser?.fullName || "Student",
           email: studentUser?.email || "",
           phone: studentUser?.phoneNumber || ""
-        }
+        },
+        accessScope: "session"
       }
     });
   } catch (error) {
-    console.error("Create Booking Error:", error);
-    return res.status(500).json({ success: false, message: "Failed to create booking.", error: error.message });
+    console.error("[BOOKING] Create Booking Fatal Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to create booking. An internal error occurred." });
   }
 };
 
