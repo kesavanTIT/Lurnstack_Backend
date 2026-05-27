@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { generateOccurrences } = require("../services/occurrenceService");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TIMEZONE & STATUS HELPERS (Asia/Kolkata)
@@ -376,9 +377,14 @@ const createSession = async (req, res) => {
         status: "active",
         cancelledDates: [],
         thumbnail,
+        pricingState: "PENDING_PRICE",
+        publishState: "DRAFT",
       },
       include: { trainer: true },
     });
+
+    // Automatically generate SessionOccurrence records so reminder Job works
+    await generateOccurrences(session);
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));

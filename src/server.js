@@ -105,6 +105,7 @@ const startServer = async () => {
     const prisma = require("./config/db");
 
     // Initialize scheduled jobs
+    require("./jobs/occurrenceJob"); // Nightly occurrence generator
     require("./jobs/attendanceJob");
     require("./jobs/reminderJob");   // 10-min session reminder via ZeptoMail
 
