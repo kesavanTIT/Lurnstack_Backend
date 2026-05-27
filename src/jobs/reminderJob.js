@@ -3,8 +3,14 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Runs every minute. Finds SessionOccurrence records that start in exactly
  * 10–11 minutes, selects the correct recipients (paid students or all active
- * students for free sessions), sends branded ZeptoMail reminder emails, and
- * atomically marks reminderSent = true to prevent duplicates.
+ * students for free sessions), sends:
+ *   • Branded ZeptoMail reminder emails
+ *   • Fast2SMS bulk reminder SMS messages
+ * …then atomically marks reminderSent = true to prevent duplicates.
+ *
+ * Recipient Selection:
+ *   PAID SESSION  → enrolled/paid students for that specific session
+ *   FREE SESSION  → all active STUDENT-role users on the platform
  *
  * Stop Condition: cancelled / ended / paused sessions are excluded by query.
  * ─────────────────────────────────────────────────────────────────────────────
@@ -12,9 +18,10 @@
 
 "use strict";
 
-const cron = require("node-cron");
+const cron   = require("node-cron");
 const prisma = require("../config/db");
 const { sendSessionReminderEmail } = require("../services/emailService");
+const { sendSessionReminderSMS }   = require("../services/smsService");
 
 // ─── Cron: every minute ───────────────────────────────────────────────────────
 cron.schedule("* * * * *", async () => {
@@ -64,65 +71,114 @@ cron.schedule("* * * * *", async () => {
       const session = occurrence.session;
 
       try {
-        let recipientEmails = [];
+        let recipientEmails  = [];
+        let recipientPhones  = [];
 
         // ── 3. Recipient Selection Logic ──────────────────────────────────
         if (session.pricingState === "PRICED" && session.priceInPaise > 0) {
-          // PAID SESSION → only students who have paid for this session
+          // ── PAID SESSION → only students who have paid for this specific session
           console.log(`[REMINDER] 💰 Paid session "${session.title}" — fetching paid students.`);
 
           const paidBookings = await prisma.booking.findMany({
             where: {
               sessionId: session.id,
-              status: "paid",
+              status:    "paid",
             },
             include: {
               student: {
-                select: { email: true, isActive: true },
+                select: {
+                  email:           true,
+                  phoneNormalized: true,
+                  isActive:        true,
+                },
               },
             },
           });
 
-          recipientEmails = paidBookings
-            .filter((b) => b.student?.isActive && b.student?.email)
+          const activeBookings = paidBookings.filter((b) => b.student?.isActive);
+
+          recipientEmails = activeBookings
+            .filter((b) => b.student?.email)
             .map((b) => b.student.email);
 
-          console.log(`[REMINDER]   → ${recipientEmails.length} paid student(s) will be notified.`);
+          recipientPhones = activeBookings
+            .filter((b) => b.student?.phoneNormalized)
+            .map((b) => b.student.phoneNormalized);
+
+          console.log(
+            `[REMINDER]   → ${recipientEmails.length} email(s), ${recipientPhones.length} phone(s) for paid students.`
+          );
         } else {
-          // FREE / PENDING_PRICE SESSION → all active students on the platform
+          // ── FREE / PENDING_PRICE SESSION → all active STUDENT-role users
           console.log(`[REMINDER] 🆓 Free session "${session.title}" — fetching all active students.`);
 
           const allStudents = await prisma.user.findMany({
             where: {
-              role: "STUDENT",
+              role:     "STUDENT",
               isActive: true,
             },
-            select: { email: true },
+            select: {
+              email:           true,
+              phoneNormalized: true,
+            },
           });
 
           recipientEmails = allStudents
             .filter((u) => u.email)
             .map((u) => u.email);
 
-          console.log(`[REMINDER]   → ${recipientEmails.length} student(s) will be notified.`);
+          recipientPhones = allStudents
+            .filter((u) => u.phoneNormalized)
+            .map((u) => u.phoneNormalized);
+
+          console.log(
+            `[REMINDER]   → ${recipientEmails.length} email(s), ${recipientPhones.length} phone(s) for all active students.`
+          );
         }
 
-        // ── 4. Send the reminder emails ───────────────────────────────────
+        // ── 4. Send reminders (email + SMS) in parallel ───────────────────
+        const notifyPromises = [];
+
         if (recipientEmails.length > 0) {
-          await sendSessionReminderEmail(recipientEmails, session, occurrence);
+          notifyPromises.push(
+            sendSessionReminderEmail(recipientEmails, session, occurrence).catch((err) => {
+              console.error(
+                `[REMINDER] ❌ Email send failed for occurrence "${occurrence.id}":`,
+                err.message
+              );
+            })
+          );
+        } else {
+          console.log(`[REMINDER] ℹ️  No email recipients for occurrence "${occurrence.id}" — skipping email.`);
         }
+
+        if (recipientPhones.length > 0) {
+          notifyPromises.push(
+            sendSessionReminderSMS(recipientPhones, session, occurrence).catch((err) => {
+              console.error(
+                `[REMINDER] ❌ SMS send failed for occurrence "${occurrence.id}":`,
+                err.message
+              );
+            })
+          );
+        } else {
+          console.log(`[REMINDER] ℹ️  No SMS recipients for occurrence "${occurrence.id}" — skipping SMS.`);
+        }
+
+        // Wait for all channels to complete (errors are caught above, won't reject)
+        await Promise.all(notifyPromises);
 
         // ── 5. Mark reminderSent = true (atomic transaction) ──────────────
-        //       This is the critical step that prevents duplicate emails
+        //       This is the critical step that prevents duplicate emails/SMS
         //       even if the cron fires slightly off.
         await prisma.$transaction([
           prisma.sessionOccurrence.update({
             where: { id: occurrence.id },
-            data: { reminderSent: true },
+            data:  { reminderSent: true },
           }),
         ]);
 
-        console.log(`[REMINDER] ✅ Reminder sent & occurrence "${occurrence.id}" marked as done.`);
+        console.log(`[REMINDER] ✅ Reminders sent & occurrence "${occurrence.id}" marked as done.`);
       } catch (occurrenceError) {
         // Log per-occurrence errors but continue processing other occurrences
         console.error(
@@ -136,4 +192,4 @@ cron.schedule("* * * * *", async () => {
   }
 });
 
-console.log("[REMINDER] ⏱️  10-minute session reminder job registered (runs every minute).");
+console.log("[REMINDER] ⏱️  10-minute session reminder job registered (email + SMS, runs every minute).");

@@ -107,7 +107,7 @@ const startServer = async () => {
     // Initialize scheduled jobs
     require("./jobs/occurrenceJob"); // Nightly occurrence generator
     require("./jobs/attendanceJob");
-    require("./jobs/reminderJob");   // 10-min session reminder via ZeptoMail
+    require("./jobs/reminderJob");   // 10-min session reminder via ZeptoMail (email) + Fast2SMS (SMS)
 
     
     // Self-healing: Ensure 'updatedAt' column exists if migration skipped it
