@@ -114,7 +114,7 @@ const sendSessionReminderSMS = async (phoneNumbers, session, occurrence) => {
   const frontendUrl   = process.env.FRONTEND_URL || "https://lurnstack.com";
   const joinLink      = `${frontendUrl}/sessions/join/${occurrence.id}`;
 
-  // ── IMPORTANT: Keep message under 160 plain ASCII chars to avoid Unicode
+  // ── IMPORTANT: Keep message  under 160 plain ASCII chars to avoid Unicode
   //   multi-part splitting (which can fail on DND numbers via Quick SMS route).
   //   Curly quotes and special chars trigger Unicode mode (70 chars/part).
   //   We intentionally omit the join link here to stay within 1 SMS.
