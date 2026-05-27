@@ -108,6 +108,15 @@ model LiveSession {
   trainerSharePercentage       Float @default(50)
   platformCommissionPercentage Float @default(50)
 
+  // ── Pricing & Publish State (new — safe defaults preserve all existing data) ──
+  // pricingState: PENDING_PRICE | FREE | PRICED
+  //   Default is PENDING_PRICE for newly created sessions.
+  //   Existing sessions that already have priceInPaise set will be PRICED.
+  pricingState  String @default("PENDING_PRICE")
+  // publishState: DRAFT | PUBLISHED | CANCELLED | ENDED
+  //   Default is PUBLISHED so all existing sessions remain visible to students.
+  publishState  String @default("PUBLISHED")
+
   pricing         SessionPricing?  @relation(name: "SessionPricingRelation")
   billingBookings Booking[]        @relation(name: "SessionBookingRelation")
   payments        Payment[]        @relation(name: "SessionPaymentRelation")
@@ -304,6 +313,8 @@ model SessionOccurrence {
   endsAt         DateTime
   status         String              @default("scheduled") // scheduled, live, completed
   finalizedAt    DateTime?
+  // reminderSent: prevents duplicate 10-min reminder emails per occurrence
+  reminderSent   Boolean             @default(false)
   attendances    StudentAttendance[]
 
   @@unique([sessionId, occurrenceDate])

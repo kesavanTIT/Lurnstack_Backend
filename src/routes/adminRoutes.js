@@ -30,6 +30,10 @@ const {
   updatePaymentSettings,
 } = require("../controllers/adminPaymentController");
 const {
+  reviewAndPublishSession,
+  getPendingReviewSessions,
+} = require("../controllers/sessionReminderController");
+const {
   getAttendanceOverview,
   getAllAttendanceRecords,
   getTrainerAttendanceAdmin,
@@ -71,9 +75,13 @@ router.delete("/delete-live-class/:classId", deleteLiveClass);
 router.get("/sessions", getAdminSessions);
 // NOTE: Specific sub-routes MUST be declared before the generic /:sessionId route
 // to prevent Express from matching "revenue" as a sessionId value.
+router.get("/sessions/pending-review", getPendingReviewSessions);
 router.get("/sessions/:sessionId/revenue", getSessionRevenue);
 router.get("/sessions/:sessionId", getAdminSessionById);
 router.patch("/sessions/:sessionId/pricing", updateSessionPricing);
+// ── Admin Session Review & Publish ────────────────
+// PUT /api/admin/sessions/:sessionId/review  → Admin sets price + publishes session
+router.put("/sessions/:sessionId/review", reviewAndPublishSession);
 router.get("/payments", getAdminPayments);
 router.get("/payments/:paymentId", getAdminPaymentById);
 router.get("/trainer-earnings", getAdminTrainerEarnings);

@@ -106,6 +106,7 @@ const startServer = async () => {
 
     // Initialize scheduled jobs
     require("./jobs/attendanceJob");
+    require("./jobs/reminderJob");   // 10-min session reminder via ZeptoMail
 
     
     // Self-healing: Ensure 'updatedAt' column exists if migration skipped it
