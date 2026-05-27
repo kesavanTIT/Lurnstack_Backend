@@ -123,7 +123,7 @@ const sendSessionReminderSMS = async (phoneNumbers, session, occurrence) => {
 
   const smsRoute = process.env.FAST2SMS_ROUTE || "q";
 
-  // ── Send in batches ──────────────────────────────────────────────────────
+  // ── Send in batches ───── ─────────────────────────────────────────────────
   let sent   = 0;
   let failed = 0;
 
