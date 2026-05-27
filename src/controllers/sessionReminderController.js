@@ -9,7 +9,8 @@
 
 "use strict";
 
-const prisma = require("../config/db");
+const prisma                = require("../config/db");
+const { generateOccurrences } = require("../services/occurrenceService");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,35 @@ const reviewAndPublishSession = async (req, res) => {
         trainer: { select: { fullName: true, email: true } },
       },
     });
+
+    // 4. Regenerate occurrences so startsAt is based on TODAY (not session creation date).
+    //    This fixes the case where a trainer creates a session on Day 1 but admin
+    //    only publishes it on Day 7 — the old occurrence startsAt would be in the past.
+    //    We also reset reminderSent=false on any stale occurrence so the reminder fires fresh.
+    try {
+      // Delete stale occurrences that are in the past or already sent
+      await prisma.sessionOccurrence.deleteMany({
+        where: {
+          sessionId,
+          OR: [
+            { reminderSent: true },
+            { startsAt: { lt: new Date() } },
+          ],
+        },
+      });
+
+      // Regenerate with "today" as base so all new startsAt values are upcoming
+      const sessionForOccurrence = {
+        ...updated,
+        createdAt: new Date(), // Override: treat "today" as the base date for occurrence generation
+      };
+      await generateOccurrences(sessionForOccurrence, updated.isRecurring ? 30 : 1);
+
+      console.log(`[PUBLISH] ✅ Occurrences regenerated for session "${updated.title}" (reminderSent reset).`);
+    } catch (occErr) {
+      // Non-fatal: log but don't fail the publish response
+      console.error("[PUBLISH] ⚠️ Could not regenerate occurrences after publish:", occErr.message);
+    }
 
     const isFree = pricingState === "FREE" || pricingState === "PENDING_PRICE";
 
