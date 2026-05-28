@@ -123,6 +123,14 @@ const sendSessionReminderSMS = async (phoneNumbers, session, occurrence) => {
 
   const smsRoute = process.env.FAST2SMS_ROUTE || "q";
 
+  // ── Warn if using Quick SMS in production (DND numbers won't receive) ────
+  if (smsRoute === "q") {
+    console.warn(
+      "[SMS-REMINDER] ⚠️  Using Quick SMS route ('q'). DND-registered numbers will NOT receive SMS.\n" +
+      "                   Set FAST2SMS_ROUTE=dlt and configure DLT sender/template for production use."
+    );
+  }
+
   // ── Send in batches ───── ─────────────────────────────────────────────────
   let sent   = 0;
   let failed = 0;
@@ -137,12 +145,17 @@ const sendSessionReminderSMS = async (phoneNumbers, session, occurrence) => {
         `[SMS-REMINDER] Sending ${batchLabel} (${batch.length} numbers) via Fast2SMS | Route: ${smsRoute}`
       );
 
+      // ── Build payload (DLT route requires sender_id + template_id) ────────
       const payload = {
         route:    smsRoute,
         message,
         language: "english",
         flash:    0,
         numbers:  numbersCsv,
+        ...(smsRoute === "dlt" && {
+          sender_id:   process.env.FAST2SMS_SENDER_ID,   // e.g. "LRNSTK"
+          template_id: process.env.FAST2SMS_TEMPLATE_ID, // DLT registered template ID
+        }),
       };
 
       const response = await axios.post(FAST2SMS_URL, payload, {

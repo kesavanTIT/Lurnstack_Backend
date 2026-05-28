@@ -59,7 +59,7 @@ const sendSmsOTP = async (phone, otp) => {
   try {
     const payload = {
       route: smsRoute,
-      message: `Your LurnStack OTP is: ${otp}. Valid for 5 minutes. Do not share it with anyone.`,
+      message: `Your LurnStack OTP is: ${otp}. Valid for 1 minute. Do not share it with anyone.`,
       language: "english",
       flash: 0,
       numbers: phone,
@@ -161,7 +161,7 @@ const sendEmailOTP = async (email, otp) => {
     to: email,
     subject: "Your LurnStack Verification Code",
     // Plain-text fallback
-    text: `Your LurnStack OTP is: ${otp}\n\nThis code expires in 5 minutes. Do not share it with anyone.`,
+    text: `Your LurnStack OTP is: ${otp}\n\nThis code expires in 1 minute. Do not share it with anyone.`,
     // HTML email body
     html: `
       <!DOCTYPE html>
@@ -193,7 +193,7 @@ const sendEmailOTP = async (email, otp) => {
                   <td style="padding:40px;">
                     <p style="margin:0 0 24px;color:#334155;font-size:16px;line-height:1.6;">
                       Use the code below to verify your identity. It expires in
-                      <strong style="color:#0f172a;">5 minutes</strong>.
+                      <strong style="color:#0f172a;">1 minute</strong>.
                     </p>
                     <!-- OTP box -->
                     <div style="text-align:center;margin:32px 0;">

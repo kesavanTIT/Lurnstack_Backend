@@ -363,6 +363,6 @@ model OTPVerification {
   id         Int      @id @default(autoincrement())
   identifier String   // email address or phone number
   code       String   // 6-digit OTP (stored as plain string)
-  expiresAt  DateTime // set to now() + 5 minutes at creation time
+  expiresAt  DateTime // set to now() + 1 minute at creation time
   createdAt  DateTime @default(now())
 }
