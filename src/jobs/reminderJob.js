@@ -88,7 +88,7 @@ cron.schedule("* * * * *", async () => {
               student: {
                 select: {
                   email:           true,
-                  phoneNormalized: true,
+                  phoneNumber:     true,
                   isActive:        true,
                 },
               },
@@ -102,8 +102,10 @@ cron.schedule("* * * * *", async () => {
             .map((b) => b.student.email);
 
           recipientPhones = activeBookings
-            .filter((b) => b.student?.phoneNormalized)
-            .map((b) => b.student.phoneNormalized);
+            .filter((b) => b.student?.phoneNumber)
+            .map((b) => {
+              return b.student.phoneNumber.replace(/[^0-9]/g, '');
+            });
 
           console.log(
             `[REMINDER]   → ${recipientEmails.length} email(s), ${recipientPhones.length} phone(s) for paid students.`
@@ -119,7 +121,7 @@ cron.schedule("* * * * *", async () => {
             },
             select: {
               email:           true,
-              phoneNormalized: true,
+              phoneNumber:     true,
             },
           });
 
@@ -128,8 +130,10 @@ cron.schedule("* * * * *", async () => {
             .map((u) => u.email);
 
           recipientPhones = allStudents
-            .filter((u) => u.phoneNormalized)
-            .map((u) => u.phoneNormalized);
+            .filter((u) => u.phoneNumber)
+            .map((u) => {
+              return u.phoneNumber.replace(/[^0-9]/g, '');
+            });
 
           console.log(
             `[REMINDER]   → ${recipientEmails.length} email(s), ${recipientPhones.length} phone(s) for all active students.`
