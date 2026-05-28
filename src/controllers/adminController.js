@@ -325,6 +325,26 @@ const parseDurationMinutes = (durationStr) => {
   return val || 60;
 };
 
+const getKolkataDateString = (date = new Date()) => {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return formatter.format(date);
+};
+
+const addMinutesToTime = (timeStr, minutes) => {
+  if (!timeStr) return null;
+  const [h, m] = timeStr.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return timeStr;
+  const totalMinutes = h * 60 + m + minutes;
+  const newH = Math.floor(totalMinutes / 60) % 24;
+  const newM = totalMinutes % 60;
+  return `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`;
+};
+
 // @desc    Create a new live class
 // @route   POST /api/admin/create-live-class
 // @access  Private/Admin
@@ -392,14 +412,9 @@ const createLiveClass = async (req, res) => {
 // @access  Private/Admin
 const updateLiveClass = async (req, res) => {
   try {
-    const id = parseClassId(req.params.classId);
-
-    if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid live class ID.",
-      });
-    }
+    const rawId = req.params.classId;
+    const classIdInt = Number.parseInt(rawId, 10);
+    const isNumericId = !Number.isNaN(classIdInt) && String(classIdInt) === String(rawId);
 
     const {
       courseName,
@@ -412,53 +427,140 @@ const updateLiveClass = async (req, res) => {
       meetLink,
     } = req.body;
 
-    const existingClass = await prisma.liveClass.findUnique({
-      where: { id },
-    });
+    if (isNumericId) {
+      const existingClass = await prisma.liveClass.findUnique({
+        where: { id: classIdInt },
+      });
 
-    if (!existingClass) {
-      return res.status(404).json({
-        success: false,
-        message: "Live class not found.",
+      if (!existingClass) {
+        return res.status(404).json({
+          success: false,
+          message: "Live class not found.",
+        });
+      }
+
+      const newDate = date || existingClass.date;
+      const newTime = time || existingClass.time;
+      const scheduledAt = parseScheduledAt(newDate, newTime);
+      const durationMinutes = parseDurationMinutes(duration || existingClass.duration);
+
+      const updatedClass = await prisma.liveClass.update({
+        where: { id: classIdInt },
+        data: {
+          courseName: courseName || existingClass.courseName,
+          classTitle: classTitle || existingClass.classTitle,
+          instructor: instructor || existingClass.instructor,
+          description: description !== undefined ? description : existingClass.description,
+          date: newDate,
+          time: newTime,
+          duration: duration || existingClass.duration,
+          scheduledAt,
+          durationMinutes,
+          meetLink: meetLink || existingClass.meetLink,
+          thumbnail: req.file ? req.file.path : existingClass.thumbnail,
+        },
+      });
+
+      if (updatedClass.thumbnail) {
+        updatedClass.thumbnail = `${req.protocol}://${req.get("host")}/${updatedClass.thumbnail.replace(/\\/g, "/")}`;
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Live class updated successfully!",
+        data: updatedClass,
+      });
+    } else {
+      // String ID -> LiveSession
+      const existingSession = await prisma.liveSession.findUnique({
+        where: { id: rawId },
+      });
+
+      if (!existingSession) {
+        return res.status(404).json({
+          success: false,
+          message: "Live session not found.",
+        });
+      }
+
+      const durationMinutes = parseDurationMinutes(duration || existingSession.durationMinutes || "60");
+
+      const updateData = {};
+      if (classTitle !== undefined) {
+        updateData.title = classTitle;
+        updateData.classTitle = classTitle; // legacy column
+      }
+      if (description !== undefined) {
+        updateData.description = description;
+      }
+      if (meetLink !== undefined) {
+        updateData.meetingLink = meetLink;
+      }
+      if (courseName !== undefined) {
+        updateData.courseTitle = courseName; // legacy column
+      }
+
+      if (req.file) {
+        updateData.thumbnail = req.file.path;
+      }
+
+      if (time !== undefined || date !== undefined || duration !== undefined) {
+        const checkDate = date || (existingSession.createdAt ? getKolkataDateString(new Date(existingSession.createdAt)) : getKolkataDateString());
+        const checkTime = time || existingSession.startTime || "12:00";
+        
+        let formattedTime = checkTime;
+        const normalized = checkTime.replace(".", ":");
+        if (normalized.includes("AM") || normalized.includes("PM")) {
+          let [t, modifier] = normalized.split(" ");
+          let [hours, minutes] = t.split(":").map(Number);
+          if (modifier === "PM" && hours < 12) hours += 12;
+          if (modifier === "AM" && hours === 12) hours = 0;
+          formattedTime = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+        }
+        
+        updateData.startTime = formattedTime;
+        updateData.durationMinutes = durationMinutes;
+        
+        const newEndTime = addMinutesToTime(formattedTime, durationMinutes);
+        if (newEndTime) {
+          updateData.endTime = newEndTime;
+        }
+
+        updateData.scheduledDate = checkDate;
+        updateData.scheduledAt = `${checkDate} ${formattedTime}`;
+        updateData.endsAt = newEndTime ? `${checkDate} ${newEndTime}` : undefined;
+      }
+
+      const updatedSession = await prisma.liveSession.update({
+        where: { id: rawId },
+        data: updateData,
+        include: { trainer: true },
+      });
+
+      const responseData = {
+        id: updatedSession.id,
+        courseName: updatedSession.courseTitle || "Live Session",
+        classTitle: updatedSession.title,
+        instructor: updatedSession.trainer?.fullName || "Trainer",
+        description: updatedSession.description || "",
+        date: updatedSession.scheduledDate || "",
+        time: updatedSession.startTime || "",
+        duration: `${updatedSession.durationMinutes || 60} mins`,
+        meetLink: updatedSession.meetingLink || "",
+        thumbnail: updatedSession.thumbnail ? `${req.protocol}://${req.get("host")}/${updatedSession.thumbnail.replace(/\\/g, "/")}` : null,
+      };
+
+      return res.status(200).json({
+        success: true,
+        message: "Live session updated successfully!",
+        data: responseData,
       });
     }
-
-    const newDate = date || existingClass.date;
-    const newTime = time || existingClass.time;
-    const scheduledAt = parseScheduledAt(newDate, newTime);
-    const durationMinutes = parseDurationMinutes(duration || existingClass.duration);
-
-    const updatedClass = await prisma.liveClass.update({
-      where: { id },
-      data: {
-        courseName: courseName || existingClass.courseName,
-        classTitle: classTitle || existingClass.classTitle,
-        instructor: instructor || existingClass.instructor,
-        description: description !== undefined ? description : existingClass.description,
-        date: newDate,
-        time: newTime,
-        duration: duration || existingClass.duration,
-        scheduledAt,
-        durationMinutes,
-        meetLink: meetLink || existingClass.meetLink,
-        thumbnail: req.file ? req.file.path : existingClass.thumbnail,
-      },
-    });
-
-    if (updatedClass.thumbnail) {
-      updatedClass.thumbnail = `${req.protocol}://${req.get("host")}/${updatedClass.thumbnail.replace(/\\/g, "/")}`;
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Live class updated successfully!",
-      data: updatedClass,
-    });
   } catch (error) {
-    console.error("Update Live Class Error:", error);
+    console.error("Update Live Class/Session Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal server error. Failed to update class.",
+      message: "Internal server error. Failed to update class/session.",
     });
   }
 };
@@ -468,39 +570,57 @@ const updateLiveClass = async (req, res) => {
 // @access  Private/Admin
 const deleteLiveClass = async (req, res) => {
   try {
-    const id = parseClassId(req.params.classId);
+    const rawId = req.params.classId;
+    const classIdInt = Number.parseInt(rawId, 10);
+    const isNumericId = !Number.isNaN(classIdInt) && String(classIdInt) === String(rawId);
 
-    if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid live class ID.",
+    if (isNumericId) {
+      const existingClass = await prisma.liveClass.findUnique({
+        where: { id: classIdInt },
+      });
+
+      if (!existingClass) {
+        return res.status(404).json({
+          success: false,
+          message: "Live class not found.",
+        });
+      }
+
+      await prisma.liveClass.delete({
+        where: { id: classIdInt },
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: "Live class deleted successfully!",
+      });
+    } else {
+      // String ID -> LiveSession
+      const existingSession = await prisma.liveSession.findUnique({
+        where: { id: rawId },
+      });
+
+      if (!existingSession) {
+        return res.status(404).json({
+          success: false,
+          message: "Live session not found.",
+        });
+      }
+
+      await prisma.liveSession.delete({
+        where: { id: rawId },
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: "Live session deleted successfully!",
       });
     }
-
-    const existingClass = await prisma.liveClass.findUnique({
-      where: { id },
-    });
-
-    if (!existingClass) {
-      return res.status(404).json({
-        success: false,
-        message: "Live class not found.",
-      });
-    }
-
-    await prisma.liveClass.delete({
-      where: { id },
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: "Live class deleted successfully!",
-    });
   } catch (error) {
-    console.error("Delete Live Class Error:", error);
+    console.error("Delete Live Class/Session Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal server error. Failed to delete class.",
+      message: "Internal server error. Failed to delete class/session.",
     });
   }
 };
