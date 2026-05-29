@@ -139,6 +139,31 @@ const deleteStudent = async (req, res) => {
   }
 };
 
+// @desc    Delete all students
+// @route   DELETE /api/admin/students
+// @access  Private/Admin
+const deleteAllStudents = async (req, res) => {
+  try {
+    const result = await prisma.user.deleteMany({
+      where: {
+        role: "STUDENT",
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `All students deleted successfully. Total deleted: ${result.count}`,
+      count: result.count,
+    });
+  } catch (error) {
+    console.error("Delete All Students Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to delete all students.",
+    });
+  }
+};
+
 // @desc    Delete a trainer and their dependent live sessions
 // @route   DELETE /api/admin/trainers/:id
 // @access  Private/Admin
@@ -630,6 +655,7 @@ module.exports = {
   getStudents,
   getTrainers,
   deleteStudent,
+  deleteAllStudents,
   deleteTrainer,
   toggleTrainerStatus,
   createLiveClass,

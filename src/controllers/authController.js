@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { normalizePhone } = require("../utils/phone");
+const axios = require("axios");
 
 // ─────────────────────────────────────────────
 // @desc    Register a new user (STUDENT or TRAINER)
@@ -499,4 +500,187 @@ const resetPassword = async (req, res) => {
   }
 };
 
-module.exports = { registerUser, loginUser, sendOTP, verifyOTP, forgotPassword, resetPassword };
+// ─────────────────────────────────────────────
+// @desc    Initiate Google OAuth flow
+// @route   GET /api/auth/google
+// @access  Public
+// ─────────────────────────────────────────────
+const initiateGoogleAuth = async (req, res) => {
+  try {
+    const frontendRedirect = req.query.redirect;
+    if (!frontendRedirect) {
+      return res.status(400).json({
+        success: false,
+        message: "redirect parameter (frontend login URL) is required."
+      });
+    }
+
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const callbackUrl = process.env.GOOGLE_CALLBACK_URL || `${req.protocol}://${req.get("host")}/api/auth/google/callback`;
+
+    if (!clientId || !clientSecret) {
+      const errorUrl = new URL(frontendRedirect);
+      errorUrl.searchParams.set("error", "Google login is not configured on the server.");
+      return res.redirect(errorUrl.toString());
+    }
+
+    const state = Buffer.from(frontendRedirect).toString("base64");
+    const scope = "openid email profile";
+
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `client_id=${clientId}` +
+      `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
+      `&response_type=code` +
+      `&scope=${encodeURIComponent(scope)}` +
+      `&state=${encodeURIComponent(state)}` +
+      `&prompt=select_account`;
+
+    return res.redirect(googleAuthUrl);
+  } catch (error) {
+    console.error("Google Auth Init Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error starting Google Auth flow."
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Google OAuth Callback
+// @route   GET /api/auth/google/callback
+// @access  Public
+// ─────────────────────────────────────────────
+const googleAuthCallback = async (req, res) => {
+  let frontendRedirectUrl = process.env.FRONTEND_URL || "http://localhost:3000/login";
+  try {
+    const { code, state, error: googleError } = req.query;
+
+    if (state) {
+      try {
+        frontendRedirectUrl = Buffer.from(state, "base64").toString("utf-8");
+      } catch (e) {
+        console.error("Failed to decode state:", e.message);
+      }
+    }
+
+    if (googleError) {
+      const redirectUrl = new URL(frontendRedirectUrl);
+      redirectUrl.searchParams.set("error", `Google authentication failed: ${googleError}`);
+      return res.redirect(redirectUrl.toString());
+    }
+
+    if (!code) {
+      const redirectUrl = new URL(frontendRedirectUrl);
+      redirectUrl.searchParams.set("error", "No authorization code returned from Google.");
+      return res.redirect(redirectUrl.toString());
+    }
+
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const callbackUrl = process.env.GOOGLE_CALLBACK_URL || `${req.protocol}://${req.get("host")}/api/auth/google/callback`;
+
+    if (!clientId || !clientSecret) {
+      const redirectUrl = new URL(frontendRedirectUrl);
+      redirectUrl.searchParams.set("error", "Google login is not configured on the server.");
+      return res.redirect(redirectUrl.toString());
+    }
+
+    let tokenResponse;
+    try {
+      tokenResponse = await axios.post("https://oauth2.googleapis.com/token", {
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: callbackUrl,
+        grant_type: "authorization_code"
+      });
+    } catch (tokenErr) {
+      console.error("Token exchange failed:", tokenErr.response?.data || tokenErr.message);
+      const redirectUrl = new URL(frontendRedirectUrl);
+      redirectUrl.searchParams.set("error", "Failed to exchange authorization code for tokens.");
+      return res.redirect(redirectUrl.toString());
+    }
+
+    const { access_token } = tokenResponse.data;
+
+    let userInfoResponse;
+    try {
+      userInfoResponse = await axios.get("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: `Bearer ${access_token}` }
+      });
+    } catch (userErr) {
+      console.error("Userinfo fetch failed:", userErr.response?.data || userErr.message);
+      const redirectUrl = new URL(frontendRedirectUrl);
+      redirectUrl.searchParams.set("error", "Failed to retrieve user info from Google.");
+      return res.redirect(redirectUrl.toString());
+    }
+
+    const { name, email: rawEmail } = userInfoResponse.data;
+    if (!rawEmail) {
+      const redirectUrl = new URL(frontendRedirectUrl);
+      redirectUrl.searchParams.set("error", "Google profile did not contain a valid email address.");
+      return res.redirect(redirectUrl.toString());
+    }
+
+    const email = rawEmail.trim().toLowerCase();
+
+    let user = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (user) {
+      if (!user.isActive) {
+        const redirectUrl = new URL(frontendRedirectUrl);
+        redirectUrl.searchParams.set("error", "This account has been deactivated. Please contact support.");
+        return res.redirect(redirectUrl.toString());
+      }
+    } else {
+      const randomPassword = crypto.randomBytes(16).toString("hex");
+      const salt = await bcrypt.genSalt(12);
+      const hashedPassword = await bcrypt.hash(randomPassword, salt);
+
+      user = await prisma.user.create({
+        data: {
+          fullName: name || "Google User",
+          email,
+          password: hashedPassword,
+          role: "STUDENT"
+        }
+      });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    const redirectUrl = new URL(frontendRedirectUrl);
+    redirectUrl.searchParams.set("token", token);
+    return res.redirect(redirectUrl.toString());
+  } catch (error) {
+    console.error("Google Auth Callback Exception:", error);
+    try {
+      const redirectUrl = new URL(frontendRedirectUrl);
+      redirectUrl.searchParams.set("error", "An unexpected error occurred during Google authentication.");
+      return res.redirect(redirectUrl.toString());
+    } catch (urlErr) {
+      return res.status(500).json({
+        success: false,
+        message: "An unexpected error occurred and redirection failed."
+      });
+    }
+  }
+};
+
+module.exports = {
+  registerUser,
+  loginUser,
+  sendOTP,
+  verifyOTP,
+  forgotPassword,
+  resetPassword,
+  initiateGoogleAuth,
+  googleAuthCallback
+};

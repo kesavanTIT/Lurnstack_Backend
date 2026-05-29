@@ -7,6 +7,8 @@ const {
   verifyOTP,
   forgotPassword,
   resetPassword,
+  initiateGoogleAuth,
+  googleAuthCallback,
 } = require("../controllers/authController");
 
 // ── Existing auth routes ──────────────────────────────────────────────────────
@@ -48,6 +50,18 @@ router.post("/forgot-password", forgotPassword);
 // @body    { token: string, newPassword: string }
 // @access  Public
 router.post("/reset-password", resetPassword);
+
+// ── Google OAuth routes ───────────────────────────────────────────────────────
+
+// @route   GET /api/auth/google
+// @desc    Initiate Google OAuth flow
+// @access  Public
+router.get("/google", initiateGoogleAuth);
+
+// @route   GET /api/auth/google/callback
+// @desc    Google OAuth callback handler
+// @access  Public
+router.get("/google/callback", googleAuthCallback);
 
 module.exports = router;
 

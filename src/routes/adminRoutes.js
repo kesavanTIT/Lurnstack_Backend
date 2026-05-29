@@ -5,6 +5,7 @@ const {
   getStudents,
   getTrainers,
   deleteStudent,
+  deleteAllStudents,
   deleteTrainer,
   toggleTrainerStatus,
   createLiveClass,
@@ -60,6 +61,7 @@ router.get("/me", getAdminMe);
 router.get("/dashboard/summary", getDashboardSummary);
 router.get("/students", getStudents);
 router.get("/trainers", getTrainers);
+router.delete("/students", deleteAllStudents);
 router.delete("/students/:id", deleteStudent);
 router.delete("/trainers/:id", deleteTrainer);
 router.patch("/trainers/:id", toggleTrainerStatus);
