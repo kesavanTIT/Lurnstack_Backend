@@ -33,6 +33,7 @@ model User {
   trainerOccurrences        SessionOccurrence[] @relation(name: "TrainerSessionOccurrence")
   studentAttendances        StudentAttendance[] @relation(name: "StudentAttendance")
   trainerStudentAttendances StudentAttendance[] @relation(name: "TrainerStudentAttendance")
+  whatsappReminderLogs      WhatsAppSessionReminderLog[]
 }
 
 enum Role {
@@ -124,6 +125,7 @@ model LiveSession {
   trainerPayouts  TrainerPayout[]  @relation(name: "SessionPayoutRelation")
   occurrences        SessionOccurrence[]
   studentAttendances StudentAttendance[]
+  whatsappReminderLogs WhatsAppSessionReminderLog[]
 }
 
 model SessionCard {
@@ -216,6 +218,12 @@ model Booking {
   updatedAt       DateTime         @updatedAt
   payments        Payment[]        @relation(name: "BookingPaymentRelation")
   trainerEarnings TrainerEarning[] @relation(name: "BookingEarningRelation")
+
+  // WhatsApp reminder tracking
+  whatsappReminderSentAt    DateTime?
+  whatsappReminderMessageId String?
+  whatsappReminderStatus    String?
+  whatsappReminderError     String?
 }
 
 enum BookingStatus {
@@ -365,4 +373,22 @@ model OTPVerification {
   code       String   // 6-digit OTP (stored as plain string)
   expiresAt  DateTime // set to now() + 1 minute at creation time
   createdAt  DateTime @default(now())
+}
+
+model WhatsAppSessionReminderLog {
+  id         String      @id @default(uuid())
+  sessionId  String
+  userId     Int
+  phone      String
+  status     String      // sent, failed, skipped
+  messageId  String?
+  error      String?
+  sentAt     DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  session    LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, userId])
 }

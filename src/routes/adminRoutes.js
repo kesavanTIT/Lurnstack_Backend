@@ -11,6 +11,7 @@ const {
   createLiveClass,
   updateLiveClass,
   deleteLiveClass,
+  testSessionReminderWhatsapp,
 } = require("../controllers/adminController");
 const {
   registerAdmin,
@@ -101,5 +102,8 @@ router.get("/sessions/:sessionId/attendance", getSessionAttendanceAdmin);
 router.get("/trainers/:trainerId/attendance", getTrainerAttendanceAdmin);
 router.get("/students/:studentId/attendance", getStudentAttendanceAdmin);
 router.patch("/attendance/:attendanceId", updateAttendanceRecord);
+
+// ── Admin WhatsApp Endpoints ──────────────────────
+router.post("/whatsapp/test-session-reminder", testSessionReminderWhatsapp);
 
 module.exports = router;

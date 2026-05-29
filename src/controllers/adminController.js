@@ -1,5 +1,6 @@
 const { Prisma } = require("@prisma/client");
 const prisma = require("../config/db");
+const { sendSessionReminderWhatsApp } = require("../services/whatsappService");
 
 const dashboardUserSelect = {
   id: true,
@@ -650,6 +651,54 @@ const deleteLiveClass = async (req, res) => {
   }
 };
 
+// @desc    Test WhatsApp session reminder template for a specific number/session
+// @route   POST /api/admin/whatsapp/test-session-reminder
+// @access  Private/Admin
+const testSessionReminderWhatsapp = async (req, res) => {
+  try {
+    const { studentPhone, studentName, sessionTitle, minutesLeft, trainerName, sessionId, buttonUrl } = req.body;
+
+    if (!studentPhone) {
+      return res.status(400).json({
+        success: false,
+        message: "studentPhone is required.",
+      });
+    }
+
+    const result = await sendSessionReminderWhatsApp({
+      studentPhone,
+      studentName: studentName || "Test Student",
+      sessionTitle: sessionTitle || "Test Live Session",
+      minutesLeft: minutesLeft || 30,
+      trainerName: trainerName || "Test Trainer",
+      sessionId: sessionId || "test-session-id",
+      buttonUrl,
+    });
+
+    if (result.success) {
+      return res.status(200).json({
+        success: true,
+        message: "Test WhatsApp message sent successfully.",
+        data: result.rawResponse,
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Failed to send test WhatsApp message.",
+        error: result.error,
+        data: result.rawResponse,
+      });
+    }
+  } catch (error) {
+    console.error("Test WhatsApp Session Reminder Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to send WhatsApp test message.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getDashboardSummary,
   getStudents,
@@ -661,4 +710,6 @@ module.exports = {
   createLiveClass,
   updateLiveClass,
   deleteLiveClass,
+  testSessionReminderWhatsapp,
 };
+
