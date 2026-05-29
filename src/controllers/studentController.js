@@ -748,17 +748,28 @@ const getMySessionCards = async (req, res) => {
 const joinSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { occurrenceDate, sessionDate } = req.body || {};
-    const studentId = parseInt(req.user.id);
+    const studentId = parseInt(req.user?.id || req.user);
+    if (isNaN(studentId)) {
+      return res.status(400).json({ success: false, message: "Invalid student identifier." });
+    }
+
+    const {
+      sessionDate,
+      occurrenceDate,
+      scheduledAt,
+      startsAt,
+      endsAt,
+      clientJoinedAt
+    } = req.body || {};
+
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: "sessionId is required." });
+    }
 
     const session = await prisma.liveSession.findUnique({
       where: { id: sessionId },
       include: {
         pricing: true,
-        billingBookings: {
-          where: { studentId },
-          orderBy: { createdAt: "desc" }
-        }
       }
     });
 
@@ -766,59 +777,112 @@ const joinSession = async (req, res) => {
       return res.status(404).json({ success: false, message: "Session not found." });
     }
 
+    if (session.publishState !== "PUBLISHED") {
+      return res.status(400).json({ success: false, message: "This session is not published." });
+    }
+
     if (session.status !== "active") {
       return res.status(400).json({ success: false, message: `Cannot join. Session is ${session.status}.` });
     }
 
-    const pricing = session.pricing || null;
-    const paymentRequired = pricing ? pricing.isActive : false;
-
     const now = new Date();
-    const todayStrKolkata = getKolkataDateString(now);
-    
-    if (paymentRequired) {
-      const hasPaidBooking = session.billingBookings.some(b => b.status === "paid");
-      if (!hasPaidBooking) {
+    const joinedAtTime = clientJoinedAt ? new Date(clientJoinedAt) : now;
+    if (isNaN(joinedAtTime.getTime())) {
+      return res.status(400).json({ success: false, message: "Invalid clientJoinedAt format." });
+    }
+
+    const targetDateStr = occurrenceDate || sessionDate || getKolkataDateString(now);
+    const targetDate = new Date(targetDateStr);
+    if (isNaN(targetDate.getTime())) {
+      return res.status(400).json({ success: false, message: "Invalid occurrenceDate or sessionDate format." });
+    }
+    targetDate.setUTCHours(0, 0, 0, 0);
+
+    const isFree =
+      session.pricingState === "FREE" ||
+      session.pricingState === "PENDING_PRICE" ||
+      !session.priceInPaise ||
+      session.priceInPaise <= 0;
+
+    let booking = await prisma.booking.findFirst({
+      where: {
+        studentId,
+        sessionId: session.id,
+        status: isFree ? { in: ["joined", "completed", "paid"] } : { in: ["paid", "joined", "completed"] }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    if (!booking) {
+      if (isFree) {
+        booking = await prisma.booking.create({
+          data: {
+            studentId,
+            sessionId: session.id,
+            sessionDate: targetDate,
+            amountPaise: 0,
+            currency: "INR",
+            status: "joined"
+          }
+        });
+      } else {
         return res.status(400).json({
           success: false,
           message: "Please complete payment before joining."
         });
       }
+    } else {
+      if (booking.status === "paid") {
+        booking = await prisma.booking.update({
+          where: { id: booking.id },
+          data: { status: "joined" }
+        });
+      }
     }
 
-    const targetDateStr = occurrenceDate || sessionDate || todayStrKolkata;
-    const targetDate = new Date(targetDateStr);
-    targetDate.setUTCHours(0,0,0,0);
-
-    let attendance = await prisma.attendance.findUnique({
+    let attendance = await prisma.attendance.findFirst({
       where: {
-        studentId_sessionId_occurrenceDate: {
-          studentId,
-          sessionId,
-          occurrenceDate: targetDate
-        }
+        studentId,
+        sessionId: session.id,
+        occurrenceDate: targetDate
       }
     });
 
-    if (!attendance) {
-      attendance = await prisma.attendance.create({
-        data: {
-          studentId,
-          sessionId,
-          occurrenceDate: targetDate,
-          status: "pending",
-          firstJoinedAt: now,
-          lastJoinedAt: now,
-          joinCount: 1,
-          totalDurationSeconds: 0
-        }
-      });
-    } else {
+    let isAlreadyJoined = false;
+    if (attendance) {
+      isAlreadyJoined = true;
       attendance = await prisma.attendance.update({
         where: { id: attendance.id },
         data: {
           joinCount: attendance.joinCount + 1,
-          lastJoinedAt: now
+          lastJoinedAt: joinedAtTime
+        }
+      });
+    } else {
+      attendance = await prisma.attendance.create({
+        data: {
+          studentId,
+          sessionId: session.id,
+          occurrenceDate: targetDate,
+          status: "pending",
+          firstJoinedAt: joinedAtTime,
+          lastJoinedAt: joinedAtTime,
+          joinCount: 1,
+          totalDurationSeconds: 0
+        }
+      });
+    }
+
+    const openEvents = await prisma.attendanceEvent.findMany({
+      where: { studentId, sessionId: session.id, leftAt: null }
+    });
+    for (const event of openEvents) {
+      const durationSeconds = Math.max(0, Math.floor((now.getTime() - event.joinedAt.getTime()) / 1000));
+      await prisma.attendanceEvent.update({
+        where: { id: event.id },
+        data: {
+          leftAt: now,
+          durationSeconds
         }
       });
     }
@@ -827,52 +891,107 @@ const joinSession = async (req, res) => {
       data: {
         attendanceId: attendance.id,
         studentId,
-        sessionId,
+        sessionId: session.id,
         occurrenceDate: targetDate,
-        joinedAt: now
+        joinedAt: joinedAtTime
       }
     });
 
-    res.status(200).json({
-      success: true,
-      message: "Successfully joined the class!",
-      data: {
-        sessionId: session.id,
-        meetingLink: session.meetingLink,
-        joinedAt: now.toISOString(),
-        attendance
+    const responseData = {
+      bookingId: booking.id,
+      sessionId: session.id,
+      studentId: `student_${studentId}`,
+      meetingLink: session.meetingLink || "",
+      joinedAt: joinedAtTime.toISOString(),
+      attendance: {
+        attendanceStatus: attendance.status,
+        firstJoinedAt: attendance.firstJoinedAt.toISOString(),
+        lastJoinedAt: attendance.lastJoinedAt.toISOString(),
+        joinCount: attendance.joinCount,
+        occurrenceDate: getKolkataDateString(attendance.occurrenceDate)
       }
+    };
+
+    if (isAlreadyJoined) {
+      return res.status(200).json({
+        success: true,
+        message: "Already joined",
+        data: responseData
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Session joined successfully",
+      data: responseData
     });
   } catch (error) {
-    console.error("Join Session Error:", error);
-    res.status(500).json({ success: false, message: "Internal server error." });
+    console.error("Join Session Error Stack:", error.stack || error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to join session."
+    });
   }
 };
 
 const heartbeatSession = async (req, res) => {
   try {
-    const { sessionId } = req.params;
-    const studentId = parseInt(req.user.id);
-    const now = new Date();
+    const studentId = parseInt(req.user?.id || req.user);
+    if (isNaN(studentId)) {
+      return res.status(400).json({ success: false, message: "Invalid student identifier." });
+    }
 
-    const latestEvent = await prisma.attendanceEvent.findFirst({
-      where: { studentId, sessionId, leftAt: null },
+    const sessionId = req.body.sessionId || req.params.sessionId;
+    const { occurrenceDate, clientHeartbeatAt } = req.body || {};
+
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: "sessionId is required." });
+    }
+    if (!occurrenceDate) {
+      return res.status(400).json({ success: false, message: "occurrenceDate is required." });
+    }
+
+    const targetDate = new Date(occurrenceDate);
+    if (isNaN(targetDate.getTime())) {
+      return res.status(400).json({ success: false, message: "Invalid occurrenceDate format." });
+    }
+    targetDate.setUTCHours(0, 0, 0, 0);
+
+    const attendance = await prisma.attendance.findFirst({
+      where: {
+        studentId,
+        sessionId,
+        occurrenceDate: targetDate
+      }
+    });
+
+    if (!attendance) {
+      return res.status(400).json({ success: false, message: "No attendance record found for this session and date." });
+    }
+
+    const heartbeatTime = clientHeartbeatAt ? new Date(clientHeartbeatAt) : new Date();
+    if (isNaN(heartbeatTime.getTime())) {
+      return res.status(400).json({ success: false, message: "Invalid clientHeartbeatAt format." });
+    }
+
+    let latestEvent = await prisma.attendanceEvent.findFirst({
+      where: { attendanceId: attendance.id, leftAt: null },
       orderBy: { joinedAt: "desc" }
     });
 
     if (!latestEvent) {
-      return res.status(400).json({ success: false, message: "No active attendance event found." });
+      latestEvent = await prisma.attendanceEvent.create({
+        data: {
+          attendanceId: attendance.id,
+          studentId,
+          sessionId,
+          occurrenceDate: targetDate,
+          joinedAt: heartbeatTime
+        }
+      });
     }
 
-    const attendance = await prisma.attendance.findUnique({
-      where: { id: latestEvent.attendanceId }
-    });
-
-    if (!attendance) {
-      return res.status(404).json({ success: false, message: "Attendance not found." });
-    }
-
-    const eventDurationSeconds = Math.floor((now.getTime() - latestEvent.joinedAt.getTime()) / 1000);
+    const eventDurationSeconds = Math.max(0, Math.floor((heartbeatTime.getTime() - latestEvent.joinedAt.getTime()) / 1000));
     
     await prisma.attendanceEvent.update({
       where: { id: latestEvent.id },
@@ -883,10 +1002,7 @@ const heartbeatSession = async (req, res) => {
       where: { attendanceId: attendance.id }
     });
     
-    let totalSeconds = 0;
-    allEvents.forEach(e => {
-      totalSeconds += e.durationSeconds;
-    });
+    const totalSeconds = allEvents.reduce((sum, e) => sum + e.durationSeconds, 0);
 
     let newStatus = attendance.status;
     if (totalSeconds >= 600) {
@@ -914,50 +1030,88 @@ const heartbeatSession = async (req, res) => {
       }
     });
 
-    res.status(200).json({ success: true, data: updatedAttendance });
+    return res.status(200).json({
+      success: true,
+      data: {
+        attendance: {
+          attendanceStatus: updatedAttendance.status,
+          firstJoinedAt: updatedAttendance.firstJoinedAt.toISOString(),
+          lastJoinedAt: updatedAttendance.lastJoinedAt.toISOString(),
+          lastHeartbeatAt: heartbeatTime.toISOString(),
+          joinCount: updatedAttendance.joinCount,
+          occurrenceDate: getKolkataDateString(updatedAttendance.occurrenceDate)
+        }
+      }
+    });
   } catch (error) {
-    console.error("Heartbeat Error:", error);
-    res.status(500).json({ success: false, message: "Internal server error." });
+    console.error("Heartbeat Session Fatal Error Stack:", error.stack || error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to process heartbeat."
+    });
   }
 };
 
 const leaveSession = async (req, res) => {
   try {
-    const { sessionId } = req.params;
-    const studentId = parseInt(req.user.id);
-    const now = new Date();
+    const studentId = parseInt(req.user?.id || req.user);
+    if (isNaN(studentId)) {
+      return res.status(400).json({ success: false, message: "Invalid student identifier." });
+    }
+
+    const sessionId = req.body.sessionId || req.params.sessionId;
+    const { occurrenceDate, clientLeftAt } = req.body || {};
+
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: "sessionId is required." });
+    }
+    if (!occurrenceDate) {
+      return res.status(400).json({ success: false, message: "occurrenceDate is required." });
+    }
+
+    const targetDate = new Date(occurrenceDate);
+    if (isNaN(targetDate.getTime())) {
+      return res.status(400).json({ success: false, message: "Invalid occurrenceDate format." });
+    }
+    targetDate.setUTCHours(0, 0, 0, 0);
+
+    const attendance = await prisma.attendance.findFirst({
+      where: {
+        studentId,
+        sessionId,
+        occurrenceDate: targetDate
+      }
+    });
+
+    if (!attendance) {
+      return res.status(400).json({ success: false, message: "No attendance record found for this session and date." });
+    }
+
+    const leaveTime = clientLeftAt ? new Date(clientLeftAt) : new Date();
+    if (isNaN(leaveTime.getTime())) {
+      return res.status(400).json({ success: false, message: "Invalid clientLeftAt format." });
+    }
 
     const latestEvent = await prisma.attendanceEvent.findFirst({
-      where: { studentId, sessionId, leftAt: null },
+      where: { attendanceId: attendance.id, leftAt: null },
       orderBy: { joinedAt: "desc" }
     });
 
-    if (!latestEvent) {
-      return res.status(200).json({ success: true, message: "No active event to leave." });
+    if (latestEvent) {
+      const eventDurationSeconds = Math.max(0, Math.floor((leaveTime.getTime() - latestEvent.joinedAt.getTime()) / 1000));
+      await prisma.attendanceEvent.update({
+        where: { id: latestEvent.id },
+        data: {
+          leftAt: leaveTime,
+          durationSeconds: eventDurationSeconds
+        }
+      });
     }
-
-    const attendance = await prisma.attendance.findUnique({
-      where: { id: latestEvent.attendanceId }
-    });
-
-    const eventDurationSeconds = Math.floor((now.getTime() - latestEvent.joinedAt.getTime()) / 1000);
-
-    await prisma.attendanceEvent.update({
-      where: { id: latestEvent.id },
-      data: {
-        leftAt: now,
-        durationSeconds: eventDurationSeconds
-      }
-    });
 
     const allEvents = await prisma.attendanceEvent.findMany({
       where: { attendanceId: attendance.id }
     });
-    
-    let totalSeconds = 0;
-    allEvents.forEach(e => {
-      totalSeconds += e.durationSeconds;
-    });
+    const totalSeconds = allEvents.reduce((sum, e) => sum + e.durationSeconds, 0);
 
     let newStatus = attendance.status;
     if (totalSeconds >= 600) {
@@ -985,10 +1139,25 @@ const leaveSession = async (req, res) => {
       }
     });
 
-    res.status(200).json({ success: true, data: updatedAttendance });
+    return res.status(200).json({
+      success: true,
+      data: {
+        attendance: {
+          attendanceStatus: updatedAttendance.status,
+          firstJoinedAt: updatedAttendance.firstJoinedAt.toISOString(),
+          lastJoinedAt: updatedAttendance.lastJoinedAt.toISOString(),
+          lastHeartbeatAt: leaveTime.toISOString(),
+          joinCount: updatedAttendance.joinCount,
+          occurrenceDate: getKolkataDateString(updatedAttendance.occurrenceDate)
+        }
+      }
+    });
   } catch (error) {
-    console.error("Leave Session Error:", error);
-    res.status(500).json({ success: false, message: "Internal server error." });
+    console.error("Leave Session Fatal Error Stack:", error.stack || error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to leave session."
+    });
   }
 };
 

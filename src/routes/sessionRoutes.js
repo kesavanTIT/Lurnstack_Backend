@@ -7,6 +7,8 @@ const {
 const {
   getUpcomingSessions,
 } = require("../controllers/sessionReminderController");
+const { protect } = require("../middleware/authMiddleware");
+const { joinSession } = require("../controllers/studentController");
 
 // @route   GET /api/sessions/upcoming
 // @desc    Get all PUBLISHED sessions with pricing state (Free / Paid badge data)
@@ -24,6 +26,11 @@ router.get("/", getPublicSessions);
 // @desc    Get a single active/published live session details (Public guest access)
 // @access  Public
 router.get("/:sessionId", getPublicSessionById);
+
+// @route   POST /api/sessions/:sessionId/join
+// @desc    Student joins a live session
+// @access  Private
+router.post("/:sessionId/join", protect, joinSession);
 
 module.exports = router;
 
