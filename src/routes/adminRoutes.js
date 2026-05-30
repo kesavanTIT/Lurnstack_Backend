@@ -17,6 +17,7 @@ const {
   registerAdmin,
   loginAdmin,
   getAdminMe,
+  logoutAdmin,
 } = require("../controllers/adminAuthController");
 const {
   getAdminSessions,
@@ -52,6 +53,7 @@ const upload = require("../middleware/uploadMiddleware");
 // ── Public Admin Routes ───────────────────────
 router.post("/register", registerAdmin);
 router.post("/login", loginAdmin);
+router.post("/logout", logoutAdmin);
 
 // ── Protected Admin Routes ────────────────────
 // Apply protect and isAdmin to all routes below

@@ -102,6 +102,14 @@ const loginAdmin = async (req, res) => {
       { expiresIn: "7d" }
     );
 
+    res.cookie("admin_token", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "None",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
     return res.status(200).json({
       success: true,
       message: "Admin login successful!",
@@ -162,4 +170,22 @@ const getAdminMe = async (req, res) => {
   }
 };
 
-module.exports = { registerAdmin, loginAdmin, getAdminMe };
+// ─────────────────────────────────────────────
+// @desc    Logout admin & clear cookie
+// @route   POST /api/admin/logout
+// @access  Public / Private
+// ─────────────────────────────────────────────
+const logoutAdmin = async (req, res) => {
+  res.clearCookie("admin_token", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "None",
+    path: "/"
+  });
+  return res.status(200).json({
+    success: true,
+    message: "Admin logged out successfully!"
+  });
+};
+
+module.exports = { registerAdmin, loginAdmin, getAdminMe, logoutAdmin };
