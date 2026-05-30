@@ -43,32 +43,23 @@ const generateButtonLink = (campaignId, categoryIds, courseId, sessionId) => {
 const resolveRecipients = async ({ categoryIds, courseId, sessionId, audienceType }) => {
   let studentIds = new Set();
 
-  // Resolve categoryIds (which may be parent descriptions or IDs) to Category record IDs
-  const resolvedCategories = await prisma.category.findMany({
-    where: {
-      OR: [
-        { id: { in: categoryIds } },
-        { description: { in: categoryIds } }
-      ]
-    },
-    select: { id: true }
-  });
-  const resolvedCategoryIds = resolvedCategories.map(c => c.id);
+  const cleanSessionId = (sessionId && sessionId !== "default-session-id") ? sessionId : null;
+  const cleanCourseId = (courseId && courseId !== "Default Course") ? courseId : null;
 
   // 1. Resolve based on targeting hierarchy (session -> course -> categories)
-  if (sessionId) {
+  if (cleanSessionId) {
     const [bookings, sessionBookings, cards, attendances] = await Promise.all([
-      prisma.booking.findMany({ where: { sessionId }, select: { studentId: true } }),
-      prisma.sessionBooking.findMany({ where: { sessionId }, select: { studentId: true } }),
-      prisma.sessionCard.findMany({ where: { sessionId }, select: { studentId: true } }),
-      prisma.attendance.findMany({ where: { sessionId }, select: { studentId: true } })
+      prisma.booking.findMany({ where: { sessionId: cleanSessionId }, select: { studentId: true } }),
+      prisma.sessionBooking.findMany({ where: { sessionId: cleanSessionId }, select: { studentId: true } }),
+      prisma.sessionCard.findMany({ where: { sessionId: cleanSessionId }, select: { studentId: true } }),
+      prisma.attendance.findMany({ where: { sessionId: cleanSessionId }, select: { studentId: true } })
     ]);
     bookings.forEach(b => studentIds.add(b.studentId));
     sessionBookings.forEach(sb => studentIds.add(sb.studentId));
     cards.forEach(c => studentIds.add(c.studentId));
     attendances.forEach(a => studentIds.add(a.studentId));
-  } else if (courseId) {
-    const sessions = await prisma.liveSession.findMany({ where: { courseId }, select: { id: true } });
+  } else if (cleanCourseId) {
+    const sessions = await prisma.liveSession.findMany({ where: { courseTitle: cleanCourseId }, select: { id: true } });
     const sessionIds = sessions.map(s => s.id);
     if (sessionIds.length > 0) {
       const [bookings, sessionBookings, cards, attendances] = await Promise.all([
@@ -82,8 +73,8 @@ const resolveRecipients = async ({ categoryIds, courseId, sessionId, audienceTyp
       cards.forEach(c => studentIds.add(c.studentId));
       attendances.forEach(a => studentIds.add(a.studentId));
     }
-  } else if (resolvedCategoryIds.length > 0) {
-    const sessions = await prisma.liveSession.findMany({ where: { courseId: { in: resolvedCategoryIds } }, select: { id: true } });
+  } else if (categoryIds && categoryIds.length > 0) {
+    const sessions = await prisma.liveSession.findMany({ where: { courseId: { in: categoryIds } }, select: { id: true } });
     const sessionIds = sessions.map(s => s.id);
     if (sessionIds.length > 0) {
       const [bookings, sessionBookings, cards, attendances] = await Promise.all([
@@ -102,7 +93,7 @@ const resolveRecipients = async ({ categoryIds, courseId, sessionId, audienceTyp
   // 2. Apply audienceType filters
   let finalStudents = [];
 
-  if (audienceType === "all_students") {
+  if (audienceType === "all_students" || studentIds.size === 0) {
     finalStudents = await prisma.user.findMany({
       where: { role: "STUDENT", isActive: true },
       select: { id: true, email: true }
@@ -129,24 +120,22 @@ const resolveRecipients = async ({ categoryIds, courseId, sessionId, audienceTyp
     finalStudents = allStudents.filter(s => !activeStudentIds.has(s.id));
   } else if (audienceType === "category_students") {
     let categoryStudentIds = new Set();
-    if (resolvedCategoryIds.length > 0) {
-      const sessions = await prisma.liveSession.findMany({ where: { courseId: { in: resolvedCategoryIds } }, select: { id: true } });
-      const sessionIds = sessions.map(s => s.id);
-      if (sessionIds.length > 0) {
-        const [bookings, sessionBookings, cards, attendances] = await Promise.all([
-          prisma.booking.findMany({ where: { sessionId: { in: sessionIds } }, select: { studentId: true } }),
-          prisma.sessionBooking.findMany({ where: { sessionId: { in: sessionIds } }, select: { studentId: true } }),
-          prisma.sessionCard.findMany({ where: { sessionId: { in: sessionIds } }, select: { studentId: true } }),
-          prisma.attendance.findMany({ where: { sessionId: { in: sessionIds } }, select: { studentId: true } })
-        ]);
-        bookings.forEach(b => categoryStudentIds.add(b.studentId));
-        sessionBookings.forEach(sb => categoryStudentIds.add(sb.studentId));
-        cards.forEach(c => categoryStudentIds.add(c.studentId));
-        attendances.forEach(a => categoryStudentIds.add(a.studentId));
-      }
+    const sessions = await prisma.liveSession.findMany({ where: { courseId: { in: categoryIds } }, select: { id: true } });
+    const sessionIds = sessions.map(s => s.id);
+    if (sessionIds.length > 0) {
+      const [bookings, sessionBookings, cards, attendances] = await Promise.all([
+        prisma.booking.findMany({ where: { sessionId: { in: sessionIds } }, select: { studentId: true } }),
+        prisma.sessionBooking.findMany({ where: { sessionId: { in: sessionIds } }, select: { studentId: true } }),
+        prisma.sessionCard.findMany({ where: { sessionId: { in: sessionIds } }, select: { studentId: true } }),
+        prisma.attendance.findMany({ where: { sessionId: { in: sessionIds } }, select: { studentId: true } })
+      ]);
+      bookings.forEach(b => categoryStudentIds.add(b.studentId));
+      sessionBookings.forEach(sb => categoryStudentIds.add(sb.studentId));
+      cards.forEach(c => categoryStudentIds.add(c.studentId));
+      attendances.forEach(a => categoryStudentIds.add(a.studentId));
     }
 
-    const filterIds = (sessionId || courseId)
+    const filterIds = (cleanSessionId || cleanCourseId)
       ? [...studentIds].filter(id => categoryStudentIds.has(id))
       : [...categoryStudentIds];
 
@@ -156,8 +145,8 @@ const resolveRecipients = async ({ categoryIds, courseId, sessionId, audienceTyp
     });
   } else if (audienceType === "course_students") {
     let courseStudentIds = new Set();
-    if (courseId) {
-      const sessions = await prisma.liveSession.findMany({ where: { courseId }, select: { id: true } });
+    if (cleanCourseId) {
+      const sessions = await prisma.liveSession.findMany({ where: { courseTitle: cleanCourseId }, select: { id: true } });
       const sessionIds = sessions.map(s => s.id);
       if (sessionIds.length > 0) {
         const [bookings, sessionBookings, cards, attendances] = await Promise.all([
@@ -173,7 +162,7 @@ const resolveRecipients = async ({ categoryIds, courseId, sessionId, audienceTyp
       }
     }
 
-    const filterIds = sessionId
+    const filterIds = cleanSessionId
       ? [...studentIds].filter(id => courseStudentIds.has(id))
       : [...courseStudentIds];
 
@@ -183,12 +172,12 @@ const resolveRecipients = async ({ categoryIds, courseId, sessionId, audienceTyp
     });
   } else if (audienceType === "session_students") {
     let sessionStudentIds = new Set();
-    if (sessionId) {
+    if (cleanSessionId) {
       const [bookings, sessionBookings, cards, attendances] = await Promise.all([
-        prisma.booking.findMany({ where: { sessionId }, select: { studentId: true } }),
-        prisma.sessionBooking.findMany({ where: { sessionId }, select: { studentId: true } }),
-        prisma.sessionCard.findMany({ where: { sessionId }, select: { studentId: true } }),
-        prisma.attendance.findMany({ where: { sessionId }, select: { studentId: true } })
+        prisma.booking.findMany({ where: { sessionId: cleanSessionId }, select: { studentId: true } }),
+        prisma.sessionBooking.findMany({ where: { sessionId: cleanSessionId }, select: { studentId: true } }),
+        prisma.sessionCard.findMany({ where: { sessionId: cleanSessionId }, select: { studentId: true } }),
+        prisma.attendance.findMany({ where: { sessionId: cleanSessionId }, select: { studentId: true } })
       ]);
       bookings.forEach(b => sessionStudentIds.add(b.studentId));
       sessionBookings.forEach(sb => sessionStudentIds.add(sb.studentId));
@@ -201,7 +190,6 @@ const resolveRecipients = async ({ categoryIds, courseId, sessionId, audienceTyp
       select: { id: true, email: true }
     });
   } else {
-    // Fallback: use targeting resolved list
     finalStudents = await prisma.user.findMany({
       where: { id: { in: [...studentIds] }, role: "STUDENT", isActive: true },
       select: { id: true, email: true }
@@ -214,38 +202,33 @@ const resolveRecipients = async ({ categoryIds, courseId, sessionId, audienceTyp
 // ─── Targets Validation ─────────────────────────────────────────────────────
 
 const validateCampaignTargets = async (categoryIds, courseId, sessionId) => {
-  // Validate categoryIds exist in the Category table (as descriptions or IDs)
+  // Validate categoryIds exist in the Category table (or matches our default-category-id)
+  const categories = await prisma.category.findMany({
+    where: { id: { in: categoryIds } }
+  });
+  const foundIds = new Set(categories.map(c => c.id));
   for (const catId of categoryIds) {
-    const exists = await prisma.category.findFirst({
-      where: {
-        OR: [
-          { id: catId },
-          { description: { equals: catId, mode: 'insensitive' } }
-        ]
-      }
-    });
-    if (!exists) {
+    if (!foundIds.has(catId) && catId !== "default-category-id") {
       return { valid: false, message: `Category '${catId}' does not exist.` };
     }
   }
 
   // Validate course exists and belongs to the selected categories
-  if (courseId) {
-    const course = await prisma.category.findUnique({
-      where: { id: courseId }
+  if (courseId && courseId !== "Default Course") {
+    const courseSessions = await prisma.liveSession.findMany({
+      where: { courseTitle: courseId }
     });
-    if (!course) {
-      return { valid: false, message: `The course with ID '${courseId}' does not exist.` };
+    if (courseSessions.length === 0) {
+      return { valid: false, message: `The course '${courseId}' does not exist.` };
     }
-    const parentCategory = course.description || "General";
-    const matchesCategory = categoryIds.includes(parentCategory) || categoryIds.includes(course.id);
-    if (!matchesCategory) {
-      return { valid: false, message: `The course '${course.name}' does not belong to the selected categories.` };
+    const belongsToCategory = courseSessions.some(s => categoryIds.includes(s.courseId) || s.courseId === "default-category-id");
+    if (!belongsToCategory) {
+      return { valid: false, message: `The course '${courseId}' does not belong to the selected categories.` };
     }
   }
 
   // Validate session exists and belongs to selected course and categories
-  if (sessionId) {
+  if (sessionId && sessionId !== "default-session-id") {
     const session = await prisma.liveSession.findUnique({
       where: { id: sessionId }
     });
@@ -253,13 +236,12 @@ const validateCampaignTargets = async (categoryIds, courseId, sessionId) => {
       return { valid: false, message: "The selected session does not exist." };
     }
     
-    const parentCategory = session.category || "General";
-    const matchesCategory = categoryIds.includes(parentCategory) || (session.courseId && categoryIds.includes(session.courseId));
+    const matchesCategory = categoryIds.includes(session.courseId) || session.courseId === "default-category-id";
     if (!matchesCategory) {
       return { valid: false, message: "The selected session does not belong to the selected categories." };
     }
 
-    if (courseId && session.courseId !== courseId) {
+    if (courseId && courseId !== "Default Course" && session.courseTitle !== courseId) {
       return { valid: false, message: "The selected session does not belong to the selected course." };
     }
   }
@@ -276,34 +258,59 @@ const getOfferTargets = async (req, res) => {
       orderBy: { name: "asc" }
     });
 
+    const coursesRaw = await prisma.liveSession.findMany({
+      where: {
+        courseId: { not: null },
+        courseTitle: { not: null }
+      },
+      select: {
+        courseId: true,
+        courseTitle: true
+      },
+      distinct: ["courseId", "courseTitle"]
+    });
+
     const sessionsList = await prisma.liveSession.findMany({
       where: { status: "active" },
       select: {
         id: true,
         title: true,
         courseId: true,
-        courseTitle: true,
-        category: true
+        courseTitle: true
       }
     });
 
-    // Parent Categories are mapped from distinct description values in the Category table
-    const distinctCategories = Array.from(new Set(categoriesList.map(c => c.description || "General").filter(Boolean)));
-    const categories = distinctCategories.map(name => ({ id: name, name }));
+    // Categories are returned directly from the Category database table
+    let categories = categoriesList.map(c => ({ id: c.id, name: c.name }));
+    if (categories.length === 0) {
+      categories = [
+        { id: "default-category-id", name: "General Development" }
+      ];
+    }
 
-    // Courses are the actual records in the Category table, linking to their parent Category
-    const courses = categoriesList.map(c => ({
-      id: c.id,
-      name: c.name,
-      categoryId: c.description || "General"
+    // Courses are the unique course titles inside the Category ID
+    let courses = coursesRaw.map(c => ({
+      id: c.courseTitle,
+      name: c.courseTitle,
+      categoryId: c.courseId
     }));
+    if (courses.length === 0) {
+      courses = [
+        { id: "Default Course", name: "General Course", categoryId: categories[0].id }
+      ];
+    }
 
-    // Sessions are mapped from LiveSession, linking directly to their Category ID
-    const sessions = sessionsList.map(s => ({
+    // Sessions are mapped from LiveSession, linking directly to the courseTitle string as courseId
+    let sessions = sessionsList.map(s => ({
       id: s.id,
       name: s.title,
-      courseId: s.courseId || null
+      courseId: s.courseTitle || "Default Course"
     }));
+    if (sessions.length === 0) {
+      sessions = [
+        { id: "default-session-id", name: "General Live Class", courseId: courses[0].id }
+      ];
+    }
 
     return res.status(200).json({
       success: true,
