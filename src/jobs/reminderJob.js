@@ -21,7 +21,7 @@
 const cron   = require("node-cron");
 const prisma = require("../config/db");
 const { sendSessionReminderEmail } = require("../services/emailService");
-const { sendSessionReminderSMS }   = require("../services/smsService");
+// const { sendSessionReminderSMS }   = require("../services/smsService");
 
 // ─── Cron: every minute ───────────────────────────────────────────────────────
 cron.schedule("* * * * *", async () => {
@@ -156,6 +156,8 @@ cron.schedule("* * * * *", async () => {
           console.log(`[REMINDER] ℹ️  No email recipients for occurrence "${occurrence.id}" — skipping email.`);
         }
 
+        // SMS reminders are disabled per user request (only OTP is sent via SMS)
+        /*
         if (recipientPhones.length > 0) {
           notifyPromises.push(
             sendSessionReminderSMS(recipientPhones, session, occurrence).catch((err) => {
@@ -168,6 +170,7 @@ cron.schedule("* * * * *", async () => {
         } else {
           console.log(`[REMINDER] ℹ️  No SMS recipients for occurrence "${occurrence.id}" — skipping SMS.`);
         }
+        */
 
         // Wait for all channels to complete (errors are caught above, won't reject)
         await Promise.all(notifyPromises);

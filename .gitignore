@@ -7,4 +7,3 @@ yarn-debug.log*
 yarn-error.log*
 .prisma
 package-lock.json
-.env

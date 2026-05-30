@@ -185,58 +185,42 @@ const loginUser = async (req, res) => {
 // @route   POST /api/auth/send-otp
 // @access  Public
 // ─────────────────────────────────────────────
-const { generateOTP, sendSmsOTP, sendEmailOTP, sendPasswordResetEmail } = require("../services/otpService");
+const { generateOTP, sendEmailOTP, sendPasswordResetEmail } = require("../services/otpService");
 
 const sendOTP = async (req, res) => {
   try {
-    // 1. Accept either an email or a phone number as the identifier
+    // 1. Accept an email as the identifier (SMS flow has been removed)
     const { identifier, type } = req.body;
-    //    type: "email" | "sms"  (defaults to "email" if omitted)
+    //    type: "email" (defaults to "email" if omitted)
 
     if (!identifier) {
       return res.status(400).json({
         success: false,
-        message: "Please provide an identifier (email or phone number).",
+        message: "Please provide an identifier (email address).",
       });
     }
 
-    const deliveryType = type === "sms" ? "sms" : "email";
-    let normalizedIdentifier = String(identifier).trim();
+    // Reject SMS requests or identifiers that do not look like email addresses
+    if (type === "sms" || !String(identifier).includes("@")) {
+      return res.status(400).json({
+        success: false,
+        message: "SMS OTP delivery is not supported. Please use email verification.",
+      });
+    }
+
+    const deliveryType = "email";
+    let normalizedIdentifier = String(identifier).trim().toLowerCase();
 
     // 2. Prevent OTP waste: check duplicate checks before delivery
-    if (deliveryType === "email") {
-      normalizedIdentifier = normalizedIdentifier.toLowerCase();
-      
-      const existingUser = await prisma.user.findUnique({
-        where: { email: normalizedIdentifier },
+    const existingUser = await prisma.user.findUnique({
+      where: { email: normalizedIdentifier },
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: "Email address is already registered.",
       });
-
-      if (existingUser) {
-        return res.status(409).json({
-          success: false,
-          message: "Email address is already registered.",
-        });
-      }
-    } else {
-      normalizedIdentifier = normalizePhone(normalizedIdentifier);
-      const localNumber = normalizedIdentifier.length >= 10 ? normalizedIdentifier.slice(-10) : normalizedIdentifier;
-
-      const existingUser = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { phoneNormalized: normalizedIdentifier },
-            { phoneNormalized: { endsWith: localNumber } },
-            { phoneNumber: { endsWith: localNumber } },
-          ],
-        },
-      });
-
-      if (existingUser) {
-        return res.status(409).json({
-          success: false,
-          message: "Mobile number is already registered.",
-        });
-      }
     }
 
     // 3. Generate OTP and calculate a 1-minute expiry window
@@ -244,12 +228,7 @@ const sendOTP = async (req, res) => {
     const expiresAt = new Date(Date.now() + 1 * 60 * 1000); // now + 1 min
 
     // 4. Deliver the OTP via the requested channel
-    if (deliveryType === "sms") {
-      const smsPhone = normalizedIdentifier.length >= 10 ? normalizedIdentifier.slice(-10) : normalizedIdentifier;
-      await sendSmsOTP(smsPhone, otp);
-    } else {
-      await sendEmailOTP(normalizedIdentifier, otp);
-    }
+    await sendEmailOTP(normalizedIdentifier, otp);
 
     // 5. Persist the OTP record (upsert to avoid duplicate entries per identifier)
     //    Delete any previous OTP for the same identifier first to keep the table lean.
@@ -279,6 +258,7 @@ const sendOTP = async (req, res) => {
     });
   }
 };
+
 
 // ─────────────────────────────────────────────
 // @desc    Verify the submitted OTP code
@@ -357,63 +337,83 @@ const verifyOTP = async (req, res) => {
 // @access  Public
 // ─────────────────────────────────────────────
 const forgotPassword = async (req, res) => {
-  try {
-    const { EMAIL_ADDRESS } = req.body;
+  const { EMAIL_ADDRESS, email: rawEmail } = req.body;
+  const identifier = EMAIL_ADDRESS || rawEmail;
 
+  console.log(`[Forgot Password] Request received. Identifier: ${identifier}`);
+
+  try {
     // 1. Validate input
-    if (!EMAIL_ADDRESS) {
+    if (!identifier) {
+      console.log("[Forgot Password] Validation failed: Email address is required.");
       return res.status(400).json({
         success: false,
-        message: "Please provide your email address.",
+        message: "Email address is required.",
       });
     }
 
-    const email = String(EMAIL_ADDRESS).trim().toLowerCase();
+    const email = String(identifier).trim().toLowerCase();
 
     // 2. Look up the user
     const user = await prisma.user.findUnique({
       where: { email },
     });
 
-    // 3. SECURITY: Always return the same message whether user exists or not.
-    //    This prevents attackers from discovering which emails are registered
-    //    (called "user enumeration attack" prevention).
+    // 3. SECURITY: Always return success message even if user does not exist to prevent user enumeration
     if (!user) {
+      console.log(`[Forgot Password] User not found for email: ${email}. Returning success for security.`);
       return res.status(200).json({
         success: true,
-        message: "If that email exists in our system, a password reset link has been sent.",
+        message: "If the email exists, a reset link has been sent.",
       });
     }
 
-    // 4. Generate a cryptographically secure 64-character hex token
-    const token = crypto.randomBytes(32).toString("hex");
+    // 4. Generate a secure random reset token
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    console.log(`[Forgot Password] Secure token generated for user ID: ${user.id}`);
 
-    // 5. Set expiry — 15 minutes from now
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    // 5. Hash the token before saving to database
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    console.log("[Forgot Password] Token hashed successfully.");
 
-    // 6. Delete any previous unused reset tokens for this user (keep DB clean)
+    // 6. Set expiry — 30 minutes from now
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+    // 7. Delete any previous unused reset tokens for this user (keep DB clean)
     await prisma.passwordResetToken.deleteMany({
       where: { userId: user.id },
     });
 
-    // 7. Save the new token in the database
+    // 8. Save the new token hash in the database
     await prisma.passwordResetToken.create({
       data: {
-        token,
+        token: tokenHash,
         userId: user.id,
         expiresAt,
       },
     });
+    console.log("[Forgot Password] Token hash and expiry saved to DB.");
 
-    // 8. Send the styled HTML reset email via Zeptomail SMTP
-    await sendPasswordResetEmail(user.email, token);
+    // 9. Send password reset email using ZeptoMail
+    console.log(`[Forgot Password] Mail send start to ${email}`);
+    try {
+      await sendPasswordResetEmail(user.email, rawToken);
+      console.log(`[Forgot Password] Mail send success to ${email}`);
+    } catch (mailErr) {
+      console.error(`[Forgot Password] Failed to send email to ${email}:`, mailErr.message);
+      return res.status(500).json({
+        success: false,
+        message: `Failed to send password reset email: ${mailErr.message}`,
+      });
+    }
 
+    console.log(`[Forgot Password] Success response sent to ${email}`);
     return res.status(200).json({
       success: true,
-      message: "If that email exists in our system, a password reset link has been sent.",
+      message: "Password reset link sent.",
     });
   } catch (error) {
-    console.error("Forgot Password Error:", error);
+    console.error("[Forgot Password] Error:", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error. Please try again.",
@@ -429,53 +429,72 @@ const forgotPassword = async (req, res) => {
 // ─────────────────────────────────────────────
 const resetPassword = async (req, res) => {
   try {
-    const { token, newPassword } = req.body;
+    const { token, newPassword, PASSWORD } = req.body;
+    const password = newPassword || PASSWORD;
+
+    console.log(`[Reset Password] Request received. Token provided: ${token ? "Yes" : "No"}`);
 
     // 1. Validate inputs
-    if (!token || !newPassword) {
+    if (!token) {
+      console.log("[Reset Password] Validation failed: token is missing.");
       return res.status(400).json({
         success: false,
-        message: "Token and new password are required.",
+        message: "Reset link is invalid or expired.",
       });
     }
 
-    // 2. Enforce minimum password strength (matches your existing registration rule)
-    if (newPassword.length < 8) {
+    if (!password) {
+      console.log("[Reset Password] Validation failed: password is missing.");
       return res.status(400).json({
         success: false,
-        message: "Password must be at least 8 characters long.",
+        message: "Reset link is invalid or expired.",
       });
     }
 
-    // 3. Look up the token in the database
+    // 2. Enforce password policy (matching frontend signup: 8+ chars, uppercase, lowercase, number, special char)
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+    if (!passwordRegex.test(password)) {
+      console.log("[Reset Password] Validation failed: password does not meet complexity requirements.");
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.",
+      });
+    }
+
+    // 3. Hash the incoming token
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    // 4. Look up the token in the database by its hash
     const resetRecord = await prisma.passwordResetToken.findUnique({
-      where: { token },
+      where: { token: tokenHash },
       include: { user: true },
     });
 
-    // 4. If token doesn't exist, it's invalid
+    // 5. If token doesn't exist, it's invalid
     if (!resetRecord) {
+      console.log("[Reset Password] Token hash not found in database.");
       return res.status(400).json({
         success: false,
-        message: "Invalid or expired reset link. Please request a new one.",
+        message: "Reset link is invalid or expired.",
       });
     }
 
-    // 5. Check if token has expired
+    // 6. Check if token has expired
     if (new Date() > resetRecord.expiresAt) {
+      console.log("[Reset Password] Token has expired. Deleting stale token.");
       // Clean up the expired token
       await prisma.passwordResetToken.delete({ where: { id: resetRecord.id } });
-      return res.status(400).json({
+      return res.status(410).json({
         success: false,
-        message: "This reset link has expired (15 minutes). Please request a new one.",
+        message: "Reset link is invalid or expired.",
       });
     }
 
-    // 6. Hash the new password (salt rounds: 12, matching your registration logic)
+    // 7. Hash the new password (salt rounds: 12, matching your registration logic)
     const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 7. Atomically: update password AND delete all reset tokens for this user
+    // 8. Atomically: update password AND delete all reset tokens for this user
     //    Using prisma.$transaction ensures both happen together or not at all.
     await prisma.$transaction([
       prisma.user.update({
@@ -486,13 +505,14 @@ const resetPassword = async (req, res) => {
         where: { userId: resetRecord.userId },
       }),
     ]);
+    console.log(`[Reset Password] Password reset successful for user ID: ${resetRecord.userId}`);
 
     return res.status(200).json({
       success: true,
-      message: "Your password has been reset successfully! You can now log in with your new password.",
+      message: "Password reset successful.",
     });
   } catch (error) {
-    console.error("Reset Password Error:", error);
+    console.error("[Reset Password] Error:", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error. Please try again.",
