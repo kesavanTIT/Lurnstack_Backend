@@ -239,6 +239,182 @@ const sendSessionReminderEmail = async (recipientEmails, session, occurrence) =>
   return { sent, failed };
 };
 
+// ─── Campaign Email Sending ─────────────────────────────────────────────────
+
+/**
+ * Renders the HTML content for an offer campaign email using the white responsive template.
+ */
+const renderCampaignHtml = (campaign) => {
+  const {
+    heading,
+    body,
+    buttonText,
+    buttonLink,
+    discountType,
+    discountValue,
+    offerTitle,
+    validTill,
+    showLogo,
+    heroImageUrl
+  } = campaign;
+
+  let discountText = "Exclusive Learning Offer";
+  if (discountType === "percentage" && discountValue) {
+    discountText = `${discountValue}% OFF`;
+  } else if (discountType === "flat" && discountValue) {
+    discountText = `Rs.${discountValue} OFF`;
+  }
+
+  const logoUrl = "https://api.lurnstack.com/uploads/logo.png";
+  
+  const validTillStr = validTill
+    ? new Date(validTill).toLocaleDateString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+      })
+    : "";
+
+  let logoHtml = "";
+  if (showLogo) {
+    logoHtml = `
+      <div style="text-align:center; margin-bottom: 24px;">
+        <img src="${logoUrl}" alt="LurnStack" width="130" style="display:block; margin:0 auto;" />
+      </div>
+    `;
+  }
+
+  let heroImageHtml = "";
+  if (heroImageUrl) {
+    let absoluteHeroUrl = heroImageUrl;
+    if (heroImageUrl && !heroImageUrl.startsWith("http://") && !heroImageUrl.startsWith("https://")) {
+      const serverUrl = process.env.SERVER_URL || "https://api.lurnstack.com";
+      absoluteHeroUrl = `${serverUrl}/${heroImageUrl.replace(/\\/g, "/")}`;
+    }
+    heroImageHtml = `
+      <div style="margin-bottom: 24px; text-align: center;">
+        <img src="${absoluteHeroUrl}" alt="${offerTitle}" style="max-width: 100%; height: auto; border-radius: 8px; display: block; margin: 0 auto;" />
+      </div>
+    `;
+  }
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>${heading}</title>
+    </head>
+    <body style="margin:0;padding:0;background-color:#f8fafc;font-family:'Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:32px 16px;">
+        <tr>
+          <td align="center">
+            <table width="100%" max-width="600" style="max-width:600px;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:32px;box-shadow:0 4px 12px rgba(0,0,0,0.03);">
+              <tr>
+                <td>
+                  <!-- 1. Logo -->
+                  ${logoHtml}
+
+                  <!-- 2. Offer label -->
+                  <div style="text-align:center; margin-bottom:12px;">
+                    <span style="background-color:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:6px 12px;border-radius:9999px;display:inline-block;">
+                      Limited Learning Offer
+                    </span>
+                  </div>
+
+                  <!-- 3. Heading -->
+                  <h1 style="color:#0f172a;font-size:24px;font-weight:800;text-align:center;margin:0 0 16px;line-height:1.3;">
+                    ${heading}
+                  </h1>
+
+                  <!-- Hero Image if any -->
+                  ${heroImageHtml}
+
+                  <!-- 4. Discount badge -->
+                  <div style="text-align:center; margin-bottom:20px;">
+                    <div style="background-color:#3b82f6;color:#ffffff;font-size:20px;font-weight:800;padding:10px 24px;border-radius:8px;display:inline-block;box-shadow:0 2px 4px rgba(59,130,246,0.2);">
+                      ${discountText}
+                    </div>
+                  </div>
+
+                  <!-- 5. Offer title -->
+                  <h2 style="color:#1e293b;font-size:18px;font-weight:700;text-align:center;margin:0 0 20px;line-height:1.4;">
+                    ${offerTitle}
+                  </h2>
+
+                  <!-- 6. Body -->
+                  <div style="color:#475569;font-size:15px;line-height:1.6;margin-bottom:28px;">
+                    ${body}
+                  </div>
+
+                  <!-- 7. CTA button -->
+                  <div style="text-align:center; margin-bottom:24px;">
+                    <a href="${buttonLink}" target="_blank" style="background-color:#1e40af;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;padding:14px 40px;border-radius:8px;display:inline-block;letter-spacing:0.5px;box-shadow:0 4px 6px rgba(30,64,175,0.2);">
+                      ${buttonText}
+                    </a>
+                  </div>
+
+                  <!-- 8. Generated View Offer link -->
+                  <p style="margin:0 0 8px;color:#94a3b8;font-size:11px;text-align:center;">
+                    If the button doesn't work, copy and paste this link into your browser:
+                  </p>
+                  <p style="margin:0 0 24px;word-break:break-all;text-align:center;">
+                    <a href="${buttonLink}" style="color:#2563eb;font-size:11px;text-decoration:underline;">${buttonLink}</a>
+                  </p>
+
+                  <!-- 9. Valid till -->
+                  ${validTillStr ? `
+                  <p style="margin:0;color:#64748b;font-size:12px;text-align:center;font-weight:500;">
+                    Offer valid till: <strong style="color:#0f172a;">${validTillStr}</strong>
+                  </p>
+                  ` : ""}
+
+                  <hr style="border:0;border-top:1px solid #f1f5f9;margin:24px 0;" />
+
+                  <!-- 10. Footer -->
+                  <div style="text-align:center;color:#94a3b8;font-size:11px;">
+                    <p style="margin:0 0 4px;font-weight:600;color:#64748b;">Team Tamil Info Technology</p>
+                    <p style="margin:0;">LurnStack, Chennai, India</p>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `;
+};
+
+/**
+ * Sends a single campaign email to the specified recipient.
+ */
+const sendCampaignEmail = async (email, campaign) => {
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  if (!from) {
+    throw new Error("SMTP_FROM / SMTP_USER not configured in .env");
+  }
+
+  const transporter = getTransporter();
+  const htmlBody = renderCampaignHtml(campaign);
+
+  return transporter.sendMail({
+    from: `"LurnStack" <${from}>`,
+    to: email,
+    subject: campaign.subject,
+    text: `${campaign.offerTitle}\n\n${campaign.heading}\n\n${campaign.body}\n\nView Offer: ${campaign.buttonLink}`,
+    html: htmlBody,
+  });
+};
+
 // ─── Exports ─────────────────────────────────────────────────────────────────
 
-module.exports = { sendSessionReminderEmail };
+module.exports = {
+  sendSessionReminderEmail,
+  renderCampaignHtml,
+  sendCampaignEmail
+};
+

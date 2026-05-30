@@ -34,6 +34,8 @@ model User {
   studentAttendances        StudentAttendance[] @relation(name: "StudentAttendance")
   trainerStudentAttendances StudentAttendance[] @relation(name: "TrainerStudentAttendance")
   whatsappReminderLogs      WhatsAppSessionReminderLog[]
+  campaignDeliveries        OfferCampaignDelivery[]
+  campaignClicks            OfferCampaignClick[]
 }
 
 enum Role {
@@ -392,3 +394,65 @@ model WhatsAppSessionReminderLog {
 
   @@unique([sessionId, userId])
 }
+
+model OfferCampaign {
+  id               String                  @id @default(uuid())
+  campaignName     String
+  offerTitle       String
+  description      String?
+  discountType     String                  // "percentage" | "flat"
+  discountValue    Float
+  validTill        DateTime
+  categoryIds      String[]
+  courseId         String?
+  sessionId        String?
+  audienceType     String                  // "all_students" | "category_students" | "course_students" | "session_students" | "inactive_students"
+  subject          String
+  heading          String
+  body             String
+  buttonText       String
+  buttonLink       String
+  showLogo         Boolean
+  heroImageUrl     String?
+  status           String                  @default("draft") // "draft" | "ready" | "sending" | "sent" | "failed"
+  recipientCount   Int                     @default(0)
+  sentCount        Int                     @default(0)
+  failedCount      Int                     @default(0)
+  createdByAdminId Int
+  sentAt           DateTime?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  deliveries       OfferCampaignDelivery[]
+  clicks           OfferCampaignClick[]
+}
+
+model OfferCampaignDelivery {
+  id                String        @id @default(uuid())
+  campaignId        String
+  campaign          OfferCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  studentId         Int
+  student           User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  email             String
+  status            String        @default("pending") // "pending" | "sent" | "failed"
+  providerMessageId String?
+  errorMessage      String?
+  sentAt            DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model OfferCampaignClick {
+  id         String        @id @default(uuid())
+  campaignId String
+  campaign   OfferCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  studentId  Int?
+  student    User?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  email      String?
+  targetType String        // "session" | "course" | "category"
+  targetId   String?
+  clickedAt  DateTime      @default(now())
+  userAgent  String?
+  ipAddress  String?
+}
+

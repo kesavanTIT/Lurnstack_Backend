@@ -10,6 +10,7 @@ const adminCategoryRoutes = require("./routes/adminCategoryRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const trainerRoutes = require("./routes/trainerRoutes");
 const sessionRoutes = require("./routes/sessionRoutes");
+const offerCampaignRoutes = require("./routes/offerCampaignRoutes");
 
 // ── App Setup ────────────────────────────────
 const app = express();
@@ -81,6 +82,7 @@ app.use("/api/admin/categories", adminCategoryRoutes);
 app.use("/api/student", studentRoutes);
 app.use("/api/trainer", trainerRoutes);
 app.use("/api/sessions", sessionRoutes);
+app.use("/api", offerCampaignRoutes);
 
 // ── 404 Handler ──────────────────────────────
 app.use((req, res) => {
