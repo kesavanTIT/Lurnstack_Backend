@@ -212,12 +212,28 @@ const validateCampaignTargets = async (categoryIds, courseId, sessionId) => {
     const courseSessions = await prisma.liveSession.findMany({
       where: { courseTitle: courseId }
     });
-    if (courseSessions.length === 0) {
-      return { valid: false, message: `The course '${courseId}' does not exist.` };
-    }
-    const belongsToCategory = courseSessions.some(s => categoryIds.includes(s.courseId));
-    if (!belongsToCategory) {
-      return { valid: false, message: `The course '${courseId}' does not belong to the selected categories.` };
+    
+    if (courseSessions.length > 0) {
+      const belongsToCategory = courseSessions.some(s => categoryIds.includes(s.courseId));
+      if (!belongsToCategory) {
+        return { valid: false, message: `The course '${courseId}' does not belong to the selected categories.` };
+      }
+    } else {
+      // Fallback check against Category names/IDs if no session exists yet
+      const matchingCategory = await prisma.category.findFirst({
+        where: {
+          OR: [
+            { id: courseId },
+            { name: { equals: courseId, mode: 'insensitive' } }
+          ]
+        }
+      });
+      if (!matchingCategory) {
+        return { valid: false, message: `The course '${courseId}' does not exist.` };
+      }
+      if (!categoryIds.includes(matchingCategory.id)) {
+        return { valid: false, message: `The course '${courseId}' does not belong to the selected categories.` };
+      }
     }
   }
 
@@ -356,61 +372,58 @@ const getOfferCampaigns = async (req, res) => {
 // 3. POST /api/admin/offer-campaigns
 const createOfferCampaign = async (req, res) => {
   try {
-    // Parse body parameters. Multer maps text fields to req.body.
-    let payload = req.body;
-    
-    // Parse categoryIds if it was sent as string or array
+    const payload = req.body;
+
+    // Validation checks with clear error messages
+    if (!payload.campaignName) {
+      return res.status(400).json({ success: false, message: "campaignName is required" });
+    }
+    if (!payload.offerTitle) {
+      return res.status(400).json({ success: false, message: "offerTitle is required" });
+    }
+    if (!payload.discountType) {
+      return res.status(400).json({ success: false, message: "discountType is required" });
+    }
+    if (payload.discountValue === undefined || payload.discountValue === "") {
+      return res.status(400).json({ success: false, message: "discountValue is required" });
+    }
+    if (!payload.validTill) {
+      return res.status(400).json({ success: false, message: "validTill is required" });
+    }
+    if (!payload.subject) {
+      return res.status(400).json({ success: false, message: "subject is required" });
+    }
+    if (!payload.heading) {
+      return res.status(400).json({ success: false, message: "heading is required" });
+    }
+    if (!payload.body) {
+      return res.status(400).json({ success: false, message: "body is required" });
+    }
+    if (!payload.buttonText) {
+      return res.status(400).json({ success: false, message: "buttonText is required" });
+    }
+
     let categoryIds = payload.categoryIds;
+    if (!categoryIds) {
+      return res.status(400).json({ success: false, message: "categoryIds is required" });
+    }
     if (typeof categoryIds === "string") {
       try {
         categoryIds = JSON.parse(categoryIds);
       } catch (e) {
-        categoryIds = categoryIds.split(",").map(c => c.trim());
+        categoryIds = categoryIds.split(",").map(c => c.trim()).filter(Boolean);
       }
     }
-
-    const {
-      campaignName,
-      offerTitle,
-      description,
-      discountType,
-      discountValue,
-      validTill,
-      courseId,
-      sessionId,
-      audienceType = "all_students",
-      subject,
-      heading,
-      body,
-      buttonText,
-      showLogo = true
-    } = payload;
-
-    const showLogoBool = showLogo === true || showLogo === "true";
-
-    // Validate inputs
-    if (
-      !campaignName ||
-      !offerTitle ||
-      !discountType ||
-      discountValue === undefined ||
-      !validTill ||
-      !categoryIds ||
-      !Array.isArray(categoryIds) ||
-      categoryIds.length === 0 ||
-      !subject ||
-      !heading ||
-      !body ||
-      !buttonText
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing required fields or invalid categoryIds format."
-      });
+    if (!Array.isArray(categoryIds) || categoryIds.length === 0) {
+      return res.status(400).json({ success: false, message: "categoryIds is required and must contain at least one category" });
     }
 
+    // Sanitize optional target courseId/sessionId
+    const cleanCourseId = (payload.courseId && payload.courseId !== "undefined" && payload.courseId !== "null" && payload.courseId.trim() !== "") ? payload.courseId.trim() : null;
+    const cleanSessionId = (payload.sessionId && payload.sessionId !== "undefined" && payload.sessionId !== "null" && payload.sessionId.trim() !== "") ? payload.sessionId.trim() : null;
+
     // Validate categories, courses, and sessions exist and align
-    const targetValidation = await validateCampaignTargets(categoryIds, courseId, sessionId);
+    const targetValidation = await validateCampaignTargets(categoryIds, cleanCourseId, cleanSessionId);
     if (!targetValidation.valid) {
       return res.status(400).json({
         success: false,
@@ -428,37 +441,40 @@ const createOfferCampaign = async (req, res) => {
 
     // Generate Campaign UUID and Button Link
     const campaignId = crypto.randomUUID();
-    const buttonLink = generateButtonLink(campaignId, categoryIds, courseId, sessionId);
+    const buttonLink = generateButtonLink(campaignId, categoryIds, cleanCourseId, cleanSessionId);
 
     // Resolve estimated recipient count
     const recipients = await resolveRecipients({
       categoryIds,
-      courseId,
-      sessionId,
-      audienceType
+      courseId: cleanCourseId,
+      sessionId: cleanSessionId,
+      audienceType: payload.audienceType || "all_students"
     });
+
+    const statusToUse = (payload.status && ["draft", "ready", "sent"].includes(payload.status)) ? payload.status : "draft";
+    const showLogoBool = payload.showLogo === true || payload.showLogo === "true" || payload.showLogo === undefined;
 
     const campaign = await prisma.offerCampaign.create({
       data: {
         id: campaignId,
-        campaignName: sanitizePlainText(campaignName),
-        offerTitle: sanitizePlainText(offerTitle),
-        description: description ? sanitizePlainText(description) : null,
-        discountType,
-        discountValue: parseFloat(discountValue),
-        validTill: new Date(validTill),
+        campaignName: sanitizePlainText(payload.campaignName),
+        offerTitle: sanitizePlainText(payload.offerTitle),
+        description: payload.description ? sanitizePlainText(payload.description) : null,
+        discountType: payload.discountType,
+        discountValue: parseFloat(payload.discountValue),
+        validTill: new Date(payload.validTill),
         categoryIds,
-        courseId: courseId || null,
-        sessionId: sessionId || null,
-        audienceType,
-        subject: sanitizePlainText(subject),
-        heading: sanitizePlainText(heading),
-        body: sanitizeHtml(body),
-        buttonText: sanitizePlainText(buttonText),
+        courseId: cleanCourseId,
+        sessionId: cleanSessionId,
+        audienceType: payload.audienceType || "all_students",
+        subject: sanitizePlainText(payload.subject),
+        heading: sanitizePlainText(payload.heading),
+        body: sanitizeHtml(payload.body),
+        buttonText: sanitizePlainText(payload.buttonText),
         buttonLink,
         showLogo: showLogoBool,
         heroImageUrl,
-        status: "draft",
+        status: statusToUse,
         recipientCount: recipients.length,
         createdByAdminId: req.user.id
       }
@@ -466,7 +482,7 @@ const createOfferCampaign = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      data: campaign
+      data: { campaign }
     });
   } catch (error) {
     console.error("createOfferCampaign Error:", error);
@@ -495,7 +511,7 @@ const getOfferCampaignById = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: campaign
+      data: { campaign }
     });
   } catch (error) {
     console.error("getOfferCampaignById Error:", error);
@@ -535,7 +551,7 @@ const updateOfferCampaign = async (req, res) => {
       try {
         categoryIds = JSON.parse(categoryIds);
       } catch (e) {
-        categoryIds = categoryIds.split(",").map(c => c.trim());
+        categoryIds = categoryIds.split(",").map(c => c.trim()).filter(Boolean);
       }
     }
 
@@ -554,7 +570,7 @@ const updateOfferCampaign = async (req, res) => {
     if (payload.buttonText !== undefined) updateData.buttonText = sanitizePlainText(payload.buttonText);
     if (payload.showLogo !== undefined) updateData.showLogo = payload.showLogo === true || payload.showLogo === "true";
     if (payload.status !== undefined) {
-      if (["draft", "ready"].includes(payload.status)) {
+      if (["draft", "ready", "sent"].includes(payload.status)) {
         updateData.status = payload.status;
       }
     }
@@ -565,10 +581,14 @@ const updateOfferCampaign = async (req, res) => {
       updateData.heroImageUrl = (payload.heroImage === "null" || payload.heroImage === "undefined") ? null : payload.heroImage;
     }
 
-    // If target settings changed, perform validation, regenerate CTA link, and recount recipients
+    // If target settings changed, validate them, regenerate CTA link, and recount recipients
     const categoryIdsToUse = categoryIds !== undefined ? categoryIds : existing.categoryIds;
-    const courseIdToUse = payload.courseId !== undefined ? payload.courseId : existing.courseId;
-    const sessionIdToUse = payload.sessionId !== undefined ? payload.sessionId : existing.sessionId;
+    const cleanCourseId = (payload.courseId !== undefined)
+      ? ((payload.courseId && payload.courseId !== "undefined" && payload.courseId !== "null" && payload.courseId.trim() !== "") ? payload.courseId.trim() : null)
+      : existing.courseId;
+    const cleanSessionId = (payload.sessionId !== undefined)
+      ? ((payload.sessionId && payload.sessionId !== "undefined" && payload.sessionId !== "null" && payload.sessionId.trim() !== "") ? payload.sessionId.trim() : null)
+      : existing.sessionId;
     const audienceTypeToUse = payload.audienceType !== undefined ? payload.audienceType : existing.audienceType;
 
     if (
@@ -577,7 +597,7 @@ const updateOfferCampaign = async (req, res) => {
       payload.sessionId !== undefined ||
       payload.audienceType !== undefined
     ) {
-      const targetValidation = await validateCampaignTargets(categoryIdsToUse, courseIdToUse, sessionIdToUse);
+      const targetValidation = await validateCampaignTargets(categoryIdsToUse, cleanCourseId, cleanSessionId);
       if (!targetValidation.valid) {
         return res.status(400).json({
           success: false,
@@ -586,17 +606,17 @@ const updateOfferCampaign = async (req, res) => {
       }
 
       updateData.categoryIds = categoryIdsToUse;
-      updateData.courseId = courseIdToUse || null;
-      updateData.sessionId = sessionIdToUse || null;
+      updateData.courseId = cleanCourseId;
+      updateData.sessionId = cleanSessionId;
 
       // Regenerate Link
-      updateData.buttonLink = generateButtonLink(id, categoryIdsToUse, courseIdToUse, sessionIdToUse);
+      updateData.buttonLink = generateButtonLink(id, categoryIdsToUse, cleanCourseId, cleanSessionId);
 
       // Recalculate estimated recipients
       const recipients = await resolveRecipients({
         categoryIds: categoryIdsToUse,
-        courseId: courseIdToUse,
-        sessionId: sessionIdToUse,
+        courseId: cleanCourseId,
+        sessionId: cleanSessionId,
         audienceType: audienceTypeToUse
       });
       updateData.recipientCount = recipients.length;
@@ -609,7 +629,7 @@ const updateOfferCampaign = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: updated
+      data: { campaign: updated }
     });
   } catch (error) {
     console.error("updateOfferCampaign Error:", error);
@@ -708,7 +728,6 @@ const sendOfferCampaign = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Use transaction/update to implement atomic lock on sending state to rate-limit / prevent duplicate sends
     const campaign = await prisma.offerCampaign.findUnique({
       where: { id }
     });
@@ -723,7 +742,7 @@ const sendOfferCampaign = async (req, res) => {
     if (campaign.status === "sending" || campaign.status === "sent") {
       return res.status(400).json({
         success: false,
-        message: "Campaign is already sending or has been sent."
+        message: "Campaign has already been sent or is currently sending."
       });
     }
 
@@ -742,7 +761,7 @@ const sendOfferCampaign = async (req, res) => {
     });
 
     if (recipients.length === 0) {
-      await prisma.offerCampaign.update({
+      const updatedCampaign = await prisma.offerCampaign.update({
         where: { id },
         data: {
           status: "failed",
@@ -753,7 +772,8 @@ const sendOfferCampaign = async (req, res) => {
       });
       return res.status(400).json({
         success: false,
-        message: "No matching student recipients resolved for this campaign targeting."
+        message: "No matching student recipients resolved for this campaign targeting.",
+        data: { campaign: updatedCampaign }
       });
     }
 
@@ -833,16 +853,11 @@ const sendOfferCampaign = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: {
-        campaignId: id,
-        status: finalStatus,
-        recipientCount: recipients.length,
-        sentCount,
-        failedCount
+        campaign: updatedCampaign
       }
     });
   } catch (error) {
     console.error("sendOfferCampaign Error:", error);
-    // Reset status to draft on critical runtime crash if not sent yet
     try {
       await prisma.offerCampaign.update({
         where: { id: req.params.id },
