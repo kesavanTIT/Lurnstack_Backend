@@ -281,7 +281,7 @@ const renderCampaignHtml = (campaign) => {
     const serverUrl = process.env.SERVER_URL || "https://api.lurnstack.com";
     const logoUrl = `${serverUrl}/uploads/Logo3.png`;
     logoHtml = `
-      <div style="margin-bottom: 24px; text-align: left;">
+      <div style="background-color: #0f172a; padding: 12px 18px; border-radius: 8px; margin-bottom: 24px; text-align: left; display: inline-block;">
         <img src="${logoUrl}" alt="Tamil Info Technology" width="130" style="display:block;" />
       </div>
     `;
