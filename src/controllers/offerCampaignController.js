@@ -397,9 +397,7 @@ const createOfferCampaign = async (req, res) => {
     if (!payload.discountType) {
       return res.status(400).json({ success: false, message: "discountType is required" });
     }
-    if (payload.discountValue === undefined || payload.discountValue === "") {
-      return res.status(400).json({ success: false, message: "discountValue is required" });
-    }
+    // discountValue is now optional in backend validation
     if (!payload.validTill) {
       return res.status(400).json({ success: false, message: "validTill is required" });
     }
@@ -474,7 +472,8 @@ const createOfferCampaign = async (req, res) => {
         offerTitle: sanitizePlainText(payload.offerTitle),
         description: payload.description ? sanitizePlainText(payload.description) : null,
         discountType: payload.discountType,
-        discountValue: parseFloat(payload.discountValue),
+        discountValue: (payload.discountValue === undefined || payload.discountValue === "" || payload.discountValue === null) ? null : parseFloat(payload.discountValue),
+        theme: payload.theme || "light",
         validTill: new Date(payload.validTill),
         categoryIds,
         courseId: cleanCourseId,
@@ -574,7 +573,12 @@ const updateOfferCampaign = async (req, res) => {
     if (payload.offerTitle !== undefined) updateData.offerTitle = sanitizePlainText(payload.offerTitle);
     if (payload.description !== undefined) updateData.description = payload.description ? sanitizePlainText(payload.description) : null;
     if (payload.discountType !== undefined) updateData.discountType = payload.discountType;
-    if (payload.discountValue !== undefined) updateData.discountValue = parseFloat(payload.discountValue);
+    if (payload.discountValue !== undefined) {
+      updateData.discountValue = (payload.discountValue === "" || payload.discountValue === null) ? null : parseFloat(payload.discountValue);
+    }
+    if (payload.theme !== undefined) {
+      updateData.theme = payload.theme;
+    }
     if (payload.validTill !== undefined) updateData.validTill = new Date(payload.validTill);
     if (payload.audienceType !== undefined) updateData.audienceType = payload.audienceType;
     if (payload.subject !== undefined) updateData.subject = sanitizePlainText(payload.subject);

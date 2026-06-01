@@ -401,7 +401,8 @@ model OfferCampaign {
   offerTitle       String
   description      String?
   discountType     String                  // "percentage" | "flat"
-  discountValue    Float
+  discountValue    Float?
+  theme            String?                 @default("light")
   validTill        DateTime
   categoryIds      String[]
   courseId         String?
