@@ -24,9 +24,12 @@ app.use((req, res, next) => {
 });
 
 const allowedOrigins = [
+  "https://lurnstack.com",
   "https://admin.lurnstack.com",
+  "https://trainers.lurnstack.com",
   "http://localhost:3000",
-  "http://localhost:3001"
+  "http://localhost:3001",
+  "http://localhost:5173"
 ];
 
 const corsOptions = {
@@ -37,8 +40,8 @@ const corsOptions = {
       callback(new Error("Not allowed by CORS"));
     }
   },
-  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
   credentials: true,
   optionsSuccessStatus: 200,
 };
