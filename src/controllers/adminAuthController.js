@@ -74,34 +74,79 @@ const registerAdmin = async (req, res) => {
 // ─────────────────────────────────────────────
 const loginAdmin = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    // 1. Extract email and password from multiple potential key names (lowercase and uppercase)
+    const rawEmail = req.body.email || req.body.EMAIL_ADDRESS;
+    const rawPassword = req.body.password || req.body.PASSWORD;
 
-    const user = await prisma.user.findUnique({
-      where: { email: email },
-    });
+    // Normalize email (lowercase and trimmed)
+    const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
+    const password = typeof rawPassword === "string" ? rawPassword : "";
 
-    if (!user || user.role !== "ADMIN") {
+    // 2. Validate input is not empty to prevent Prisma query/validation errors
+    if (!email || !password) {
       return res.status(401).json({
         success: false,
-        message: "Invalid credentials or not an admin.",
+        message: "Invalid email or password",
       });
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    // 3. Fetch admin user from DB
+    let user;
+    try {
+      user = await prisma.user.findUnique({
+        where: { email: email },
+      });
+    } catch (dbError) {
+      console.error("Database connection or query failed during admin login:", dbError);
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    // 4. Verify user exists and has ADMIN role
+    if (!user || !user.role || user.role.toUpperCase() !== "ADMIN") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    // 5. Compare passwords with safety check for bcrypt errors
+    let isPasswordValid = false;
+    try {
+      if (user.password) {
+        isPasswordValid = await bcrypt.compare(password, user.password);
+      }
+    } catch (bcryptError) {
+      console.error("Password comparison failed with error:", bcryptError);
+      isPasswordValid = false;
+    }
 
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
-        message: "Invalid credentials.",
+        message: "Invalid email or password",
+      });
+    }
+
+    // 6. Sign JWT token (with fallback safety if JWT_SECRET is missing)
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error("❌ CRITICAL: JWT_SECRET environment variable is missing!");
+      return res.status(500).json({
+        success: false,
+        message: "Internal server error. Server configuration missing.",
       });
     }
 
     const token = jwt.sign(
       { id: user.id, role: user.role },
-      process.env.JWT_SECRET,
+      jwtSecret,
       { expiresIn: "7d" }
     );
 
+    // 7. Set admin token cookie
     res.cookie("admin_token", token, {
       httpOnly: true,
       secure: true,
@@ -110,23 +155,29 @@ const loginAdmin = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
+    const adminResponseData = {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role.toLowerCase(), // Return "admin"
+    };
+
+    // 8. Return response supporting multiple structures (root-level and nested under 'data')
     return res.status(200).json({
       success: true,
       message: "Admin login successful!",
+      token,
+      admin: adminResponseData,
       data: {
-        admin: {
-          fullName: user.fullName,
-          email: user.email,
-          role: user.role,
-        },
         token,
+        admin: adminResponseData,
       },
     });
   } catch (error) {
-    console.error("Admin Login Error:", error);
-    return res.status(500).json({
+    console.error("Unhandled Admin Login Error:", error);
+    return res.status(401).json({
       success: false,
-      message: "Internal server error.",
+      message: "Invalid email or password",
     });
   }
 };
