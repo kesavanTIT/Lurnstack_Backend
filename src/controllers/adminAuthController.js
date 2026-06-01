@@ -9,17 +9,24 @@ const jwt = require("jsonwebtoken");
 // ─────────────────────────────────────────────
 const registerAdmin = async (req, res) => {
   try {
-    const { fullName, email, password } = req.body;
+    const { fullName, email: rawEmail, password } = req.body;
 
-    if (!fullName || !email || !password) {
+    if (!fullName || !rawEmail || !password) {
       return res.status(400).json({
         success: false,
         message: "Please provide all required fields: fullName, email, and password.",
       });
     }
 
-    const existingUser = await prisma.user.findUnique({
-      where: { email: email },
+    const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
+
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        email: {
+          equals: email,
+          mode: "insensitive",
+        },
+      },
     });
 
     if (existingUser) {
@@ -90,11 +97,16 @@ const loginAdmin = async (req, res) => {
       });
     }
 
-    // 3. Fetch admin user from DB
+    // 3. Fetch admin user from DB (case-insensitive findFirst)
     let user;
     try {
-      user = await prisma.user.findUnique({
-        where: { email: email },
+      user = await prisma.user.findFirst({
+        where: {
+          email: {
+            equals: email,
+            mode: "insensitive",
+          },
+        },
       });
     } catch (dbError) {
       console.error("Database connection or query failed during admin login:", dbError);
