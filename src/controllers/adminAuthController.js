@@ -73,6 +73,7 @@ const registerAdmin = async (req, res) => {
 // @access  Public
 // ─────────────────────────────────────────────
 const loginAdmin = async (req, res) => {
+  console.log("loginAdmin live controller hit", req.body);
   try {
     // 1. Extract email and password from multiple potential key names (lowercase and uppercase)
     const rawEmail = req.body.email || req.body.EMAIL_ADDRESS;
@@ -98,9 +99,10 @@ const loginAdmin = async (req, res) => {
       });
     } catch (dbError) {
       console.error("Database connection or query failed during admin login:", dbError);
-      return res.status(401).json({
+      return res.status(500).json({
         success: false,
-        message: "Invalid email or password",
+        message: "Admin login server error (DB)",
+        error: dbError.message
       });
     }
 
@@ -120,7 +122,11 @@ const loginAdmin = async (req, res) => {
       }
     } catch (bcryptError) {
       console.error("Password comparison failed with error:", bcryptError);
-      isPasswordValid = false;
+      return res.status(500).json({
+        success: false,
+        message: "Admin login server error (Bcrypt)",
+        error: bcryptError.message
+      });
     }
 
     if (!isPasswordValid) {
@@ -136,7 +142,8 @@ const loginAdmin = async (req, res) => {
       console.error("❌ CRITICAL: JWT_SECRET environment variable is missing!");
       return res.status(500).json({
         success: false,
-        message: "Internal server error. Server configuration missing.",
+        message: "Admin login server error (JWT_SECRET missing)",
+        error: "JWT_SECRET is not configured on the production server."
       });
     }
 
@@ -174,10 +181,11 @@ const loginAdmin = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Unhandled Admin Login Error:", error);
-    return res.status(401).json({
+    console.error("Admin login error:", error);
+    return res.status(500).json({
       success: false,
-      message: "Invalid email or password",
+      message: "Admin login server error",
+      error: error.message
     });
   }
 };
