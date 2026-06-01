@@ -280,8 +280,11 @@ const renderCampaignHtml = (campaign) => {
   if (showLogo) {
     const serverUrl = process.env.SERVER_URL || "https://api.lurnstack.com";
     const logoUrl = `${serverUrl}/uploads/Logo3.png`;
+    const logoWrapperStyle = isDark 
+      ? "margin-bottom: 24px; text-align: left;"
+      : "background-color: #0f172a; padding: 12px 18px; border-radius: 8px; margin-bottom: 24px; text-align: left; display: inline-block;";
     logoHtml = `
-      <div style="background-color: #0f172a; padding: 12px 18px; border-radius: 8px; margin-bottom: 24px; text-align: left; display: inline-block;">
+      <div style="${logoWrapperStyle}">
         <img src="${logoUrl}" alt="Tamil Info Technology" width="130" style="display:block;" />
       </div>
     `;
