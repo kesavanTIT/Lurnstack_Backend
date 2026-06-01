@@ -9,16 +9,20 @@ const jwt = require("jsonwebtoken");
 // ─────────────────────────────────────────────
 const registerAdmin = async (req, res) => {
   try {
-    const { fullName, email: rawEmail, password } = req.body;
+    const rawFullName = req.body.fullName || req.body.FULL_NAME || req.body.name;
+    const rawEmail = req.body.email || req.body.EMAIL_ADDRESS;
+    const rawPassword = req.body.password || req.body.PASSWORD;
 
-    if (!fullName || !rawEmail || !password) {
+    const fullName = typeof rawFullName === "string" ? rawFullName.trim() : "";
+    const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
+    const password = typeof rawPassword === "string" ? rawPassword : "";
+
+    if (!fullName || !email || !password) {
       return res.status(400).json({
         success: false,
         message: "Please provide all required fields: fullName, email, and password.",
       });
     }
-
-    const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
 
     const existingUser = await prisma.user.findFirst({
       where: {
@@ -30,9 +34,9 @@ const registerAdmin = async (req, res) => {
     });
 
     if (existingUser) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
-        message: "An account with this email already exists.",
+        message: "Email already registered",
       });
     }
 
@@ -44,31 +48,51 @@ const registerAdmin = async (req, res) => {
         fullName: fullName,
         email: email,
         password: hashedPassword,
-        role: "ADMIN", // Hardcoded as 'ADMIN'
+        role: "ADMIN",
       },
     });
+
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw new Error("JWT_SECRET is missing from environment variables.");
+    }
 
     const token = jwt.sign(
       { id: newAdmin.id, role: newAdmin.role },
-      process.env.JWT_SECRET,
+      jwtSecret,
       { expiresIn: "7d" }
     );
 
-    const { password: _pw, ...adminWithoutPassword } = newAdmin;
+    res.cookie("admin_token", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "None",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
+    const adminResponseData = {
+      id: newAdmin.id,
+      email: newAdmin.email,
+      fullName: newAdmin.fullName,
+      role: newAdmin.role.toLowerCase(), // "admin"
+    };
 
     return res.status(201).json({
       success: true,
-      message: "Admin registered successfully!",
+      message: "Admin registered successfully",
+      token,
+      admin: adminResponseData,
       data: {
-        admin: adminWithoutPassword,
         token,
+        admin: adminResponseData,
       },
     });
   } catch (error) {
-    console.error("Admin Register Error:", error);
+    console.error("Admin auth error:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal server error.",
+      message: "Admin auth server error",
       error: error.message,
     });
   }
@@ -98,23 +122,14 @@ const loginAdmin = async (req, res) => {
     }
 
     // 3. Fetch admin user from DB (case-insensitive findFirst)
-    let user;
-    try {
-      user = await prisma.user.findFirst({
-        where: {
-          email: {
-            equals: email,
-            mode: "insensitive",
-          },
+    const user = await prisma.user.findFirst({
+      where: {
+        email: {
+          equals: email,
+          mode: "insensitive",
         },
-      });
-    } catch (dbError) {
-      console.error("Database connection or query failed during admin login:", dbError);
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password",
-      });
-    }
+      },
+    });
 
     // 4. Verify user exists and has ADMIN role
     if (!user || !user.role || user.role.toUpperCase() !== "ADMIN") {
@@ -125,16 +140,7 @@ const loginAdmin = async (req, res) => {
     }
 
     // 5. Compare passwords with safety check for bcrypt errors
-    let isPasswordValid = false;
-    try {
-      if (user.password) {
-        isPasswordValid = await bcrypt.compare(password, user.password);
-      }
-    } catch (bcryptError) {
-      console.error("Password comparison failed with error:", bcryptError);
-      isPasswordValid = false;
-    }
-
+    const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
@@ -145,11 +151,7 @@ const loginAdmin = async (req, res) => {
     // 6. Sign JWT token (with fallback safety if JWT_SECRET is missing)
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
-      console.error("❌ CRITICAL: JWT_SECRET environment variable is missing!");
-      return res.status(500).json({
-        success: false,
-        message: "Internal server error. Server configuration missing.",
-      });
+      throw new Error("JWT_SECRET is missing from environment variables.");
     }
 
     const token = jwt.sign(
@@ -177,7 +179,7 @@ const loginAdmin = async (req, res) => {
     // 8. Return response supporting multiple structures (root-level and nested under 'data')
     return res.status(200).json({
       success: true,
-      message: "Admin login successful!",
+      message: "Admin login successful",
       token,
       admin: adminResponseData,
       data: {
@@ -186,10 +188,11 @@ const loginAdmin = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Unhandled Admin Login Error:", error);
-    return res.status(401).json({
+    console.error("Admin auth error:", error);
+    return res.status(500).json({
       success: false,
-      message: "Invalid email or password",
+      message: "Admin auth server error",
+      error: error.message
     });
   }
 };
