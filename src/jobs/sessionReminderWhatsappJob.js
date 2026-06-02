@@ -124,6 +124,10 @@ const runWhatsappReminderJob = async () => {
               userId: student.id,
               sessionId: session.id,
               reminderType: "session_reminder_30min",
+              studentName: student.fullName,
+              sessionTitle: session.title,
+              minutesLeft: String(minutesLeft),
+              trainerName,
             });
 
             // Update booking table for compatibility
@@ -222,6 +226,10 @@ const runWhatsappReminderJob = async () => {
               userId: student.id,
               sessionId: session.id,
               reminderType: "session_reminder_30min",
+              studentName: student.fullName,
+              sessionTitle: session.title,
+              minutesLeft: String(minutesLeft),
+              trainerName,
             });
           } catch (err) {
             console.error(`[WHATSAPP-JOB] Error processing free session reminder for student ${student.id}:`, err.message);

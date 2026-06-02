@@ -112,7 +112,7 @@ const sendWhatsappTemplate = async ({ to, templateName, languageCode }) => {
 };
 
 /**
- * Sends a LurnStack session reminder WhatsApp message to a student.
+ * Sends a LurnStack session reminder WhatsApp message to a student with template components.
  * Logs success/failure to database (WhatsAppReminder) and console.
  *
  * @param {object} params
@@ -120,9 +120,24 @@ const sendWhatsappTemplate = async ({ to, templateName, languageCode }) => {
  * @param {number} [params.userId] - User ID for DB tracking
  * @param {string} [params.sessionId] - Session ID for DB tracking
  * @param {string} [params.reminderType] - Reminder type (defaults to 'session_reminder_30min')
+ * @param {string} [params.studentName] - Student Name (defaults to 'Rahul')
+ * @param {string} [params.sessionTitle] - Session Title (defaults to 'Node.js Masterclass')
+ * @param {string|number} [params.minutesLeft] - Minutes left (defaults to '30')
+ * @param {string} [params.trainerName] - Trainer Name (defaults to 'Infant')
+ * @param {string} [params.buttonUrl] - Explicit button URL parameter (optional)
  * @returns {Promise<{ success: boolean, messageId?: string, error?: string, rawResponse?: any }>}
  */
-const sendWhatsAppReminder = async ({ phone, userId, sessionId, reminderType = "session_reminder_30min" }) => {
+const sendWhatsAppReminder = async ({
+  phone,
+  userId,
+  sessionId,
+  reminderType = "session_reminder_30min",
+  studentName = "Rahul",
+  sessionTitle = "Node.js Masterclass",
+  minutesLeft = "30",
+  trainerName = "Infant",
+  buttonUrl,
+}) => {
   const isEnabled = process.env.WHATSAPP_ENABLED === "true";
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -154,6 +169,22 @@ const sendWhatsAppReminder = async ({ phone, userId, sessionId, reminderType = "
   // Log BEFORE send (Requirement 5)
   console.log("Sending WhatsApp reminder", { userId, phone: normalizedPhone, sessionId });
 
+  // Format button dynamic URL suffix parameter
+  let buttonParam = buttonUrl || sessionId || "nodejs-masterclass";
+  const frontendUrl = process.env.FRONTEND_URL || "https://lurnstack.com";
+  if (buttonParam.startsWith(frontendUrl)) {
+    buttonParam = buttonParam.replace(frontendUrl, "");
+  }
+  if (buttonParam.startsWith("/courses/")) {
+    buttonParam = buttonParam.replace("/courses/", "");
+  }
+  if (buttonParam.startsWith("courses/")) {
+    buttonParam = buttonParam.replace("courses/", "");
+  }
+  if (buttonParam.startsWith("/")) {
+    buttonParam = buttonParam.substring(1);
+  }
+
   const url = `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`;
   const payload = {
     messaging_product: "whatsapp",
@@ -163,7 +194,41 @@ const sendWhatsAppReminder = async ({ phone, userId, sessionId, reminderType = "
       name: templateName,
       language: {
         code: languageCode,
-      }
+      },
+      components: [
+        {
+          type: "body",
+          parameters: [
+            {
+              type: "text",
+              text: String(studentName),
+            },
+            {
+              type: "text",
+              text: String(sessionTitle),
+            },
+            {
+              type: "text",
+              text: String(minutesLeft),
+            },
+            {
+              type: "text",
+              text: String(trainerName),
+            },
+          ],
+        },
+        {
+          type: "button",
+          sub_type: "url",
+          index: "0",
+          parameters: [
+            {
+              type: "text",
+              text: String(buttonParam),
+            },
+          ],
+        },
+      ],
     },
   };
 
