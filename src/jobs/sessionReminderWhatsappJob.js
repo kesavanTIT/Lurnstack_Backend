@@ -5,7 +5,7 @@
  * [now, now + WHATSAPP_REMINDER_MINUTES_BEFORE] (default 30 mins) and sends
  * WhatsApp reminders.
  *
- * Runs every 5 minutes. Also runs once 10 seconds after server startup.
+ * Runs every 1 minute.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -13,7 +13,7 @@
 
 const cron = require("node-cron");
 const prisma = require("../config/db");
-const { sendSessionReminderWhatsApp } = require("../services/whatsappService");
+const { sendWhatsAppReminder } = require("../services/whatsappService");
 
 /**
  * Runs the main WhatsApp reminder checks and dispatches.
@@ -79,7 +79,6 @@ const runWhatsappReminderJob = async () => {
             status: {
               in: ["paid", "joined", "completed"],
             },
-            whatsappReminderSentAt: null, // Only fetch bookings that haven't received the reminder
           },
           include: {
             student: true,
@@ -91,7 +90,7 @@ const runWhatsappReminderJob = async () => {
         for (const booking of bookings) {
           const student = booking.student;
           if (!student || !student.isActive || !student.phoneNumber) {
-            // Mark booking as skipped to avoid re-evaluating it
+            // Update booking status so we don't repeat checks
             await prisma.booking.update({
               where: { id: booking.id },
               data: {
@@ -103,88 +102,46 @@ const runWhatsappReminderJob = async () => {
             continue;
           }
 
+          // Check if already sent or accepted in WhatsAppReminder table (Requirement 6)
+          const existingReminder = await prisma.whatsAppReminder.findUnique({
+            where: {
+              sessionId_userId_reminderType: {
+                sessionId: session.id,
+                userId: student.id,
+                reminderType: "session_reminder_30min",
+              },
+            },
+          });
+
+          if (existingReminder && (existingReminder.status === "sent" || existingReminder.status === "accepted")) {
+            // Already sent or accepted, skip
+            continue;
+          }
+
           try {
-            const result = await sendSessionReminderWhatsApp({
-              studentPhone: student.phoneNumber,
-              studentName: student.fullName,
-              sessionTitle: session.title,
-              minutesLeft,
-              trainerName,
+            const result = await sendWhatsAppReminder({
+              phone: student.phoneNumber,
+              userId: student.id,
               sessionId: session.id,
+              reminderType: "session_reminder_30min",
             });
 
-            if (result.success) {
-              await prisma.booking.update({
-                where: { id: booking.id },
-                data: {
-                  whatsappReminderSentAt: new Date(),
-                  whatsappReminderStatus: "sent",
-                  whatsappReminderMessageId: result.messageId,
-                  whatsappReminderError: null,
-                },
-              });
-
-              // Log details in WhatsAppSessionReminderLog
-              await prisma.whatsAppSessionReminderLog.upsert({
-                where: {
-                  sessionId_userId: {
-                    sessionId: session.id,
-                    userId: student.id,
-                  },
-                },
-                create: {
-                  sessionId: session.id,
-                  userId: student.id,
-                  phone: student.phoneNumber,
-                  status: "sent",
-                  messageId: result.messageId,
-                  sentAt: new Date(),
-                },
-                update: {
-                  phone: student.phoneNumber,
-                  status: "sent",
-                  messageId: result.messageId,
-                  sentAt: new Date(),
-                  error: null,
-                },
-              });
-            } else {
-              await prisma.booking.update({
-                where: { id: booking.id },
-                data: {
-                  whatsappReminderSentAt: new Date(),
-                  whatsappReminderStatus: "failed",
-                  whatsappReminderError: result.error || "Meta WhatsApp Cloud API error",
-                },
-              });
-
-              await prisma.whatsAppSessionReminderLog.upsert({
-                where: {
-                  sessionId_userId: {
-                    sessionId: session.id,
-                    userId: student.id,
-                  },
-                },
-                create: {
-                  sessionId: session.id,
-                  userId: student.id,
-                  phone: student.phoneNumber,
-                  status: "failed",
-                  error: result.error || "Meta WhatsApp Cloud API error",
-                },
-                update: {
-                  phone: student.phoneNumber,
-                  status: "failed",
-                  error: result.error || "Meta WhatsApp Cloud API error",
-                },
-              });
-            }
+            // Update booking table for compatibility
+            await prisma.booking.update({
+              where: { id: booking.id },
+              data: {
+                whatsappReminderSentAt: result.success ? new Date() : null,
+                whatsappReminderStatus: result.success ? "sent" : "failed",
+                whatsappReminderMessageId: result.success ? result.messageId : null,
+                whatsappReminderError: result.success ? null : (result.error || "Meta WhatsApp Cloud API error"),
+              },
+            });
           } catch (err) {
             console.error(`[WHATSAPP-JOB] Error processing paid booking reminder ${booking.id}:`, err.message);
             await prisma.booking.update({
               where: { id: booking.id },
               data: {
-                whatsappReminderSentAt: new Date(),
+                whatsappReminderSentAt: null,
                 whatsappReminderStatus: "failed",
                 whatsappReminderError: err.message,
               },
@@ -243,84 +200,31 @@ const runWhatsappReminderJob = async () => {
         console.log(`[WHATSAPP-JOB]   → Found ${targetStudents.length} interested students for free session.`);
 
         for (const student of targetStudents) {
-          // Fetch log for the [sessionId, userId] combo
-          const existingLog = await prisma.whatsAppSessionReminderLog.findUnique({
+          // Check if already sent or accepted in WhatsAppReminder table (Requirement 6)
+          const existingReminder = await prisma.whatsAppReminder.findUnique({
             where: {
-              sessionId_userId: {
+              sessionId_userId_reminderType: {
                 sessionId: session.id,
                 userId: student.id,
+                reminderType: "session_reminder_30min",
               },
             },
           });
 
-          // Prevent duplicates.
-          // For recurring sessions, if the log was updated in the last 12 hours,
-          // it was sent for this occurrence. If older, we can reuse/update it.
-          if (existingLog) {
-            const timeSinceLastSend = now.getTime() - new Date(existingLog.updatedAt).getTime();
-            const twelveHoursMs = 12 * 60 * 60 * 1000;
-            if (timeSinceLastSend < twelveHoursMs && (existingLog.status === "sent" || existingLog.status === "skipped")) {
-              // Already sent or skipped recently, do not send again
-              continue;
-            }
+          if (existingReminder && (existingReminder.status === "sent" || existingReminder.status === "accepted")) {
+            // Already sent or accepted, skip
+            continue;
           }
 
           try {
-            const result = await sendSessionReminderWhatsApp({
-              studentPhone: student.phoneNumber,
-              studentName: student.fullName,
-              sessionTitle: session.title,
-              minutesLeft,
-              trainerName,
+            await sendWhatsAppReminder({
+              phone: student.phoneNumber,
+              userId: student.id,
               sessionId: session.id,
-            });
-
-            await prisma.whatsAppSessionReminderLog.upsert({
-              where: {
-                sessionId_userId: {
-                  sessionId: session.id,
-                  userId: student.id,
-                },
-              },
-              create: {
-                sessionId: session.id,
-                userId: student.id,
-                phone: student.phoneNumber,
-                status: result.success ? "sent" : "failed",
-                messageId: result.messageId || null,
-                error: result.success ? null : (result.error || "Meta WhatsApp Cloud API error"),
-                sentAt: result.success ? new Date() : null,
-              },
-              update: {
-                phone: student.phoneNumber,
-                status: result.success ? "sent" : "failed",
-                messageId: result.messageId || null,
-                error: result.success ? null : (result.error || "Meta WhatsApp Cloud API error"),
-                sentAt: result.success ? new Date() : null,
-              },
+              reminderType: "session_reminder_30min",
             });
           } catch (err) {
             console.error(`[WHATSAPP-JOB] Error processing free session reminder for student ${student.id}:`, err.message);
-            await prisma.whatsAppSessionReminderLog.upsert({
-              where: {
-                sessionId_userId: {
-                  sessionId: session.id,
-                  userId: student.id,
-                },
-              },
-              create: {
-                sessionId: session.id,
-                userId: student.id,
-                phone: student.phoneNumber,
-                status: "failed",
-                error: err.message,
-              },
-              update: {
-                phone: student.phoneNumber,
-                status: "failed",
-                error: err.message,
-              },
-            });
           }
         }
       }
@@ -340,9 +244,9 @@ const startSessionReminderWhatsappJob = () => {
     return;
   }
 
-  // Schedule the job to run every 5 minutes
-  cron.schedule("*/5 * * * *", async () => {
-    console.log("[WHATSAPP-JOB] Running scheduled 5-minute WhatsApp reminder job...");
+  // Schedule the job to run every 1 minute
+  cron.schedule("* * * * *", async () => {
+    console.log("[WHATSAPP-JOB] Running scheduled 1-minute WhatsApp reminder job...");
     await runWhatsappReminderJob();
   });
 
@@ -352,7 +256,7 @@ const startSessionReminderWhatsappJob = () => {
     await runWhatsappReminderJob();
   }, 10000);
 
-  console.log("[WHATSAPP-JOB] ⏱️ WhatsApp session reminder background job initialized (runs every 5 minutes).");
+  console.log("[WHATSAPP-JOB] ⏱️ WhatsApp session reminder background job initialized (runs every 1 minute).");
 };
 
 module.exports = {

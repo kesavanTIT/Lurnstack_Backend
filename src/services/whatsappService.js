@@ -8,6 +8,7 @@
 "use strict";
 
 const axios = require("axios");
+const prisma = require("../config/db");
 
 /**
  * Normalizes a phone number for Meta WhatsApp API.
@@ -20,33 +21,25 @@ const axios = require("axios");
  */
 const normalizeWhatsappPhone = (phone) => {
   if (!phone) return "";
-  const digits = String(phone).replace(/\D/g, "");
+  const clean = String(phone).replace(/[\s\+\-\(\)]/g, "");
+  const digits = clean.replace(/\D/g, "");
   
   if (digits.length === 10) {
     return `91${digits}`;
   }
-  if (digits.length === 12 && digits.startsWith("91")) {
-    return digits;
-  }
-  // Standard E.164 formats range from 10 to 15 digits
-  if (digits.length >= 10 && digits.length <= 15) {
-    return digits;
-  }
-  return "";
+  return digits;
 };
 
 /**
- * Sends a WhatsApp message using a pre-approved template via Meta Cloud API.
+ * Sends a WhatsApp message using a template via Meta Cloud API.
  *
  * @param {object} params
  * @param {string} params.to - Recipient phone number (raw, will be normalized)
  * @param {string} params.templateName - Name of the WhatsApp template
  * @param {string} params.languageCode - Language code (e.g., 'en')
- * @param {Array<string>} params.bodyParameters - Parameters for the template body in order: {{1}}, {{2}}, etc.
- * @param {string} [params.buttonUrl] - Optional URL for dynamic button parameter
  * @returns {Promise<{ success: boolean, messageId?: string, error?: string, rawResponse?: any }>}
  */
-const sendWhatsappTemplate = async ({ to, templateName, languageCode, bodyParameters, buttonUrl }) => {
+const sendWhatsappTemplate = async ({ to, templateName, languageCode }) => {
   const isEnabled = process.env.WHATSAPP_ENABLED === "true";
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -75,56 +68,15 @@ const sendWhatsappTemplate = async ({ to, templateName, languageCode, bodyParame
 
   const url = `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`;
 
-  // Structure components
-  const components = [];
-
-  // Add body parameters
-  if (bodyParameters && bodyParameters.length > 0) {
-    components.push({
-      type: "body",
-      parameters: bodyParameters.map((param) => ({
-        type: "text",
-        text: String(param),
-      })),
-    });
-  }
-
-  // Add dynamic button URL parameters if provided
-  if (buttonUrl) {
-    // Determine the button URL dynamic suffix/path parameter
-    let buttonParam = buttonUrl;
-    const frontendUrl = process.env.FRONTEND_URL || "https://lurnstack.com";
-    if (buttonParam.startsWith(frontendUrl)) {
-      buttonParam = buttonParam.replace(frontendUrl, "");
-      if (buttonParam.startsWith("/")) {
-        buttonParam = buttonParam.substring(1);
-      }
-    }
-
-    components.push({
-      type: "button",
-      sub_type: "url",
-      index: "0",
-      parameters: [
-        {
-          type: "text",
-          text: buttonParam,
-        },
-      ],
-    });
-  }
-
   const payload = {
     messaging_product: "whatsapp",
-    recipient_type: "individual",
     to: normalizedPhone,
     type: "template",
     template: {
       name: templateName,
       language: {
         code: languageCode || "en",
-      },
-      components: components.length > 0 ? components : undefined,
+      }
     },
   };
 
@@ -161,56 +113,185 @@ const sendWhatsappTemplate = async ({ to, templateName, languageCode, bodyParame
 
 /**
  * Sends a LurnStack session reminder WhatsApp message to a student.
- * Uses the pre-approved template variables:
- * {{1}} = student name
- * {{2}} = session title
- * {{3}} = minutes left
- * {{4}} = trainer name
+ * Logs success/failure to database (WhatsAppReminder) and console.
  *
  * @param {object} params
- * @param {string} params.studentPhone
- * @param {string} params.studentName
- * @param {string} params.sessionTitle
- * @param {number|string} params.minutesLeft
- * @param {string} params.trainerName
- * @param {string} params.sessionId
- * @param {string} [params.buttonUrl] - Explicit button URL parameter (optional)
- * @returns {Promise<{ success: boolean, messageId?: string, error?: string }>}
+ * @param {string} params.phone - Recipient phone number
+ * @param {number} [params.userId] - User ID for DB tracking
+ * @param {string} [params.sessionId] - Session ID for DB tracking
+ * @param {string} [params.reminderType] - Reminder type (defaults to 'session_reminder_30min')
+ * @returns {Promise<{ success: boolean, messageId?: string, error?: string, rawResponse?: any }>}
  */
-const sendSessionReminderWhatsApp = async ({
-  studentPhone,
-  studentName,
-  sessionTitle,
-  minutesLeft,
-  trainerName,
-  sessionId,
-  buttonUrl,
-}) => {
-  const templateName = process.env.WHATSAPP_TEMPLATE_SESSION_REMINDER || "session_reminder";
+const sendWhatsAppReminder = async ({ phone, userId, sessionId, reminderType = "session_reminder_30min" }) => {
+  const isEnabled = process.env.WHATSAPP_ENABLED === "true";
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const graphVersion = process.env.WHATSAPP_GRAPH_VERSION || "v23.0";
+  const templateName = process.env.WHATSAPP_TEMPLATE_SESSION_REMINDER || "lurnstack";
   const languageCode = process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en";
-  const frontendUrl = process.env.FRONTEND_URL || "https://lurnstack.com";
 
-  // Compute fallback or standard button URL if not explicitly provided
-  const targetButtonUrl = buttonUrl || `${frontendUrl}/courses/${sessionId}`;
+  // Check if WhatsApp is enabled
+  if (!isEnabled) {
+    console.log(`[WHATSAPP] 🧪 WhatsApp sending is disabled via WHATSAPP_ENABLED config. (To: ${phone})`);
+    return { success: false, error: "WhatsApp integration is disabled" };
+  }
 
-  const bodyParameters = [
-    studentName || "Student",
-    sessionTitle || "Live Session",
-    String(minutesLeft || 30),
-    trainerName || "Trainer",
-  ];
+  // Validate configuration
+  if (!accessToken || !phoneNumberId) {
+    const errorMsg = "Missing Meta WhatsApp configuration (WHATSAPP_ACCESS_TOKEN or WHATSAPP_PHONE_NUMBER_ID)";
+    console.error(`[WHATSAPP] ❌ Configuration Error: ${errorMsg}`);
+    return { success: false, error: errorMsg };
+  }
 
-  return sendWhatsappTemplate({
-    to: studentPhone,
-    templateName,
-    languageCode,
-    bodyParameters,
-    buttonUrl: targetButtonUrl,
-  });
+  // Normalize phone number
+  const normalizedPhone = normalizeWhatsappPhone(phone);
+  if (!normalizedPhone) {
+    const errorMsg = `Invalid phone number format: ${phone}`;
+    console.error(`[WHATSAPP] ❌ Validation Error: ${errorMsg}`);
+    return { success: false, error: errorMsg };
+  }
+
+  // Log BEFORE send (Requirement 5)
+  console.log("Sending WhatsApp reminder", { userId, phone: normalizedPhone, sessionId });
+
+  const url = `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`;
+  const payload = {
+    messaging_product: "whatsapp",
+    to: normalizedPhone,
+    type: "template",
+    template: {
+      name: templateName,
+      language: {
+        code: languageCode,
+      }
+    },
+  };
+
+  try {
+    const response = await axios.post(url, payload, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 15000,
+    });
+
+    const data = response.data;
+    const messageId = data?.messages?.[0]?.id;
+
+    if (messageId) {
+      // Log AFTER success (Requirement 5)
+      console.log("WhatsApp reminder accepted", { userId, messageId });
+
+      if (userId && sessionId) {
+        await prisma.whatsAppReminder.upsert({
+          where: {
+            sessionId_userId_reminderType: {
+              sessionId,
+              userId,
+              reminderType,
+            },
+          },
+          create: {
+            sessionId,
+            userId,
+            phone: normalizedPhone,
+            status: "sent",
+            messageId,
+            sentAt: new Date(),
+            reminderType,
+          },
+          update: {
+            phone: normalizedPhone,
+            status: "sent",
+            messageId,
+            sentAt: new Date(),
+            error: null,
+          },
+        });
+      }
+
+      return { success: true, messageId, rawResponse: data };
+    } else {
+      const errorMsg = "No message ID in response";
+      const errorResponse = data || { error: errorMsg };
+      
+      // Log AFTER failure (Requirement 5)
+      console.error("WhatsApp reminder failed", { userId, phone: normalizedPhone, error: errorResponse });
+
+      if (userId && sessionId) {
+        await prisma.whatsAppReminder.upsert({
+          where: {
+            sessionId_userId_reminderType: {
+              sessionId,
+              userId,
+              reminderType,
+            },
+          },
+          create: {
+            sessionId,
+            userId,
+            phone: normalizedPhone,
+            status: "failed",
+            error: JSON.stringify(errorResponse),
+            reminderType,
+          },
+          update: {
+            phone: normalizedPhone,
+            status: "failed",
+            error: JSON.stringify(errorResponse),
+            messageId: null,
+            sentAt: null,
+          },
+        });
+      }
+
+      return { success: false, error: errorMsg, rawResponse: data };
+    }
+  } catch (error) {
+    const errorDetails = error.response?.data || error.message;
+    
+    // Log AFTER failure (Requirement 5)
+    console.error("WhatsApp reminder failed", { userId, phone: normalizedPhone, error: errorDetails });
+
+    if (userId && sessionId) {
+      await prisma.whatsAppReminder.upsert({
+        where: {
+          sessionId_userId_reminderType: {
+            sessionId,
+            userId,
+            reminderType,
+          },
+        },
+        create: {
+          sessionId,
+          userId,
+          phone: normalizedPhone,
+          status: "failed",
+          error: JSON.stringify(errorDetails),
+          reminderType,
+        },
+        update: {
+          phone: normalizedPhone,
+          status: "failed",
+          error: JSON.stringify(errorDetails),
+          messageId: null,
+          sentAt: null,
+        },
+      });
+    }
+
+    return {
+      success: false,
+      error: typeof errorDetails === "object" ? JSON.stringify(errorDetails) : errorDetails,
+      rawResponse: error.response?.data,
+    };
+  }
 };
 
 module.exports = {
   normalizeWhatsappPhone,
   sendWhatsappTemplate,
-  sendSessionReminderWhatsApp,
+  sendWhatsAppReminder,
+  sendSessionReminderWhatsApp: sendWhatsAppReminder, // Alias for backwards compatibility
 };

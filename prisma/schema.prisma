@@ -33,7 +33,7 @@ model User {
   trainerOccurrences        SessionOccurrence[] @relation(name: "TrainerSessionOccurrence")
   studentAttendances        StudentAttendance[] @relation(name: "StudentAttendance")
   trainerStudentAttendances StudentAttendance[] @relation(name: "TrainerStudentAttendance")
-  whatsappReminderLogs      WhatsAppSessionReminderLog[]
+  whatsappReminders         WhatsAppReminder[]
   campaignDeliveries        OfferCampaignDelivery[]
   campaignClicks            OfferCampaignClick[]
 }
@@ -127,7 +127,7 @@ model LiveSession {
   trainerPayouts  TrainerPayout[]  @relation(name: "SessionPayoutRelation")
   occurrences        SessionOccurrence[]
   studentAttendances StudentAttendance[]
-  whatsappReminderLogs WhatsAppSessionReminderLog[]
+  whatsappReminders    WhatsAppReminder[]
 }
 
 model SessionCard {
@@ -377,22 +377,23 @@ model OTPVerification {
   createdAt  DateTime @default(now())
 }
 
-model WhatsAppSessionReminderLog {
-  id         String      @id @default(uuid())
-  sessionId  String
-  userId     Int
-  phone      String
-  status     String      // sent, failed, skipped
-  messageId  String?
-  error      String?
-  sentAt     DateTime?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+model WhatsAppReminder {
+  id           String      @id @default(uuid())
+  sessionId    String
+  userId       Int
+  phone        String
+  status       String      // sent, failed, skipped
+  messageId    String?
+  error        String?
+  sentAt       DateTime?
+  reminderType String      @default("session_reminder_30min")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   session    LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([sessionId, userId])
+  @@unique([sessionId, userId, reminderType])
 }
 
 model OfferCampaign {

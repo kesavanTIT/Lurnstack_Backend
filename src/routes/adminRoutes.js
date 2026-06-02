@@ -12,6 +12,7 @@ const {
   updateLiveClass,
   deleteLiveClass,
   testSessionReminderWhatsapp,
+  testWhatsappReminderManual,
 } = require("../controllers/adminController");
 const {
   registerAdmin,
@@ -107,5 +108,6 @@ router.patch("/attendance/:attendanceId", updateAttendanceRecord);
 
 // ── Admin WhatsApp Endpoints ──────────────────────
 router.post("/whatsapp/test-session-reminder", testSessionReminderWhatsapp);
+router.post("/test-whatsapp-reminder", testWhatsappReminderManual);
 
 module.exports = router;

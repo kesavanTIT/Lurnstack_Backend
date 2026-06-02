@@ -1,6 +1,6 @@
 const { Prisma } = require("@prisma/client");
 const prisma = require("../config/db");
-const { sendSessionReminderWhatsApp } = require("../services/whatsappService");
+const { sendWhatsAppReminder, sendSessionReminderWhatsApp } = require("../services/whatsappService");
 
 const dashboardUserSelect = {
   id: true,
@@ -699,6 +699,48 @@ const testSessionReminderWhatsapp = async (req, res) => {
   }
 };
 
+// @desc    Manual test WhatsApp template for admin/dev only
+// @route   POST /api/admin/test-whatsapp-reminder
+// @access  Private/Admin
+const testWhatsappReminderManual = async (req, res) => {
+  try {
+    const { phone } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        message: "phone is required.",
+      });
+    }
+
+    const result = await sendWhatsAppReminder({
+      phone,
+    });
+
+    if (result.success) {
+      return res.status(200).json({
+        success: true,
+        message: "WhatsApp reminder sent successfully.",
+        data: result.rawResponse,
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Failed to send WhatsApp reminder.",
+        error: result.error,
+        data: result.rawResponse,
+      });
+    }
+  } catch (error) {
+    console.error("Manual test WhatsApp reminder failed:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getDashboardSummary,
   getStudents,
@@ -711,5 +753,6 @@ module.exports = {
   updateLiveClass,
   deleteLiveClass,
   testSessionReminderWhatsapp,
+  testWhatsappReminderManual,
 };
 
