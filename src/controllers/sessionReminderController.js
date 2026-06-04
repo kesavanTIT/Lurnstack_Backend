@@ -58,10 +58,10 @@ const reviewAndPublishSession = async (req, res) => {
 
     const parsedPrice = Number(price);
 
-    if (!price || isNaN(parsedPrice) || parsedPrice <= 0) {
-      // No price supplied or zero → FREE
+    if (price === undefined || price === null || price === "" || isNaN(parsedPrice) || parsedPrice <= 0) {
+      // No price supplied or zero/negative → FREE (store as 0 paise)
       pricingState  = "FREE";
-      priceInPaise  = null;
+      priceInPaise  = 0;
     } else {
       // Price supplied and positive → PRICED
       pricingState  = "PRICED";

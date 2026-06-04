@@ -21,8 +21,9 @@ const { sendWhatsAppReminder } = require("../services/whatsappService");
 const runWhatsappReminderJob = async () => {
   try {
     const now = new Date();
-    const minutesBefore = parseInt(process.env.WHATSAPP_REMINDER_MINUTES_BEFORE || "30", 10);
+    const minutesBefore = parseInt(process.env.WHATSAPP_REMINDER_MINUTES_BEFORE || "5", 10);
     const sendToAllFree = process.env.SEND_FREE_SESSION_REMINDERS_TO_ALL === "true";
+    const reminderType = `session_reminder_${minutesBefore}min`;
 
     // Window: occurrence starts between now and now + minutesBefore
     const windowEnd = new Date(now.getTime() + minutesBefore * 60 * 1000);
@@ -108,7 +109,7 @@ const runWhatsappReminderJob = async () => {
               sessionId_userId_reminderType: {
                 sessionId: session.id,
                 userId: student.id,
-                reminderType: "session_reminder_30min",
+                reminderType,
               },
             },
           });
@@ -123,7 +124,7 @@ const runWhatsappReminderJob = async () => {
               phone: student.phoneNumber,
               userId: student.id,
               sessionId: session.id,
-              reminderType: "session_reminder_30min",
+              reminderType,
               studentName: student.fullName,
               sessionTitle: session.title,
               minutesLeft: String(minutesLeft),
@@ -210,7 +211,7 @@ const runWhatsappReminderJob = async () => {
               sessionId_userId_reminderType: {
                 sessionId: session.id,
                 userId: student.id,
-                reminderType: "session_reminder_30min",
+                reminderType,
               },
             },
           });
@@ -225,7 +226,7 @@ const runWhatsappReminderJob = async () => {
               phone: student.phoneNumber,
               userId: student.id,
               sessionId: session.id,
-              reminderType: "session_reminder_30min",
+              reminderType,
               studentName: student.fullName,
               sessionTitle: session.title,
               minutesLeft: String(minutesLeft),

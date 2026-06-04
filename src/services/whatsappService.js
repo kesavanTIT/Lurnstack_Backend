@@ -131,10 +131,10 @@ const sendWhatsAppReminder = async ({
   phone,
   userId,
   sessionId,
-  reminderType = "session_reminder_30min",
+  reminderType = "session_reminder_5min",
   studentName = "Rahul",
   sessionTitle = "Node.js Masterclass",
-  minutesLeft = "30",
+  minutesLeft = "5",
   trainerName = "Infant",
   buttonUrl,
 }) => {

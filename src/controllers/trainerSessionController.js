@@ -565,10 +565,96 @@ const updateTrainerSession = async (req, res) => {
       updateData.category = resolvedCategory;
     }
 
+    // Recalculate timing fields
+    const checkDate = req.body.scheduledDate || req.body.date || existing.scheduledDate || (existing.createdAt ? getKolkataDateString(new Date(existing.createdAt)) : getKolkataDateString());
+    const checkStartTime = startTime !== undefined ? startTime : existing.startTime;
+    const checkEndTime = endTime !== undefined ? endTime : existing.endTime;
+
+    const formatTime = (t) => {
+      if (!t) return t;
+      const normalized = t.replace(".", ":");
+      if (normalized.includes("AM") || normalized.includes("PM")) {
+        let [timePart, modifier] = normalized.split(" ");
+        let [hours, minutes] = timePart.split(":").map(Number);
+        if (modifier === "PM" && hours < 12) hours += 12;
+        if (modifier === "AM" && hours === 12) hours = 0;
+        return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+      }
+      return normalized;
+    };
+
+    const finalStartTime = checkStartTime ? formatTime(checkStartTime) : null;
+    const finalEndTime = checkEndTime ? formatTime(checkEndTime) : null;
+
+    const calculateDurationMinutes = (start, end) => {
+      if (!start || !end) return 60;
+      const [sh, sm] = start.split(":").map(Number);
+      const [eh, em] = end.split(":").map(Number);
+      if (Number.isNaN(sh) || Number.isNaN(sm) || Number.isNaN(eh) || Number.isNaN(em)) return 60;
+      let diff = (eh * 60 + em) - (sh * 60 + sm);
+      if (diff < 0) diff += 24 * 60;
+      return diff;
+    };
+
+    const finalDurationMinutes = calculateDurationMinutes(finalStartTime, finalEndTime);
+
+    updateData.startTime = finalStartTime;
+    updateData.endTime = finalEndTime;
+    updateData.scheduledDate = checkDate;
+    updateData.durationMinutes = finalDurationMinutes;
+    updateData.scheduledAt = finalStartTime ? `${checkDate} ${finalStartTime}` : null;
+    updateData.endsAt = finalEndTime ? `${checkDate} ${finalEndTime}` : null;
+
+    // Fetch old occurrences for logging
+    const oldOccurrences = await prisma.sessionOccurrence.findMany({
+      where: { sessionId },
+      select: { id: true }
+    });
+    const oldJobIds = oldOccurrences.map(o => o.id);
+    const oldScheduledAt = existing.scheduledAt;
+
+    // Cancel/delete/mark inactive any existing pending WhatsApp reminder jobs for that session.
+    await prisma.sessionOccurrence.deleteMany({
+      where: { sessionId }
+    });
+
+    await prisma.whatsAppReminder.deleteMany({
+      where: { sessionId }
+    });
+
+    await prisma.booking.updateMany({
+      where: { sessionId },
+      data: {
+        whatsappReminderSentAt: null,
+        whatsappReminderStatus: null,
+        whatsappReminderMessageId: null,
+        whatsappReminderError: null
+      }
+    });
+
     const updated = await prisma.liveSession.update({
       where: { id: sessionId },
       data: updateData,
       include: { trainer: true },
+    });
+
+    // Create a new WhatsApp reminder job based on the updated scheduledAt time.
+    await generateOccurrences(updated);
+
+    // Fetch new occurrences for logging
+    const newOccurrences = await prisma.sessionOccurrence.findMany({
+      where: { sessionId },
+      select: { id: true }
+    });
+    const newJobIds = newOccurrences.map(o => o.id);
+
+    // Add logs for sessionId, old scheduledAt, new scheduledAt, old WhatsApp job id, new WhatsApp job id.
+    console.log("[WHATSAPP-RESCHEDULE] Session timing updated", {
+      sessionId,
+      oldScheduledAt,
+      newScheduledAt: updated.scheduledAt,
+      oldWhatsappJobId: oldJobIds.join(", "),
+      newWhatsappJobId: newJobIds.join(", ")
     });
 
     const categories = await prisma.category.findMany();
