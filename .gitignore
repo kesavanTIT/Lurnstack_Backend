@@ -8,5 +8,10 @@ yarn-error.log*
 .prisma
 package-lock.json
 .env
+.env.production.backup
+.user.ini
+
+# Uploaded files (server-generated, not tracked by Git)
+uploads/
 
 
