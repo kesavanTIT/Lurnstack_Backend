@@ -811,67 +811,80 @@ const sendOfferCampaign = async (req, res) => {
       where: { campaignId: id }
     });
 
-    // Process delivery batches of 10
-    let sentCount = 0;
-    let failedCount = 0;
-    const BATCH_SIZE = 10;
-
-    for (let i = 0; i < deliveries.length; i += BATCH_SIZE) {
-      const batch = deliveries.slice(i, i + BATCH_SIZE);
-      
-      const batchPromises = batch.map(async (delivery) => {
-        try {
-          const mailResponse = await sendCampaignEmail(delivery.email, campaign);
-          
-          let providerMessageId = null;
-          if (mailResponse && mailResponse.messageId) {
-            providerMessageId = mailResponse.messageId;
-          }
-
-          await prisma.offerCampaignDelivery.update({
-            where: { id: delivery.id },
-            data: {
-              status: "sent",
-              providerMessageId,
-              sentAt: new Date()
-            }
-          });
-          sentCount++;
-        } catch (err) {
-          await prisma.offerCampaignDelivery.update({
-            where: { id: delivery.id },
-            data: {
-              status: "failed",
-              errorMessage: err.message || "Unknown SMTP Error"
-            }
-          });
-          failedCount++;
-          console.error(`[CAMPAIGN] Failed to send email to ${delivery.email}:`, err.message);
-        }
-      });
-
-      await Promise.all(batchPromises);
-    }
-
-    // Calculate final status: 'sent' if mostly successful, 'failed' if all failed.
-    const finalStatus = (sentCount > 0) ? "sent" : "failed";
-
-    const updatedCampaign = await prisma.offerCampaign.update({
-      where: { id },
-      data: {
-        status: finalStatus,
-        recipientCount: recipients.length,
-        sentCount,
-        failedCount,
-        sentAt: new Date()
-      }
+    // Fetch the updated campaign to return to the frontend
+    const updatedCampaign = await prisma.offerCampaign.findUnique({
+      where: { id }
     });
 
-    return res.status(200).json({
+    // Respond immediately to the frontend to prevent a timeout
+    res.status(200).json({
       success: true,
+      message: "Campaign dispatch started in the background.",
       data: {
         campaign: updatedCampaign
       }
+    });
+
+    // Run the SMTP mail dispatch loop asynchronously in the background
+    (async () => {
+      let sentCount = 0;
+      let failedCount = 0;
+      const BATCH_SIZE = 10;
+
+      for (let i = 0; i < deliveries.length; i += BATCH_SIZE) {
+        const batch = deliveries.slice(i, i + BATCH_SIZE);
+        
+        const batchPromises = batch.map(async (delivery) => {
+          try {
+            const mailResponse = await sendCampaignEmail(delivery.email, campaign);
+            
+            let providerMessageId = null;
+            if (mailResponse && mailResponse.messageId) {
+              providerMessageId = mailResponse.messageId;
+            }
+
+            await prisma.offerCampaignDelivery.update({
+              where: { id: delivery.id },
+              data: {
+                status: "sent",
+                providerMessageId,
+                sentAt: new Date()
+              }
+            });
+            sentCount++;
+          } catch (err) {
+            await prisma.offerCampaignDelivery.update({
+              where: { id: delivery.id },
+              data: {
+                status: "failed",
+                errorMessage: err.message || "Unknown SMTP Error"
+              }
+            });
+            failedCount++;
+            console.error(`[CAMPAIGN] Failed to send email to ${delivery.email}:`, err.message);
+          }
+        });
+
+        await Promise.all(batchPromises);
+      }
+
+      // Calculate final status: 'sent' if mostly successful, 'failed' if all failed.
+      const finalStatus = (sentCount > 0) ? "sent" : "failed";
+
+      await prisma.offerCampaign.update({
+        where: { id },
+        data: {
+          status: finalStatus,
+          recipientCount: recipients.length,
+          sentCount,
+          failedCount,
+          sentAt: new Date()
+        }
+      });
+
+      console.log(`[CAMPAIGN] Background dispatch complete for campaign "${campaign.campaignName}" (${id}). Status: ${finalStatus}. Sent: ${sentCount}, Failed: ${failedCount}`);
+    })().catch((bgError) => {
+      console.error(`[CAMPAIGN] Fatal error in background dispatch for campaign ${id}:`, bgError.message);
     });
   } catch (error) {
     console.error("sendOfferCampaign Error:", error);
