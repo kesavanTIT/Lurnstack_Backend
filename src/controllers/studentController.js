@@ -747,20 +747,13 @@ const getMySessionCards = async (req, res) => {
 // ─────────────────────────────────────────────
 const joinSession = async (req, res) => {
   try {
-    const { sessionId } = req.params;
+    // 3. Support lookup by id, _id, sessionId, and session_id (both in params and body)
+    const sessionId = req.params.sessionId || req.params.id || (req.body ? (req.body.sessionId || req.body.session_id || req.body.id || req.body._id) : null);
+    
     const studentId = parseInt(req.user?.id || req.user);
     if (isNaN(studentId)) {
       return res.status(400).json({ success: false, message: "Invalid student identifier." });
     }
-
-    const {
-      sessionDate,
-      occurrenceDate,
-      scheduledAt,
-      startsAt,
-      endsAt,
-      clientJoinedAt
-    } = req.body || {};
 
     if (!sessionId) {
       return res.status(400).json({ success: false, message: "sessionId is required." });
@@ -777,26 +770,105 @@ const joinSession = async (req, res) => {
       return res.status(404).json({ success: false, message: "Session not found." });
     }
 
+    // 7. If session is unpublished, return clear message.
     if (session.publishState !== "PUBLISHED") {
       return res.status(400).json({ success: false, message: "This session is not published." });
     }
 
+    // 7. If session is cancelled or completed (ended), return clear message.
+    if (session.status === "cancelled") {
+      return res.status(400).json({ success: false, message: "This session has been cancelled." });
+    }
+    if (session.status === "ended") {
+      return res.status(400).json({ success: false, message: "This session has already ended." });
+    }
     if (session.status !== "active") {
       return res.status(400).json({ success: false, message: `Cannot join. Session is ${session.status}.` });
     }
 
     const now = new Date();
+    const { clientJoinedAt } = req.body || {};
     const joinedAtTime = clientJoinedAt ? new Date(clientJoinedAt) : now;
     if (isNaN(joinedAtTime.getTime())) {
       return res.status(400).json({ success: false, message: "Invalid clientJoinedAt format." });
     }
 
-    const targetDateStr = occurrenceDate || sessionDate || getKolkataDateString(now);
+    // 8. Confirm frontend request body fields are accepted: sessionDate, scheduledAt, startsAt, endsAt, occurrenceDate
+    let resolvedDateInput = null;
+    if (req.body) {
+      resolvedDateInput = req.body.sessionDate || req.body.scheduledAt || req.body.startsAt || req.body.endsAt || req.body.occurrenceDate;
+    }
+
+    const parseToKolkataDateString = (input) => {
+      if (!input) return null;
+      const str = String(input).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        return str;
+      }
+      try {
+        const d = new Date(input);
+        if (!isNaN(d.getTime())) {
+          const formatter = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Kolkata",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          });
+          return formatter.format(d);
+        }
+      } catch (e) {}
+      return null;
+    };
+
+    const targetDateStr = parseToKolkataDateString(resolvedDateInput) || session.scheduledDate || getKolkataDateString(now);
     const targetDate = new Date(targetDateStr);
     if (isNaN(targetDate.getTime())) {
-      return res.status(400).json({ success: false, message: "Invalid occurrenceDate or sessionDate format." });
+      return res.status(400).json({ success: false, message: "Invalid session date format." });
     }
     targetDate.setUTCHours(0, 0, 0, 0);
+
+    // Check if the session is cancelled for today in cancelledDates
+    let cancelledArray = [];
+    if (session.cancelledDates) {
+      if (Array.isArray(session.cancelledDates)) {
+        cancelledArray = session.cancelledDates;
+      } else {
+        try {
+          cancelledArray = typeof session.cancelledDates === 'string'
+            ? JSON.parse(session.cancelledDates)
+            : session.cancelledDates;
+        } catch (e) {
+          cancelledArray = [];
+        }
+      }
+    }
+    if (Array.isArray(cancelledArray) && cancelledArray.includes(targetDateStr)) {
+      return res.status(400).json({ success: false, message: "This session has been cancelled for today." });
+    }
+
+    // 4. Validate join window using latest scheduledAt/endsAt in Asia/Kolkata
+    const startKolkataTime = session.startTime || "00:00";
+    const endKolkataTime = session.endTime || "23:59";
+    const scheduledAtTime = getKolkataDateTime(targetDateStr, startKolkataTime);
+    const endsAtTime = getKolkataDateTime(targetDateStr, endKolkataTime);
+
+    // 6. If class is not open, return message with actual open time.
+    const joinOpenTime = new Date(scheduledAtTime.getTime() - 5 * 60 * 1000);
+    if (now < joinOpenTime) {
+      const openTimeStr = joinOpenTime.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: '2-digit', minute: '2-digit', hour12: true });
+      return res.status(400).json({
+        success: false,
+        message: `Class is not open yet. You can join 5 minutes before the start time. Join opens at ${openTimeStr}.`
+      });
+    }
+
+    // 7. If session is completed, return clear message.
+    if (now > endsAtTime) {
+      return res.status(400).json({
+        success: false,
+        message: "This session has already completed."
+      });
+    }
 
     const isFree =
       session.pricingState === "FREE" ||
@@ -826,9 +898,10 @@ const joinSession = async (req, res) => {
           }
         });
       } else {
+        // 5. If payment is required, return message: "Payment required before joining."
         return res.status(400).json({
           success: false,
-          message: "Please complete payment before joining."
+          message: "Payment required before joining."
         });
       }
     } else {
