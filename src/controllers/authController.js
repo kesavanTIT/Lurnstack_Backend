@@ -13,20 +13,27 @@ const axios = require("axios");
 const registerUser = async (req, res) => {
   try {
     // 1. Extract fields from request body
-    //    role is optional — defaults to STUDENT if not provided.
-    const { FULL_NAME, EMAIL_ADDRESS, PASSWORD, PHONE_NUMBER, role } = req.body;
+    //    Accept both FULL_NAME/EMAIL_ADDRESS/PASSWORD (UI convention) and
+    //    fullName/email/password (REST convention) to avoid crashes on field name mismatch.
+    const fullNameRaw = req.body.FULL_NAME || req.body.fullName || req.body.name;
+    const emailRaw = req.body.EMAIL_ADDRESS || req.body.email;
+    const passwordRaw = req.body.PASSWORD || req.body.password;
+    const { PHONE_NUMBER, phoneNumber, role } = req.body;
+    const phoneRaw = PHONE_NUMBER || phoneNumber;
 
     // 2. Validation — ensure all required fields are present
-    if (!FULL_NAME || !EMAIL_ADDRESS || !PASSWORD) {
+    if (!fullNameRaw || !emailRaw || !passwordRaw) {
       return res.status(400).json({
         success: false,
-        message: "Please provide all required fields: FULL_NAME, EMAIL_ADDRESS, and PASSWORD.",
+        message: "Please provide all required fields: FULL_NAME (or fullName), EMAIL_ADDRESS (or email), and PASSWORD (or password).",
       });
     }
 
     // 3. Normalize values
-    const email = String(EMAIL_ADDRESS || "").trim().toLowerCase();
-    const phone = PHONE_NUMBER ? String(PHONE_NUMBER).trim() : null;
+    const email = String(emailRaw).trim().toLowerCase();
+    const FULL_NAME = String(fullNameRaw).trim();
+    const PASSWORD = String(passwordRaw);
+    const phone = phoneRaw ? String(phoneRaw).trim() : null;
     const phoneNormalized = phone ? normalizePhone(phone) : null;
 
     // 4. Resolve role — accept 'TRAINER' from UI toggle; default everything else to STUDENT
@@ -128,12 +135,24 @@ const registerUser = async (req, res) => {
 // ─────────────────────────────────────────────
 const loginUser = async (req, res) => {
   try {
-    // 1. Extract UI-matching uppercase fields from request body
-    const { EMAIL_ADDRESS, PASSWORD } = req.body;
+    // 1. Accept both EMAIL_ADDRESS (UI convention) and email (REST convention)
+    //    to avoid a Prisma crash when the field name doesn't match.
+    const emailRaw = req.body.EMAIL_ADDRESS || req.body.email;
+    const passwordRaw = req.body.PASSWORD || req.body.password;
 
-    // 2. Find user by email
+    // 1a. Validate that email and password were actually provided
+    if (!emailRaw || !passwordRaw) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide EMAIL_ADDRESS (or email) and PASSWORD (or password).",
+      });
+    }
+
+    const emailNormalized = String(emailRaw).trim().toLowerCase();
+
+    // 2. Find user by email — safe: emailNormalized is always a non-empty string here
     const user = await prisma.user.findUnique({
-      where: { email: EMAIL_ADDRESS },
+      where: { email: emailNormalized },
     });
 
     if (!user) {
@@ -144,7 +163,7 @@ const loginUser = async (req, res) => {
     }
 
     // 3. Compare the provided password with the stored hashed password
-    const isPasswordValid = await bcrypt.compare(PASSWORD, user.password);
+    const isPasswordValid = await bcrypt.compare(String(passwordRaw), user.password);
 
     if (!isPasswordValid) {
       return res.status(401).json({
