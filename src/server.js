@@ -29,6 +29,7 @@ const allowedOrigins = [
   "https://admin.lurnstack.com",
   "https://trainers.lurnstack.com",
   "http://localhost:3000",
+  "https://localhost:3000",
   "http://localhost:3001",
   "http://localhost:5173"
 ];

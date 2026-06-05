@@ -186,6 +186,13 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
 // ─────────────────────────────────────────────
 const getTrainerStatus = async (req, res) => {
   try {
+    if (!req.user || req.user.role !== "TRAINER") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Logged-in user is not a trainer.",
+      });
+    }
+
     const trainerId = Number.parseInt(req.user.id, 10);
 
     if (!Number.isInteger(trainerId) || trainerId <= 0) {
@@ -206,15 +213,17 @@ const getTrainerStatus = async (req, res) => {
     });
 
     if (!trainer) {
-      return res.status(404).json({
+      return res.status(403).json({
         success: false,
-        message: "Trainer not found.",
+        message: "Access denied. Trainer not found.",
       });
     }
 
     return res.status(200).json({
       success: true,
-      isActive: trainer.isActive,
+      data: {
+        isActive: trainer.isActive === true,
+      },
     });
   } catch (error) {
     console.error("getTrainerStatus Error:", error);
