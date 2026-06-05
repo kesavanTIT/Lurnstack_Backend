@@ -186,7 +186,7 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
 // ─────────────────────────────────────────────
 const getTrainerStatus = async (req, res) => {
   try {
-    if (!req.user || req.user.role !== "TRAINER") {
+    if (!req.user || !req.user.role || String(req.user.role).toUpperCase() !== "TRAINER") {
       return res.status(403).json({
         success: false,
         message: "Access denied. Logged-in user is not a trainer.",

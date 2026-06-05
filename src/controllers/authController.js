@@ -172,9 +172,31 @@ const loginUser = async (req, res) => {
       });
     }
 
+    // Check request role parameter
+    const reqRole = req.body.role || req.body.ROLE || req.body.userRole;
+    const isRequestingTrainer = reqRole && String(reqRole).toUpperCase() === "TRAINER";
+
+    // If payload contains role/ROLE/userRole = "TRAINER", authenticate against trainer account.
+    // Also, do not return a student/admin token for an email that is active as a trainer.
+    if (isRequestingTrainer) {
+      if (user.role !== "TRAINER") {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied. Logged-in user is not a trainer.",
+        });
+      }
+    }
+
+    // Determine final role to use in token and response.
+    // If the database role is TRAINER, ensure the output role is lowercase "trainer".
+    let finalRole = user.role;
+    if (user.role === "TRAINER") {
+      finalRole = "trainer";
+    }
+
     // 4. Generate JWT token containing id and role
     const token = jwt.sign(
-      { id: user.id, role: user.role },
+      { id: user.id, role: finalRole },
       process.env.JWT_SECRET,
       { expiresIn: "7d" } // Token valid for 7 days
     );
@@ -187,7 +209,7 @@ const loginUser = async (req, res) => {
       user: {
         id: user.id,
         name: user.fullName,
-        role: user.role, // STUDENT | TRAINER — frontend uses this for redirection
+        role: finalRole, // STUDENT | trainer | ADMIN — frontend uses this for redirection
       },
     });
   } catch (error) {

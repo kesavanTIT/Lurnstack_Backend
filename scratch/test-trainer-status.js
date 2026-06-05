@@ -1,8 +1,11 @@
+require("dotenv").config();
 const prisma = require("../src/config/db");
+const jwt = require("jsonwebtoken");
+const { loginUser } = require("../src/controllers/authController");
 const { getTrainerStatus } = require("../src/controllers/trainerSessionController");
 
 async function runTests() {
-  console.log("Running getTrainerStatus unit tests...");
+  console.log("Running comprehensive trainer auth and status tests...");
 
   // Mock response builder
   const mockRes = () => {
@@ -18,89 +21,173 @@ async function runTests() {
     return res;
   };
 
-  // Setup temporary test user in database
-  // Find or create a trainer user
+  // Find or create test trainer user
   let testTrainer = await prisma.user.findFirst({
     where: { email: "test_trainer@lurnstack.com" }
   });
+  const bcrypt = require("bcryptjs");
+  const salt = await bcrypt.genSalt(12);
+  const hashedPassword = await bcrypt.hash("TrainerPassword123!", salt);
+
   if (!testTrainer) {
     testTrainer = await prisma.user.create({
       data: {
         fullName: "Test Trainer",
         email: "test_trainer@lurnstack.com",
-        password: "hashedpassword123",
+        password: hashedPassword,
         role: "TRAINER",
         isActive: true
       }
     });
   } else {
-    // Ensure active
     await prisma.user.update({
       where: { id: testTrainer.id },
-      data: { isActive: true, role: "TRAINER" }
+      data: { isActive: true, role: "TRAINER", password: hashedPassword }
     });
   }
 
-  // Test Case 1: Logged in user is not a trainer (e.g. STUDENT)
-  {
-    const req = {
-      user: {
-        id: testTrainer.id,
-        role: "STUDENT"
+  // Find or create test student user
+  let testStudent = await prisma.user.findFirst({
+    where: { email: "test_student@lurnstack.com" }
+  });
+  if (!testStudent) {
+    testStudent = await prisma.user.create({
+      data: {
+        fullName: "Test Student",
+        email: "test_student@lurnstack.com",
+        password: hashedPassword,
+        role: "STUDENT",
+        isActive: true
       }
-    };
-    const res = mockRes();
-    await getTrainerStatus(req, res);
-    console.log("Test Case 1 (STUDENT user) Status:", res.statusCode);
-    console.log("Test Case 1 (STUDENT user) Response:", res.body);
-    if (res.statusCode !== 403) throw new Error("Expected 403 for non-trainer user");
+    });
+  } else {
+    await prisma.user.update({
+      where: { id: testStudent.id },
+      data: { isActive: true, role: "STUDENT", password: hashedPassword }
+    });
   }
 
-  // Test Case 2: Trainer exists and is active
+  // ── TEST CASE 1: Trainer logs in with role/ROLE/userRole = "TRAINER" ──
   {
+    console.log("\n--- Test Case 1: Trainer Login with role = 'TRAINER' ---");
     const req = {
-      user: {
-        id: testTrainer.id,
+      body: {
+        email: "test_trainer@lurnstack.com",
+        password: "TrainerPassword123!",
         role: "TRAINER"
       }
     };
     const res = mockRes();
-    await getTrainerStatus(req, res);
-    console.log("Test Case 2 (Active Trainer) Status:", res.statusCode);
-    console.log("Test Case 2 (Active Trainer) Response:", res.body);
-    if (res.statusCode !== 200 || !res.body.success || res.body.data.isActive !== true) {
-      throw new Error("Expected 200 and success with isActive: true");
-    }
+    await loginUser(req, res);
+
+    console.log("Status Code:", res.statusCode);
+    console.log("Response Body:", res.body);
+
+    if (res.statusCode !== 200) throw new Error("Expected status 200");
+    if (!res.body.success) throw new Error("Expected success: true");
+    if (res.body.user.role !== "trainer") throw new Error("Expected user.role to be lowercase 'trainer'");
+    
+    // Decode token to verify payload
+    const decoded = jwt.verify(res.body.token, process.env.JWT_SECRET);
+    console.log("Decoded JWT Payload:", decoded);
+    if (decoded.role !== "trainer") throw new Error("Expected JWT role to be lowercase 'trainer'");
   }
 
-  // Test Case 3: Trainer is inactive
+  // ── TEST CASE 2: Active trainer logs in without specifying role (should still return 'trainer' token) ──
   {
-    await prisma.user.update({
-      where: { id: testTrainer.id },
-      data: { isActive: false }
-    });
-
+    console.log("\n--- Test Case 2: Active Trainer Login without role parameter ---");
     const req = {
-      user: {
-        id: testTrainer.id,
-        role: "TRAINER"
+      body: {
+        email: "test_trainer@lurnstack.com",
+        password: "TrainerPassword123!"
       }
     };
     const res = mockRes();
+    await loginUser(req, res);
+
+    console.log("Status Code:", res.statusCode);
+    console.log("Response Body:", res.body);
+
+    if (res.statusCode !== 200) throw new Error("Expected status 200");
+    if (res.body.user.role !== "trainer") throw new Error("Expected user.role to be lowercase 'trainer'");
+    
+    const decoded = jwt.verify(res.body.token, process.env.JWT_SECRET);
+    if (decoded.role !== "trainer") throw new Error("Expected JWT role to be lowercase 'trainer'");
+  }
+
+  // ── TEST CASE 3: Student trying to log in requesting role = "TRAINER" (should fail with 403) ──
+  {
+    console.log("\n--- Test Case 3: Student Login requesting role = 'TRAINER' ---");
+    const req = {
+      body: {
+        email: "test_student@lurnstack.com",
+        password: "TrainerPassword123!",
+        userRole: "TRAINER"
+      }
+    };
+    const res = mockRes();
+    await loginUser(req, res);
+
+    console.log("Status Code:", res.statusCode);
+    console.log("Response Body:", res.body);
+
+    if (res.statusCode !== 403) throw new Error("Expected status 403");
+  }
+
+  // ── TEST CASE 4: GET /api/trainer/status accepts lowercase 'trainer' token ──
+  {
+    console.log("\n--- Test Case 4: getTrainerStatus with lowercase 'trainer' JWT role ---");
+    const token = jwt.sign(
+      { id: testTrainer.id, role: "trainer" },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+    
+    // Simulate authMiddleware attaching req.user
+    const req = {
+      user: jwt.verify(token, process.env.JWT_SECRET)
+    };
+    const res = mockRes();
     await getTrainerStatus(req, res);
-    console.log("Test Case 3 (Inactive Trainer) Status:", res.statusCode);
-    console.log("Test Case 3 (Inactive Trainer) Response:", res.body);
-    if (res.statusCode !== 200 || !res.body.success || res.body.data.isActive !== false) {
-      throw new Error("Expected 200 and success with isActive: false");
-    }
+
+    console.log("Status Code:", res.statusCode);
+    console.log("Response Body:", res.body);
+
+    if (res.statusCode !== 200) throw new Error("Expected status 200");
+    if (res.body.data.isActive !== true) throw new Error("Expected isActive: true");
+  }
+
+  // ── TEST CASE 5: GET /api/trainer/status rejects STUDENT role ──
+  {
+    console.log("\n--- Test Case 5: getTrainerStatus rejects STUDENT role ---");
+    const token = jwt.sign(
+      { id: testStudent.id, role: "STUDENT" },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+    
+    const req = {
+      user: jwt.verify(token, process.env.JWT_SECRET)
+    };
+    const res = mockRes();
+    await getTrainerStatus(req, res);
+
+    console.log("Status Code:", res.statusCode);
+    console.log("Response Body:", res.body);
+
+    if (res.statusCode !== 403) throw new Error("Expected status 403");
   }
 
   // Clean up
-  await prisma.user.delete({
-    where: { id: testTrainer.id }
+  await prisma.user.deleteMany({
+    where: {
+      email: {
+        in: ["test_trainer@lurnstack.com", "test_student@lurnstack.com"]
+      }
+    }
   });
 
-  console.log("All tests passed successfully! 🎉");
+  console.log("\nAll comprehensive tests passed successfully! 🎉");
 }
 
 runTests()
