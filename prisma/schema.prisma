@@ -304,6 +304,14 @@ model TrainerEarning {
 }
 
 enum TrainerEarningStatus {
+  // Old values (retained to prevent database warnings/data loss on production)
+  pending_session_completion
+  payable
+  failed
+  on_hold
+  cancelled
+
+  // New values (added for Phase 1 manual payouts)
   unpaid
   requested
   approved
