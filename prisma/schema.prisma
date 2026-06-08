@@ -36,6 +36,8 @@ model User {
   whatsappReminders         WhatsAppReminder[]
   campaignDeliveries        OfferCampaignDelivery[]
   campaignClicks            OfferCampaignClick[]
+  payoutAccount             TrainerPayoutAccount?
+  payoutRequests            TrainerPayoutRequest[] @relation(name: "TrainerPayoutRequestRelation")
 }
 
 enum Role {
@@ -285,6 +287,8 @@ model TrainerEarning {
   paidAt             DateTime?
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
+  payoutRequestId    String?
+  payoutRequest      TrainerPayoutRequest? @relation(name: "PayoutRequestEarningRelation", fields: [payoutRequestId], references: [id], onDelete: SetNull)
 }
 
 enum TrainerEarningStatus {
@@ -456,5 +460,60 @@ model OfferCampaignClick {
   clickedAt  DateTime      @default(now())
   userAgent  String?
   ipAddress  String?
+}
+
+model TrainerPayoutAccount {
+  id                   String                     @id @default(uuid())
+  trainerId            Int                        @unique
+  trainer              User                       @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  accountHolderName    String
+  bankName             String
+  encryptedAccountNumber String
+  accountNumberLast4   String
+  ifsc                 String
+  upiId                String?
+  pan                  String?
+  phoneNumber          String
+  accountType          String                     @default("bank_account")
+  status               TrainerPayoutAccountStatus @default(pending)
+  rejectionReason      String?
+  isLocked             Boolean                    @default(false)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+}
+
+enum TrainerPayoutAccountStatus {
+  pending
+  verified
+  rejected
+}
+
+model TrainerPayoutRequest {
+  id                   String                     @id @default(uuid())
+  trainerId            Int
+  trainer              User                       @relation(name: "TrainerPayoutRequestRelation", fields: [trainerId], references: [id], onDelete: Cascade)
+  requestedAmountPaise Int
+  status               TrainerPayoutRequestStatus @default(requested)
+  requestedDate        DateTime                   @default(now())
+  approvedAt           DateTime?
+  processingAt         DateTime?
+  paidAt               DateTime?
+  manualPaidDate       DateTime?
+  utrReference         String?
+  adminNote            String?
+  rejectionReason      String?
+  payoutAccountSnapshot Json                      // Stores the masked snapshot of the payout account at request time
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+
+  earnings             TrainerEarning[]           @relation(name: "PayoutRequestEarningRelation")
+}
+
+enum TrainerPayoutRequestStatus {
+  requested
+  approved
+  processing
+  paid
+  rejected
 }
 
