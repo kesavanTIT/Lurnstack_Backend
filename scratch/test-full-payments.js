@@ -23,7 +23,7 @@ const {
 
 // Import Trainer controllers
 const {
-  getPayoutBalance,
+  getPaymentSummary,
   getPayoutAccount,
   createPayoutAccount,
   updatePayoutAccount,
@@ -102,6 +102,7 @@ async function runTests() {
     accountHolderName: "Full Test Trainer",
     bankName: "SBI Bank",
     accountNumber: "98765432109876",
+    confirmAccountNumber: "98765432109876",
     ifsc: "SBIN0001234",
     pan: "ABCDE1234Z",
     phoneNumber: "9999988888"
@@ -240,7 +241,7 @@ async function runTests() {
   // 7. Check trainer payout balance
   console.log("7. Trainer checks payout balance...");
   res = mockRes();
-  await getPayoutBalance(trainerReq, res);
+  await getPaymentSummary(trainerReq, res);
   if (res.statusCode !== 200) {
     throw new Error("Expected payout balance fetch to succeed");
   }
@@ -261,7 +262,7 @@ async function runTests() {
 
   // Verify balance lock
   res = mockRes();
-  await getPayoutBalance(trainerReq, res);
+  await getPaymentSummary(trainerReq, res);
   if (res.body.data.availableBalancePaise !== 0 || res.body.data.lockedAmountPaise !== 60000) {
     throw new Error("Expected balance to be locked immediately");
   }
@@ -299,7 +300,7 @@ async function runTests() {
 
   // Verify locks and earnings updated
   res = mockRes();
-  await getPayoutBalance(trainerReq, res);
+  await getPaymentSummary(trainerReq, res);
   if (res.body.data.lockedAmountPaise !== 0 || res.body.data.paidAmountPaise !== 60000) {
     throw new Error("Expected locked amount to be cleared and paid amount to be 60000");
   }

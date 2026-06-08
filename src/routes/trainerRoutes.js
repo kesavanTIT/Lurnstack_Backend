@@ -17,7 +17,8 @@ const {
 } = require("../controllers/trainerSessionController");
 
 const {
-  getPayoutBalance,
+  getPaymentSummary,
+  getSessionEarnings,
   getPayoutAccount,
   createPayoutAccount,
   updatePayoutAccount,
@@ -38,6 +39,16 @@ const upload = require("../middleware/uploadMiddleware");
 
 // ── Protect all trainer routes ─────────────────
 router.use(protect);
+
+// ── Trainer Payouts & Earnings Endpoints (Mounted at top to prevent routing conflict) ──
+router.get("/payment-summary", getPaymentSummary);
+router.get("/session-earnings", getSessionEarnings);
+router.get("/payout-account", getPayoutAccount);
+router.post("/payout-account", createPayoutAccount);
+router.patch("/payout-account", updatePayoutAccount);
+router.get("/payout-requests", getPayoutRequests);
+router.get("/payout-requests/:requestId", getPayoutRequestById);
+router.post("/payout-requests", createPayoutRequest);
 
 // ── Trainer Status Endpoint ────────────────────
 router.get("/status", getTrainerStatus);
@@ -78,15 +89,6 @@ router.delete("/sessions/:sessionId/cancel-today", uncancelTodaySession);
 
 // DELETE /api/trainer/sessions/:sessionId  → Delete a session permanently
 router.delete("/sessions/:sessionId", deleteTrainerSession);
-
-// ── Trainer Earnings & Payouts Endpoints ────────────────
-router.get("/payout-balance", getPayoutBalance);
-router.get("/payout-account", getPayoutAccount);
-router.post("/payout-account", createPayoutAccount);
-router.patch("/payout-account", updatePayoutAccount);
-router.get("/payout-requests", getPayoutRequests);
-router.get("/payout-requests/:requestId", getPayoutRequestById);
-router.post("/payout-requests", createPayoutRequest);
 
 // ── Trainer Attendance Endpoints ─────────────────────────
 router.get("/courses/:courseId/attendance-summary", getCourseAttendanceSummary);
