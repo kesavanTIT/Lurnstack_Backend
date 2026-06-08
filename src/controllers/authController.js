@@ -735,6 +735,62 @@ const googleAuthCallback = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// @desc    Get current logged-in user profile
+// @route   GET /api/auth/me
+// @access  Private
+// ─────────────────────────────────────────────
+const getMe = async (req, res) => {
+  try {
+    const userId = parseInt(req.user.id);
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phoneNumber: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User profile not found.",
+      });
+    }
+
+    // Map role for frontend lowercase consistency if role is TRAINER
+    const formattedRole = user.role === "TRAINER" ? "trainer" : user.role;
+
+    const profileData = {
+      id: user.id,
+      name: user.fullName,
+      fullName: user.fullName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      role: formattedRole,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+    };
+
+    return res.status(200).json({
+      success: true,
+      user: profileData,
+      data: profileData,
+    });
+  } catch (error) {
+    console.error("Get Me Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error.",
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -743,5 +799,6 @@ module.exports = {
   forgotPassword,
   resetPassword,
   initiateGoogleAuth,
-  googleAuthCallback
+  googleAuthCallback,
+  getMe,
 };

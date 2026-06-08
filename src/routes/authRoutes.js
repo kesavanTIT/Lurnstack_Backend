@@ -9,7 +9,9 @@ const {
   resetPassword,
   initiateGoogleAuth,
   googleAuthCallback,
+  getMe,
 } = require("../controllers/authController");
+const { protect } = require("../middleware/authMiddleware");
 
 // ── Existing auth routes ──────────────────────────────────────────────────────
 
@@ -62,6 +64,11 @@ router.get("/google", initiateGoogleAuth);
 // @desc    Google OAuth callback handler
 // @access  Public
 router.get("/google/callback", googleAuthCallback);
+
+// @route   GET /api/auth/me
+// @desc    Get current authenticated user profile
+// @access  Private (Authenticated Users)
+router.get("/me", protect, getMe);
 
 module.exports = router;
 
