@@ -1504,14 +1504,16 @@ const verifyPayment = async (req, res) => {
 
       if (sessionPricing) {
         const session = await tx.liveSession.findUnique({
-          where: { id: booking.sessionId }
+          where: { id: booking.sessionId },
+          include: { trainer: true }
         });
 
         if (session) {
-          const trainerSharePercent = sessionPricing.trainerSharePercent;
+          const trainerSharePercentage = sessionPricing.trainerSharePercent;
           const grossAmountPaise = booking.amountPaise;
-          const trainerAmountPaise = Math.round(grossAmountPaise * (trainerSharePercent / 100));
-          const platformFeePaise = grossAmountPaise - trainerAmountPaise;
+          const trainerEarningPaise = Math.round(grossAmountPaise * (trainerSharePercentage / 100));
+          const platformSharePercentage = 100 - trainerSharePercentage;
+          const platformEarningPaise = grossAmountPaise - trainerEarningPaise;
 
           const sessionEnd = new Date(booking.sessionDate);
           sessionEnd.setHours(sessionEnd.getHours() + 2); // available after 2 hours
@@ -1520,18 +1522,30 @@ const verifyPayment = async (req, res) => {
             where: { bookingId: booking.id }
           });
 
-          if (!existingEarning) {
+          if (!existingEarning && session.trainer) {
             await tx.trainerEarning.create({
               data: {
                 trainerId: session.trainerId,
+                trainerName: session.trainer.fullName || "Trainer",
+                trainerEmail: session.trainer.email || "",
                 sessionId: booking.sessionId,
+                sessionTitle: session.title || "Live Session",
+                paidStudentCount: 1,
+                sessionPricePaise: sessionPricing.amountPaise,
+                grossRevenuePaise: grossAmountPaise,
+                trainerSharePercentage,
+                trainerEarningPaise,
+                platformSharePercentage,
+                platformEarningPaise,
+                refundAdjustmentPaise: 0,
+                finalPayablePaise: trainerEarningPaise,
+                status: "unpaid",
+                lockedAmountPaise: 0,
+                
+                // Legacy fields
                 sessionDate: booking.sessionDate,
                 bookingId: booking.id,
                 paymentId: updatedPayment.id,
-                grossAmountPaise,
-                platformFeePaise,
-                trainerAmountPaise,
-                status: "pending_session_completion",
                 availableAfter: sessionEnd
               }
             });

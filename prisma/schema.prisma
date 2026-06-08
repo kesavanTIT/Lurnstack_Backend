@@ -269,36 +269,48 @@ enum PaymentStatus {
 }
 
 model TrainerEarning {
-  id                 String               @id @default(uuid())
-  trainerId          Int
-  trainer            User                 @relation(name: "TrainerEarningRelation", fields: [trainerId], references: [id], onDelete: Cascade)
-  sessionId          String
-  session            LiveSession          @relation(name: "SessionEarningRelation", fields: [sessionId], references: [id], onDelete: Cascade)
-  sessionDate        DateTime
-  bookingId          String
-  booking            Booking              @relation(name: "BookingEarningRelation", fields: [bookingId], references: [id], onDelete: Cascade)
-  paymentId          String
-  payment            Payment              @relation(name: "PaymentEarningRelation", fields: [paymentId], references: [id], onDelete: Cascade)
-  grossAmountPaise   Int
-  platformFeePaise   Int
-  trainerAmountPaise Int
-  status             TrainerEarningStatus @default(pending_session_completion)
-  availableAfter     DateTime
-  paidAt             DateTime?
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  payoutRequestId    String?
-  payoutRequest      TrainerPayoutRequest? @relation(name: "PayoutRequestEarningRelation", fields: [payoutRequestId], references: [id], onDelete: SetNull)
+  id                      String               @id @default(uuid())
+  trainerId               Int
+  trainer                 User                 @relation(name: "TrainerEarningRelation", fields: [trainerId], references: [id], onDelete: Cascade)
+  trainerName             String
+  trainerEmail            String
+  sessionId               String
+  session                 LiveSession          @relation(name: "SessionEarningRelation", fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionTitle            String
+  paidStudentCount        Int
+  sessionPricePaise       Int
+  grossRevenuePaise       Int
+  trainerSharePercentage  Float
+  trainerEarningPaise     Int
+  platformSharePercentage Float
+  platformEarningPaise    Int
+  refundAdjustmentPaise   Int                  @default(0)
+  finalPayablePaise       Int
+  status                  TrainerEarningStatus @default(unpaid)
+  lockedAmountPaise       Int                  @default(0)
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  payoutRequestId         String?
+  payoutRequest           TrainerPayoutRequest? @relation(name: "PayoutRequestEarningRelation", fields: [payoutRequestId], references: [id], onDelete: SetNull)
+
+  // Legacy columns preserved as optional to prevent breaking references
+  sessionDate             DateTime?
+  bookingId               String?
+  booking                 Booking?             @relation(name: "BookingEarningRelation", fields: [bookingId], references: [id], onDelete: Cascade)
+  paymentId               String?
+  payment                 Payment?             @relation(name: "PaymentEarningRelation", fields: [paymentId], references: [id], onDelete: Cascade)
+  availableAfter          DateTime?
+  paidAt                  DateTime?
 }
 
 enum TrainerEarningStatus {
-  pending_session_completion
-  payable
+  unpaid
+  requested
+  approved
   processing
   paid
-  failed
-  on_hold
-  cancelled
+  rejected
+  adjusted
 }
 
 model TrainerPayout {
@@ -468,15 +480,18 @@ model TrainerPayoutAccount {
   trainer              User                       @relation(fields: [trainerId], references: [id], onDelete: Cascade)
   accountHolderName    String
   bankName             String
-  encryptedAccountNumber String
+  accountNumber        String                     // encrypted
   accountNumberLast4   String
   ifsc                 String
   upiId                String?
-  pan                  String?
+  pan                  String
   phoneNumber          String
-  accountType          String                     @default("bank_account")
   status               TrainerPayoutAccountStatus @default(pending)
   rejectionReason      String?
+  verifiedByAdminId    Int?
+  verifiedAt           DateTime?
+  rejectedByAdminId    Int?
+  rejectedAt           DateTime?
   isLocked             Boolean                    @default(false)
   createdAt            DateTime                   @default(now())
   updatedAt            DateTime                   @updatedAt
@@ -488,25 +503,45 @@ enum TrainerPayoutAccountStatus {
   rejected
 }
 
-model TrainerPayoutRequest {
-  id                   String                     @id @default(uuid())
-  trainerId            Int
-  trainer              User                       @relation(name: "TrainerPayoutRequestRelation", fields: [trainerId], references: [id], onDelete: Cascade)
-  requestedAmountPaise Int
-  status               TrainerPayoutRequestStatus @default(requested)
-  requestedDate        DateTime                   @default(now())
-  approvedAt           DateTime?
-  processingAt         DateTime?
-  paidAt               DateTime?
-  manualPaidDate       DateTime?
-  utrReference         String?
-  adminNote            String?
-  rejectionReason      String?
-  payoutAccountSnapshot Json                      // Stores the masked snapshot of the payout account at request time
-  createdAt            DateTime                   @default(now())
-  updatedAt            DateTime                   @updatedAt
+model TrainerPayoutAccountHistory {
+  id              String   @id @default(uuid())
+  payoutAccountId String
+  trainerId       Int
+  oldStatus       String
+  newStatus       String
+  adminId         Int?
+  adminName       String?  // snapshot nullable
+  note            String?
+  createdAt       DateTime @default(now())
+}
 
-  earnings             TrainerEarning[]           @relation(name: "PayoutRequestEarningRelation")
+model TrainerPayoutRequest {
+  id                             String                     @id @default(uuid())
+  trainerId                      Int
+  trainer                        User                       @relation(name: "TrainerPayoutRequestRelation", fields: [trainerId], references: [id], onDelete: Cascade)
+  trainerName                    String                     // snapshot
+  requestedAmountPaise           Int
+  availableBalanceAtRequestPaise Int
+  lockedAmountPaise              Int
+  status                         TrainerPayoutRequestStatus @default(requested)
+  payoutAccountSnapshot          Json                       // json
+  adminNote                      String?
+  rejectionReason                String?
+  approvedByAdminId              Int?
+  approvedAt                     DateTime?
+  rejectedByAdminId              Int?
+  rejectedAt                     DateTime?
+  processingByAdminId            Int?
+  processingAt                   DateTime?
+  paidByAdminId                  Int?
+  paidAt                         DateTime?
+  utrReference                   String?
+  manualPaidDate                 DateTime?
+  createdAt                      DateTime                   @default(now())
+  updatedAt                      DateTime                   @updatedAt
+
+  earnings                       TrainerEarning[]           @relation(name: "PayoutRequestEarningRelation")
+  history                        TrainerPayoutRequestHistory[]
 }
 
 enum TrainerPayoutRequestStatus {
@@ -515,5 +550,44 @@ enum TrainerPayoutRequestStatus {
   processing
   paid
   rejected
+}
+
+model TrainerPayoutRequestHistory {
+  id              String                     @id @default(uuid())
+  payoutRequestId String
+  payoutRequest   TrainerPayoutRequest       @relation(fields: [payoutRequestId], references: [id], onDelete: Cascade)
+  trainerId       Int
+  action          TrainerPayoutRequestAction
+  oldStatus       String
+  newStatus       String
+  adminId         Int?
+  adminName       String?                    // snapshot nullable
+  note            String?
+  createdAt       DateTime                   @default(now())
+}
+
+enum TrainerPayoutRequestAction {
+  requested
+  approved
+  rejected
+  processing
+  paid
+}
+
+model TrainerRefundAdjustment {
+  id          String   @id @default(uuid())
+  trainerId   Int
+  amountPaise Int
+  reason      String
+  isApplied   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model TrainerPayoutAuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  actorId   Int
+  details   Json
+  createdAt DateTime @default(now())
 }
 

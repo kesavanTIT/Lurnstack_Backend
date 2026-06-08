@@ -1,66 +1,7 @@
 const prisma = require("../config/db");
 const { encrypt, decrypt, maskAccountNumber } = require("../utils/encryption");
 
-// Helper to get clearing date based on 15-day cycle in Asia/Kolkata timezone
-const getClearingDate = (dateInput) => {
-  const date = new Date(dateInput);
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Kolkata",
-    day: "numeric",
-    month: "numeric",
-    year: "numeric"
-  });
-  const parts = formatter.formatToParts(date);
-  const partMap = {};
-  parts.forEach(p => { partMap[p.type] = p.value; });
-  
-  const day = parseInt(partMap.day, 10);
-  const month = parseInt(partMap.month, 10);
-  const year = parseInt(partMap.year, 10);
-  
-  if (day <= 15) {
-    return new Date(`${year}-${String(month).padStart(2, '0')}-16T00:00:00+05:30`);
-  } else {
-    const nextMonth = month === 12 ? 1 : month + 1;
-    const nextYear = month === 12 ? year + 1 : year;
-    return new Date(`${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00+05:30`);
-  }
-};
-
-// Helper to get current cycle info for payment-summary
-const getCurrentCycleInfo = (now = new Date()) => {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Kolkata",
-    day: "numeric",
-    month: "numeric",
-    year: "numeric"
-  });
-  const parts = formatter.formatToParts(now);
-  const partMap = {};
-  parts.forEach(p => { partMap[p.type] = p.value; });
-  
-  const day = parseInt(partMap.day, 10);
-  const month = parseInt(partMap.month, 10);
-  const year = parseInt(partMap.year, 10);
-  
-  let cycleStart, cycleEnd, nextPayoutDate;
-  if (day <= 15) {
-    cycleStart = new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00+05:30`);
-    cycleEnd = new Date(`${year}-${String(month).padStart(2, '0')}-15T23:59:59+05:30`);
-    nextPayoutDate = new Date(`${year}-${String(month).padStart(2, '0')}-16T00:00:00+05:30`);
-  } else {
-    cycleStart = new Date(`${year}-${String(month).padStart(2, '0')}-16T00:00:00+05:30`);
-    const lastDay = new Date(year, month, 0).getDate();
-    cycleEnd = new Date(`${year}-${String(month).padStart(2, '0')}-${lastDay}T23:59:59+05:30`);
-    const nextMonth = month === 12 ? 1 : month + 1;
-    const nextYear = month === 12 ? year + 1 : year;
-    nextPayoutDate = new Date(`${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00+05:30`);
-  }
-  
-  return { cycleStart, cycleEnd, nextPayoutDate };
-};
-
-// Helper to get boundary start date for uncleared earnings
+// Helper to get boundary start date for cycle clearing in Asia/Kolkata timezone
 const getBoundaryStartDate = (date = new Date()) => {
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Kolkata",
@@ -97,269 +38,62 @@ const validateTrainer = (req, res) => {
   return trainerId;
 };
 
-// ─────────────────────────────────────────────
-// 1. GET /api/trainer/payment-summary
-// ─────────────────────────────────────────────
-const getPaymentSummary = async (req, res) => {
+// 17. GET /api/trainer/payout-balance
+const getPayoutBalance = async (req, res) => {
   try {
     const trainerId = validateTrainer(req, res);
     if (!trainerId) return;
 
-    const account = await prisma.trainerPayoutAccount.findUnique({
-      where: { trainerId }
-    });
-    const payoutAccountStatus = account ? account.status : "missing";
-
-    const earnings = await prisma.trainerEarning.findMany({
-      where: { trainerId },
-      include: { payoutRequest: true }
-    });
-
-    const payoutRequests = await prisma.trainerPayoutRequest.findMany({
-      where: { trainerId }
-    });
-
-    const activeRequest = payoutRequests.find(pr => ["requested", "approved", "processing"].includes(pr.status));
-    const hasActiveRequest = !!activeRequest;
-    const activeRequestStatus = activeRequest ? activeRequest.status : null;
-
     const now = new Date();
     const boundary = getBoundaryStartDate(now);
 
-    let totalEarningsPaise = 0;
-    let pendingEarningsPaise = 0;
+    const earnings = await prisma.trainerEarning.findMany({
+      where: { trainerId },
+      include: { session: { select: { status: true } } }
+    });
+
+    const activeRequest = await prisma.trainerPayoutRequest.findFirst({
+      where: {
+        trainerId,
+        status: { in: ["requested", "approved", "processing"] }
+      }
+    });
+
     let availableBalancePaise = 0;
     let lockedAmountPaise = 0;
-    let requestedAmountPaise = 0;
     let paidAmountPaise = 0;
 
-    for (const earning of earnings) {
-      if (earning.status === "failed" || earning.status === "cancelled") {
-        continue;
+    for (const e of earnings) {
+      if (e.status === "unpaid" && e.session?.status === "ended" && e.createdAt < boundary) {
+        availableBalancePaise += e.trainerEarningPaise;
       }
-
-      const amount = earning.trainerAmountPaise;
-      totalEarningsPaise += amount;
-
-      if (earning.status === "pending_session_completion") {
-        pendingEarningsPaise += amount;
-        continue;
+      if (["requested", "approved", "processing"].includes(e.status)) {
+        lockedAmountPaise += e.trainerEarningPaise;
       }
-
-      if (earning.payoutRequest) {
-        const prStatus = earning.payoutRequest.status;
-        if (["requested", "approved", "processing"].includes(prStatus)) {
-          lockedAmountPaise += amount;
-        }
-        if (prStatus === "requested") {
-          requestedAmountPaise += amount;
-        }
-        if (prStatus === "paid") {
-          paidAmountPaise += amount;
-        }
-      } else {
-        if (earning.status === "payable") {
-          if (earning.createdAt < boundary) {
-            availableBalancePaise += amount;
-          } else {
-            pendingEarningsPaise += amount;
-          }
-        } else if (earning.status === "paid") {
-          paidAmountPaise += amount;
-        } else if (earning.status === "processing") {
-          lockedAmountPaise += amount;
-        }
+      if (e.status === "paid") {
+        paidAmountPaise += e.trainerEarningPaise;
       }
     }
-
-    const { cycleStart, cycleEnd, nextPayoutDate } = getCurrentCycleInfo(now);
-
-    let payoutBlockReason = null;
-    if (payoutAccountStatus === "missing") {
-      payoutBlockReason = "NO_PAYOUT_ACCOUNT";
-    } else if (payoutAccountStatus === "pending") {
-      payoutBlockReason = "ACCOUNT_PENDING_VERIFICATION";
-    } else if (payoutAccountStatus === "rejected") {
-      payoutBlockReason = "ACCOUNT_REJECTED";
-    } else if (hasActiveRequest) {
-      payoutBlockReason = "ACTIVE_REQUEST_EXISTS";
-    } else if (availableBalancePaise < 50000) {
-      payoutBlockReason = "INSUFFICIENT_BALANCE";
-    }
-
-    const isPayoutWindowOpen = !payoutBlockReason;
 
     return res.status(200).json({
       success: true,
       data: {
-        totalEarningsPaise,
-        pendingEarningsPaise,
         availableBalancePaise,
         lockedAmountPaise,
-        requestedAmountPaise,
         paidAmountPaise,
         minimumPayoutPaise: 50000,
         payoutCycleDays: 15,
-        cycleStart,
-        cycleEnd,
-        nextPayoutDate,
-        isPayoutWindowOpen,
-        hasActiveRequest,
-        activeRequestStatus,
-        payoutBlockReason,
-        payoutAccountStatus
+        hasActiveRequest: !!activeRequest,
+        activeRequestStatus: activeRequest ? activeRequest.status : null
       }
     });
   } catch (error) {
-    console.error("getPaymentSummary error:", error);
+    console.error("getPayoutBalance error:", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
-// ─────────────────────────────────────────────
-// 2. GET /api/trainer/session-earnings
-// ─────────────────────────────────────────────
-const getSessionEarnings = async (req, res) => {
-  try {
-    const trainerId = validateTrainer(req, res);
-    if (!trainerId) return;
-
-    const { status, search } = req.query;
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const skip = (page - 1) * limit;
-
-    const where = { trainerId };
-
-    if (search) {
-      where.session = {
-        title: {
-          contains: search,
-          mode: "insensitive"
-        }
-      };
-    }
-
-    const now = new Date();
-    const boundary = getBoundaryStartDate(now);
-
-    if (status) {
-      if (status === "pending") {
-        where.OR = [
-          { status: "pending_session_completion" },
-          { status: "payable", createdAt: { gte: boundary } }
-        ];
-      } else if (status === "available") {
-        where.status = "payable";
-        where.createdAt = { lt: boundary };
-        where.payoutRequestId = null;
-      } else if (status === "requested") {
-        where.payoutRequest = { status: "requested" };
-      } else if (status === "approved") {
-        where.payoutRequest = { status: "approved" };
-      } else if (status === "processing") {
-        where.OR = [
-          { payoutRequest: { status: "processing" } },
-          { status: "processing" }
-        ];
-      } else if (status === "paid") {
-        where.OR = [
-          { payoutRequest: { status: "paid" } },
-          { status: "paid" }
-        ];
-      } else if (status === "rejected") {
-        where.OR = [
-          { payoutRequest: { status: "rejected" } },
-          { status: "failed" }
-        ];
-      } else if (status === "adjusted") {
-        where.status = { in: ["on_hold", "cancelled"] };
-      }
-    }
-
-    const total = await prisma.trainerEarning.count({ where });
-    const totalPages = Math.ceil(total / limit);
-
-    const earnings = await prisma.trainerEarning.findMany({
-      where,
-      include: {
-        session: true,
-        payoutRequest: true
-      },
-      orderBy: { createdAt: "desc" },
-      skip,
-      take: limit
-    });
-
-    const mappedEarnings = earnings.map(earning => {
-      let finalStatus = "pending";
-      if (earning.payoutRequest) {
-        const prStatus = earning.payoutRequest.status;
-        if (prStatus === "requested") finalStatus = "requested";
-        else if (prStatus === "approved") finalStatus = "approved";
-        else if (prStatus === "processing") finalStatus = "processing";
-        else if (prStatus === "paid") finalStatus = "paid";
-        else if (prStatus === "rejected") finalStatus = "rejected";
-      } else {
-        if (earning.status === "pending_session_completion") {
-          finalStatus = "pending";
-        } else if (earning.status === "payable") {
-          if (earning.createdAt < boundary) {
-            finalStatus = "available";
-          } else {
-            finalStatus = "pending";
-          }
-        } else if (earning.status === "paid") {
-          finalStatus = "paid";
-        } else if (earning.status === "processing") {
-          finalStatus = "processing";
-        } else if (["on_hold", "cancelled"].includes(earning.status)) {
-          finalStatus = "adjusted";
-        } else if (earning.status === "failed") {
-          finalStatus = "rejected";
-        }
-      }
-
-      // Calculate share percent dynamically if possible
-      const gross = earning.grossAmountPaise || 1;
-      const trainerSharePercentage = parseFloat(((earning.trainerAmountPaise / gross) * 100).toFixed(2));
-
-      return {
-        id: earning.id,
-        sessionId: earning.sessionId,
-        sessionTitle: earning.session ? earning.session.title : "Live Session",
-        paidStudentCount: 1,
-        sessionPricePaise: earning.grossAmountPaise,
-        trainerSharePercentage,
-        trainerEarningPaise: earning.trainerAmountPaise,
-        refundAdjustmentPaise: 0,
-        finalPayablePaise: earning.trainerAmountPaise,
-        status: finalStatus,
-        availableFrom: getClearingDate(earning.createdAt),
-        createdAt: earning.createdAt,
-        updatedAt: earning.updatedAt
-      };
-    });
-
-    return res.status(200).json({
-      success: true,
-      data: mappedEarnings,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages
-      }
-    });
-  } catch (error) {
-    console.error("getSessionEarnings error:", error);
-    return res.status(500).json({ success: false, message: "Internal server error." });
-  }
-};
-
-// ─────────────────────────────────────────────
-// 3. GET /api/trainer/payout-account
-// ─────────────────────────────────────────────
+// 18. GET /api/trainer/payout-account
 const getPayoutAccount = async (req, res) => {
   try {
     const trainerId = validateTrainer(req, res);
@@ -370,19 +104,15 @@ const getPayoutAccount = async (req, res) => {
     });
 
     if (!account) {
-      return res.status(200).json({
-        success: true,
-        data: null
-      });
+      return res.status(200).json({ success: true, data: null });
     }
 
-    const decrypted = decrypt(account.encryptedAccountNumber);
+    const decrypted = decrypt(account.accountNumber);
     const masked = maskAccountNumber(decrypted);
 
     return res.status(200).json({
       success: true,
       data: {
-        id: account.id,
         accountHolderName: account.accountHolderName,
         bankName: account.bankName,
         maskedAccountNumber: masked,
@@ -391,12 +121,9 @@ const getPayoutAccount = async (req, res) => {
         upiId: account.upiId,
         pan: account.pan,
         phoneNumber: account.phoneNumber,
-        accountType: account.accountType,
         status: account.status,
         rejectionReason: account.rejectionReason,
-        isLocked: account.isLocked,
-        createdAt: account.createdAt,
-        updatedAt: account.updatedAt
+        isLocked: account.isLocked
       }
     });
   } catch (error) {
@@ -405,52 +132,33 @@ const getPayoutAccount = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// 4. POST /api/trainer/payout-account
-// ─────────────────────────────────────────────
+// 19. POST /api/trainer/payout-account
 const createPayoutAccount = async (req, res) => {
   try {
     const trainerId = validateTrainer(req, res);
     if (!trainerId) return;
 
-    const {
-      accountHolderName,
-      bankName,
-      accountNumber,
-      confirmAccountNumber,
-      ifsc,
-      ifscCode,
-      upiId,
-      pan,
-      panNumber,
-      phoneNumber,
-      accountType
-    } = req.body;
+    const { accountHolderName, bankName, accountNumber, ifsc, upiId, pan, phoneNumber } = req.body;
 
-    if (!accountHolderName || !bankName || !accountNumber || !confirmAccountNumber || !phoneNumber) {
+    if (!accountHolderName || !bankName || !accountNumber || !ifsc || !pan || !phoneNumber) {
       return res.status(400).json({ success: false, message: "Missing required fields." });
     }
 
-    if (accountNumber !== confirmAccountNumber) {
-      return res.status(400).json({ success: false, message: "Account numbers do not match." });
-    }
-
-    // Reject if active payout request exists
-    const activePayout = await prisma.trainerPayoutRequest.findFirst({
+    // Cannot submit if trainer has active payout request
+    const activeRequest = await prisma.trainerPayoutRequest.findFirst({
       where: {
         trainerId,
         status: { in: ["requested", "approved", "processing"] }
       }
     });
 
-    if (activePayout) {
+    if (activeRequest) {
       return res.status(400).json({
         success: false,
-        message: "Cannot create or update payout account while there is an active payout request."
+        message: "Cannot submit or update payout account while there is an active payout request."
       });
     }
 
-    // Check if account already exists
     const existingAccount = await prisma.trainerPayoutAccount.findUnique({
       where: { trainerId }
     });
@@ -462,45 +170,53 @@ const createPayoutAccount = async (req, res) => {
       });
     }
 
-    const encryptedAccountNumber = encrypt(accountNumber);
+    const encrypted = encrypt(accountNumber);
     const accountNumberLast4 = accountNumber.slice(-4);
-    const ifscToStore = ifsc || ifscCode;
-    const panToStore = pan || panNumber;
 
-    const newAccount = await prisma.trainerPayoutAccount.create({
+    const account = await prisma.trainerPayoutAccount.create({
       data: {
         trainerId,
         accountHolderName,
         bankName,
-        encryptedAccountNumber,
+        accountNumber: encrypted,
         accountNumberLast4,
-        ifsc: ifscToStore,
+        ifsc,
         upiId,
-        pan: panToStore,
+        pan,
         phoneNumber,
-        accountType: accountType || "bank_account",
-        status: "pending"
+        status: "pending",
+        isLocked: false
       }
     });
+
+    await prisma.trainerPayoutAccountHistory.create({
+      data: {
+        payoutAccountId: account.id,
+        trainerId,
+        oldStatus: "none",
+        newStatus: "pending",
+        adminId: null,
+        adminName: null,
+        note: "Payout account details submitted by trainer."
+      }
+    });
+
+    const masked = maskAccountNumber(accountNumber);
 
     return res.status(201).json({
       success: true,
       data: {
-        id: newAccount.id,
-        accountHolderName: newAccount.accountHolderName,
-        bankName: newAccount.bankName,
-        maskedAccountNumber: maskAccountNumber(accountNumber),
-        accountNumberLast4: newAccount.accountNumberLast4,
-        ifsc: newAccount.ifsc,
-        upiId: newAccount.upiId,
-        pan: newAccount.pan,
-        phoneNumber: newAccount.phoneNumber,
-        accountType: newAccount.accountType,
-        status: newAccount.status,
-        rejectionReason: newAccount.rejectionReason,
-        isLocked: newAccount.isLocked,
-        createdAt: newAccount.createdAt,
-        updatedAt: newAccount.updatedAt
+        accountHolderName: account.accountHolderName,
+        bankName: account.bankName,
+        maskedAccountNumber: masked,
+        accountNumberLast4: account.accountNumberLast4,
+        ifsc: account.ifsc,
+        upiId: account.upiId,
+        pan: account.pan,
+        phoneNumber: account.phoneNumber,
+        status: account.status,
+        rejectionReason: account.rejectionReason,
+        isLocked: account.isLocked
       }
     });
   } catch (error) {
@@ -509,40 +225,26 @@ const createPayoutAccount = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// 5. PATCH /api/trainer/payout-account
-// ─────────────────────────────────────────────
+// 20. PATCH /api/trainer/payout-account
 const updatePayoutAccount = async (req, res) => {
   try {
     const trainerId = validateTrainer(req, res);
     if (!trainerId) return;
 
-    const {
-      accountHolderName,
-      bankName,
-      accountNumber,
-      confirmAccountNumber,
-      ifsc,
-      ifscCode,
-      upiId,
-      pan,
-      panNumber,
-      phoneNumber,
-      accountType
-    } = req.body;
+    const { accountHolderName, bankName, accountNumber, ifsc, upiId, pan, phoneNumber } = req.body;
 
-    // Reject if active payout request exists
-    const activePayout = await prisma.trainerPayoutRequest.findFirst({
+    // Cannot change if trainer has active payout request
+    const activeRequest = await prisma.trainerPayoutRequest.findFirst({
       where: {
         trainerId,
         status: { in: ["requested", "approved", "processing"] }
       }
     });
 
-    if (activePayout) {
+    if (activeRequest) {
       return res.status(400).json({
         success: false,
-        message: "Cannot create or update payout account while there is an active payout request."
+        message: "Cannot submit or update payout account while there is an active payout request."
       });
     }
 
@@ -553,70 +255,62 @@ const updatePayoutAccount = async (req, res) => {
     if (!existingAccount) {
       return res.status(404).json({
         success: false,
-        message: "Payout account not found. Please create one first."
+        message: "Payout account not found. Please submit account details first."
       });
     }
 
     const updateData = {};
     if (accountHolderName !== undefined) updateData.accountHolderName = accountHolderName;
     if (bankName !== undefined) updateData.bankName = bankName;
-    if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
-    if (accountType !== undefined) updateData.accountType = accountType;
+    if (ifsc !== undefined) updateData.ifsc = ifsc;
     if (upiId !== undefined) updateData.upiId = upiId;
+    if (pan !== undefined) updateData.pan = pan;
+    if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
 
-    const ifscToStore = ifsc || ifscCode;
-    if (ifscToStore !== undefined) updateData.ifsc = ifscToStore;
-
-    const panToStore = pan || panNumber;
-    if (panToStore !== undefined) updateData.pan = panToStore;
-
-    if (accountNumber !== undefined || confirmAccountNumber !== undefined) {
-      if (!accountNumber || !confirmAccountNumber) {
-        return res.status(400).json({
-          success: false,
-          message: "Both accountNumber and confirmAccountNumber must be provided to update the account number."
-        });
-      }
-      if (accountNumber !== confirmAccountNumber) {
-        return res.status(400).json({
-          success: false,
-          message: "Account numbers do not match."
-        });
-      }
-      updateData.encryptedAccountNumber = encrypt(accountNumber);
+    if (accountNumber !== undefined) {
+      updateData.accountNumber = encrypt(accountNumber);
       updateData.accountNumberLast4 = accountNumber.slice(-4);
     }
 
-    // Any update resets status to pending and clears rejectionReason
+    // Any update resets status to pending
+    const oldStatus = existingAccount.status;
     updateData.status = "pending";
     updateData.rejectionReason = null;
 
-    const updatedAccount = await prisma.trainerPayoutAccount.update({
+    const updated = await prisma.trainerPayoutAccount.update({
       where: { trainerId },
       data: updateData
     });
 
-    const decrypted = decrypt(updatedAccount.encryptedAccountNumber);
+    await prisma.trainerPayoutAccountHistory.create({
+      data: {
+        payoutAccountId: updated.id,
+        trainerId,
+        oldStatus,
+        newStatus: "pending",
+        adminId: null,
+        adminName: null,
+        note: "Payout account details updated by trainer."
+      }
+    });
+
+    const decrypted = decrypt(updated.accountNumber);
     const masked = maskAccountNumber(decrypted);
 
     return res.status(200).json({
       success: true,
       data: {
-        id: updatedAccount.id,
-        accountHolderName: updatedAccount.accountHolderName,
-        bankName: updatedAccount.bankName,
+        accountHolderName: updated.accountHolderName,
+        bankName: updated.bankName,
         maskedAccountNumber: masked,
-        accountNumberLast4: updatedAccount.accountNumberLast4,
-        ifsc: updatedAccount.ifsc,
-        upiId: updatedAccount.upiId,
-        pan: updatedAccount.pan,
-        phoneNumber: updatedAccount.phoneNumber,
-        accountType: updatedAccount.accountType,
-        status: updatedAccount.status,
-        rejectionReason: updatedAccount.rejectionReason,
-        isLocked: updatedAccount.isLocked,
-        createdAt: updatedAccount.createdAt,
-        updatedAt: updatedAccount.updatedAt
+        accountNumberLast4: updated.accountNumberLast4,
+        ifsc: updated.ifsc,
+        upiId: updated.upiId,
+        pan: updated.pan,
+        phoneNumber: updated.phoneNumber,
+        status: updated.status,
+        rejectionReason: updated.rejectionReason,
+        isLocked: updated.isLocked
       }
     });
   } catch (error) {
@@ -625,16 +319,92 @@ const updatePayoutAccount = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// 6. POST /api/trainer/payout-requests
-// ─────────────────────────────────────────────
+// 21. GET /api/trainer/payout-requests
+const getPayoutRequests = async (req, res) => {
+  try {
+    const trainerId = validateTrainer(req, res);
+    if (!trainerId) return;
+
+    const { status } = req.query;
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip = (page - 1) * limit;
+
+    const where = { trainerId };
+    if (status) where.status = status;
+
+    const total = await prisma.trainerPayoutRequest.count({ where });
+    const totalPages = Math.ceil(total / limit);
+
+    const requests = await prisma.trainerPayoutRequest.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: limit
+    });
+
+    const formatted = requests.map(r => ({
+      id: r.id,
+      requestedAmountPaise: r.requestedAmountPaise,
+      status: r.status,
+      requestedDate: r.createdAt,
+      utrReference: r.status === "paid" ? r.utrReference : undefined,
+      manualPaidDate: r.status === "paid" ? r.manualPaidDate : undefined,
+      adminNote: r.status === "rejected" ? r.rejectionReason : r.adminNote
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: formatted,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages
+      }
+    });
+  } catch (error) {
+    console.error("getPayoutRequests error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+// 22. GET /api/trainer/payout-requests/:requestId
+const getPayoutRequestById = async (req, res) => {
+  try {
+    const trainerId = validateTrainer(req, res);
+    if (!trainerId) return;
+
+    const { requestId } = req.params;
+    const request = await prisma.trainerPayoutRequest.findUnique({
+      where: { id: requestId }
+    });
+
+    if (!request) {
+      return res.status(404).json({ success: false, message: "Payout request not found." });
+    }
+
+    if (request.trainerId !== trainerId) {
+      return res.status(403).json({ success: false, message: "Access denied. You can only view your own payout requests." });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: request
+    });
+  } catch (error) {
+    console.error("getPayoutRequestById error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+// 23. POST /api/trainer/payout-requests
 const createPayoutRequest = async (req, res) => {
   try {
     const trainerId = validateTrainer(req, res);
     if (!trainerId) return;
 
     const { amountPaise } = req.body;
-
     if (!amountPaise || typeof amountPaise !== "number" || amountPaise < 50000) {
       return res.status(400).json({
         success: false,
@@ -673,14 +443,14 @@ const createPayoutRequest = async (req, res) => {
     const availableEarnings = await prisma.trainerEarning.findMany({
       where: {
         trainerId,
-        status: "payable",
-        createdAt: { lt: boundary },
-        payoutRequestId: null
+        status: "unpaid",
+        session: { status: "ended" },
+        createdAt: { lt: boundary }
       },
       orderBy: { createdAt: "asc" }
     });
 
-    const availableBalancePaise = availableEarnings.reduce((sum, e) => sum + e.trainerAmountPaise, 0);
+    const availableBalancePaise = availableEarnings.reduce((sum, e) => sum + e.trainerEarningPaise, 0);
 
     if (amountPaise > availableBalancePaise) {
       return res.status(400).json({
@@ -689,39 +459,47 @@ const createPayoutRequest = async (req, res) => {
       });
     }
 
-    // Select subset of earnings to satisfy the requested amount
+    // Select subset of earnings to satisfy requested amount
     let selectedEarnings = [];
     let accumulated = 0;
-    for (const earning of availableEarnings) {
-      selectedEarnings.push(earning);
-      accumulated += earning.trainerAmountPaise;
+    for (const e of availableEarnings) {
+      selectedEarnings.push(e);
+      accumulated += e.trainerEarningPaise;
       if (accumulated >= amountPaise) {
         break;
       }
     }
 
-    const decryptedAcc = decrypt(account.encryptedAccountNumber);
-    const maskedAcc = maskAccountNumber(decryptedAcc);
+    const decrypted = decrypt(account.accountNumber);
+    const masked = maskAccountNumber(decrypted);
 
-    const payoutAccountSnapshot = {
+    const snapshot = {
       accountHolderName: account.accountHolderName,
       bankName: account.bankName,
-      maskedAccountNumber: maskedAcc,
+      maskedAccountNumber: masked,
       accountNumberLast4: account.accountNumberLast4,
       ifsc: account.ifsc,
       upiId: account.upiId,
       pan: account.pan,
       phoneNumber: account.phoneNumber,
-      accountType: account.accountType
+      accountType: "bank_account"
     };
+
+    const trainerUser = await prisma.user.findUnique({
+      where: { id: trainerId }
+    });
+    const trainerName = trainerUser ? trainerUser.fullName : "Trainer";
 
     const newRequest = await prisma.$transaction(async (tx) => {
       const request = await tx.trainerPayoutRequest.create({
         data: {
           trainerId,
+          trainerName,
           requestedAmountPaise: amountPaise,
+          availableBalanceAtRequestPaise: availableBalancePaise,
+          lockedAmountPaise: amountPaise,
           status: "requested",
-          payoutAccountSnapshot
+          payoutAccountSnapshot: snapshot
         }
       });
 
@@ -730,7 +508,22 @@ const createPayoutRequest = async (req, res) => {
           id: { in: selectedEarnings.map(e => e.id) }
         },
         data: {
-          payoutRequestId: request.id
+          payoutRequestId: request.id,
+          status: "requested",
+          lockedAmountPaise: amountPaise // mark locked on earning
+        }
+      });
+
+      await tx.trainerPayoutRequestHistory.create({
+        data: {
+          payoutRequestId: request.id,
+          trainerId,
+          action: "requested",
+          oldStatus: "none",
+          newStatus: "requested",
+          adminId: null,
+          adminName: null,
+          note: "Payout request submitted by trainer."
         }
       });
 
@@ -747,95 +540,12 @@ const createPayoutRequest = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// 7. GET /api/trainer/payout-requests
-// ─────────────────────────────────────────────
-const getPayoutRequests = async (req, res) => {
-  try {
-    const trainerId = validateTrainer(req, res);
-    if (!trainerId) return;
-
-    const { status } = req.query;
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const skip = (page - 1) * limit;
-
-    const where = { trainerId };
-    if (status) {
-      where.status = status;
-    }
-
-    const total = await prisma.trainerPayoutRequest.count({ where });
-    const totalPages = Math.ceil(total / limit);
-
-    const requests = await prisma.trainerPayoutRequest.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip,
-      take: limit
-    });
-
-    return res.status(200).json({
-      success: true,
-      data: requests,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages
-      }
-    });
-  } catch (error) {
-    console.error("getPayoutRequests error:", error);
-    return res.status(500).json({ success: false, message: "Internal server error." });
-  }
-};
-
-// ─────────────────────────────────────────────
-// 8. GET /api/trainer/payout-requests/:requestId
-// ─────────────────────────────────────────────
-const getPayoutRequestById = async (req, res) => {
-  try {
-    const trainerId = validateTrainer(req, res);
-    if (!trainerId) return;
-
-    const { requestId } = req.params;
-
-    const request = await prisma.trainerPayoutRequest.findUnique({
-      where: { id: requestId }
-    });
-
-    if (!request) {
-      return res.status(404).json({
-        success: false,
-        message: "Payout request not found."
-      });
-    }
-
-    if (request.trainerId !== trainerId) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. You can only access your own payout requests."
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: request
-    });
-  } catch (error) {
-    console.error("getPayoutRequestById error:", error);
-    return res.status(500).json({ success: false, message: "Internal server error." });
-  }
-};
-
 module.exports = {
-  getPaymentSummary,
-  getSessionEarnings,
+  getPayoutBalance,
   getPayoutAccount,
   createPayoutAccount,
   updatePayoutAccount,
-  createPayoutRequest,
   getPayoutRequests,
-  getPayoutRequestById
+  getPayoutRequestById,
+  createPayoutRequest
 };

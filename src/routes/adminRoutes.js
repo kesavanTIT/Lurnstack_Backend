@@ -21,18 +21,32 @@ const {
   logoutAdmin,
 } = require("../controllers/adminAuthController");
 const {
-  getAdminSessions,
   getAdminSessionById,
-  updateSessionPricing,
   getAdminPayments,
   getAdminPaymentById,
   getSessionRevenue,
-  getAdminTrainerEarnings,
-  markTrainerEarningPaid,
-  toggleTrainerEarningHold,
   refundPayment,
   updatePaymentSettings,
 } = require("../controllers/adminPaymentController");
+
+const {
+  getAdminTrainerEarnings,
+  getAdminTrainerEarningById,
+  getAdminSessionsPricingRef,
+  updateAdminSessionPricing,
+  getAdminTrainerPayoutAccounts,
+  getAdminTrainerPayoutAccountById,
+  verifyAdminTrainerPayoutAccount,
+  rejectAdminTrainerPayoutAccount,
+  getAdminTrainerPayoutAccountHistory,
+  getAdminTrainerPayoutRequests,
+  getAdminTrainerPayoutRequestById,
+  approveAdminTrainerPayoutRequest,
+  rejectAdminTrainerPayoutRequest,
+  processingAdminTrainerPayoutRequest,
+  paidAdminTrainerPayoutRequest,
+  getAdminTrainerPayoutRequestHistory
+} = require("../controllers/adminPayoutController");
 const {
   reviewAndPublishSession,
   getPendingReviewSessions,
@@ -78,23 +92,40 @@ router.put("/update-live-class/:classId", upload.single("thumbnail"), updateLive
 router.delete("/delete-live-class/:classId", deleteLiveClass);
 
 // ── Admin Payments & Pricing Management ───────────
-router.get("/sessions", getAdminSessions);
+router.get("/sessions", getAdminSessionsPricingRef);
 // NOTE: Specific sub-routes MUST be declared before the generic /:sessionId route
 // to prevent Express from matching "revenue" as a sessionId value.
 router.get("/sessions/pending-review", getPendingReviewSessions);
 router.get("/sessions/:sessionId/revenue", getSessionRevenue);
 router.get("/sessions/:sessionId", getAdminSessionById);
-router.patch("/sessions/:sessionId/pricing", updateSessionPricing);
+router.patch("/sessions/:sessionId/pricing", updateAdminSessionPricing);
 // ── Admin Session Review & Publish ────────────────
 // PUT /api/admin/sessions/:sessionId/review  → Admin sets price + publishes session
 router.put("/sessions/:sessionId/review", reviewAndPublishSession);
 router.get("/payments", getAdminPayments);
 router.get("/payments/:paymentId", getAdminPaymentById);
-router.get("/trainer-earnings", getAdminTrainerEarnings);
-router.post("/trainer-earnings/:earningId/mark-paid", markTrainerEarningPaid);
-router.post("/trainer-earnings/:earningId/hold", toggleTrainerEarningHold);
 router.post("/payments/:paymentId/refund", refundPayment);
 router.patch("/payment-settings", updatePaymentSettings);
+
+// ── Admin Trainer Earnings Endpoints ────────────────
+router.get("/trainer-earnings", getAdminTrainerEarnings);
+router.get("/trainer-earnings/:earningId", getAdminTrainerEarningById);
+
+// ── Admin Trainer Payout Accounts Endpoints ──────────
+router.get("/trainer-payout-accounts", getAdminTrainerPayoutAccounts);
+router.get("/trainer-payout-accounts/:accountId", getAdminTrainerPayoutAccountById);
+router.patch("/trainer-payout-accounts/:accountId/verify", verifyAdminTrainerPayoutAccount);
+router.patch("/trainer-payout-accounts/:accountId/reject", rejectAdminTrainerPayoutAccount);
+router.get("/trainer-payout-accounts/:accountId/history", getAdminTrainerPayoutAccountHistory);
+
+// ── Admin Trainer Payout Requests Endpoints ──────────
+router.get("/trainer-payout-requests", getAdminTrainerPayoutRequests);
+router.get("/trainer-payout-requests/:requestId", getAdminTrainerPayoutRequestById);
+router.patch("/trainer-payout-requests/:requestId/approve", approveAdminTrainerPayoutRequest);
+router.patch("/trainer-payout-requests/:requestId/reject", rejectAdminTrainerPayoutRequest);
+router.patch("/trainer-payout-requests/:requestId/processing", processingAdminTrainerPayoutRequest);
+router.patch("/trainer-payout-requests/:requestId/paid", paidAdminTrainerPayoutRequest);
+router.get("/trainer-payout-requests/:requestId/history", getAdminTrainerPayoutRequestHistory);
 
 // ── Admin Attendance Endpoints ────────────────────
 router.get("/attendance", getAllAttendanceRecords);

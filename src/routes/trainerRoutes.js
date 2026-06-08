@@ -17,14 +17,13 @@ const {
 } = require("../controllers/trainerSessionController");
 
 const {
-  getPaymentSummary,
-  getSessionEarnings,
+  getPayoutBalance,
   getPayoutAccount,
   createPayoutAccount,
   updatePayoutAccount,
-  createPayoutRequest,
   getPayoutRequests,
   getPayoutRequestById,
+  createPayoutRequest,
 } = require("../controllers/trainerPaymentController");
 
 const {
@@ -81,14 +80,13 @@ router.delete("/sessions/:sessionId/cancel-today", uncancelTodaySession);
 router.delete("/sessions/:sessionId", deleteTrainerSession);
 
 // ── Trainer Earnings & Payouts Endpoints ────────────────
-router.get("/payment-summary", getPaymentSummary);
-router.get("/session-earnings", getSessionEarnings);
+router.get("/payout-balance", getPayoutBalance);
 router.get("/payout-account", getPayoutAccount);
 router.post("/payout-account", createPayoutAccount);
 router.patch("/payout-account", updatePayoutAccount);
-router.post("/payout-requests", createPayoutRequest);
 router.get("/payout-requests", getPayoutRequests);
 router.get("/payout-requests/:requestId", getPayoutRequestById);
+router.post("/payout-requests", createPayoutRequest);
 
 // ── Trainer Attendance Endpoints ─────────────────────────
 router.get("/courses/:courseId/attendance-summary", getCourseAttendanceSummary);
