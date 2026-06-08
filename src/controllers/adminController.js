@@ -666,6 +666,7 @@ const testSessionReminderWhatsapp = async (req, res) => {
     }
 
     const result = await sendSessionReminderWhatsApp({
+      phone: studentPhone,
       studentPhone,
       studentName: studentName || "Test Student",
       sessionTitle: sessionTitle || "Test Live Session",

@@ -129,6 +129,7 @@ const sendWhatsappTemplate = async ({ to, templateName, languageCode }) => {
  */
 const sendWhatsAppReminder = async ({
   phone,
+  studentPhone,
   userId,
   sessionId,
   reminderType = "session_reminder_5min",
@@ -138,6 +139,7 @@ const sendWhatsAppReminder = async ({
   trainerName = "Infant",
   buttonUrl,
 }) => {
+  const targetPhone = phone || studentPhone;
   const isEnabled = process.env.WHATSAPP_ENABLED === "true";
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -147,7 +149,7 @@ const sendWhatsAppReminder = async ({
 
   // Check if WhatsApp is enabled
   if (!isEnabled) {
-    console.log(`[WHATSAPP] 🧪 WhatsApp sending is disabled via WHATSAPP_ENABLED config. (To: ${phone})`);
+    console.log(`[WHATSAPP] 🧪 WhatsApp sending is disabled via WHATSAPP_ENABLED config. (To: ${targetPhone})`);
     return { success: false, error: "WhatsApp integration is disabled" };
   }
 
@@ -159,9 +161,9 @@ const sendWhatsAppReminder = async ({
   }
 
   // Normalize phone number
-  const normalizedPhone = normalizeWhatsappPhone(phone);
+  const normalizedPhone = normalizeWhatsappPhone(targetPhone);
   if (!normalizedPhone) {
-    const errorMsg = `Invalid phone number format: ${phone}`;
+    const errorMsg = `Invalid phone number format: ${targetPhone}`;
     console.error(`[WHATSAPP] ❌ Validation Error: ${errorMsg}`);
     return { success: false, error: errorMsg };
   }
