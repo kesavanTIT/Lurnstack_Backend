@@ -582,14 +582,15 @@ const getAdminTrainerPayoutRequestById = async (req, res) => {
     const now = new Date();
     const boundary = getBoundaryStartDate(now);
 
-    const PAYOUT_TEST_MODE = process.env.PAYOUT_TEST_MODE === "true";
+    console.log("PAYOUT_TEST_MODE (admin)", process.env.PAYOUT_TEST_MODE);
+    const isPayoutTestMode = process.env.PAYOUT_TEST_MODE !== undefined && String(process.env.PAYOUT_TEST_MODE).trim().toLowerCase() === "true";
 
     const totalUnpaidEarningsPaise = earnings
       .filter(e => e.status === "unpaid")
       .reduce((sum, e) => sum + e.finalPayablePaise, 0);
 
     let cycleClearedEarningsPaise = 0;
-    if (PAYOUT_TEST_MODE) {
+    if (isPayoutTestMode) {
       cycleClearedEarningsPaise = totalUnpaidEarningsPaise;
     } else {
       cycleClearedEarningsPaise = earnings

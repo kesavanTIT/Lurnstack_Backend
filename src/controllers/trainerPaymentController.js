@@ -78,9 +78,10 @@ const validateTrainer = (req, res) => {
 
 // Helper to calculate trainer payout balance
 const getTrainerPayoutBalanceHelper = async (trainerId) => {
-  const PAYOUT_TEST_MODE = process.env.PAYOUT_TEST_MODE === "true";
+  console.log("PAYOUT_TEST_MODE", process.env.PAYOUT_TEST_MODE);
+  const isPayoutTestMode = process.env.PAYOUT_TEST_MODE !== undefined && String(process.env.PAYOUT_TEST_MODE).trim().toLowerCase() === "true";
   const TEST_PAYOUT_IGNORE_MINIMUM = process.env.TEST_PAYOUT_IGNORE_MINIMUM === "true";
-  const minimumPayoutPaise = (PAYOUT_TEST_MODE && TEST_PAYOUT_IGNORE_MINIMUM) ? 0 : 50000;
+  const minimumPayoutPaise = (isPayoutTestMode && TEST_PAYOUT_IGNORE_MINIMUM) ? 0 : 50000;
 
   const unpaidEarnings = await prisma.trainerEarning.findMany({
     where: {
@@ -109,7 +110,7 @@ const getTrainerPayoutBalanceHelper = async (trainerId) => {
   let pendingCycleEarningsPaise = 0;
   let isCycleOpen = true;
 
-  if (PAYOUT_TEST_MODE) {
+  if (isPayoutTestMode) {
     cycleClearedEarningsPaise = totalUnpaidEarningsPaise;
     pendingCycleEarningsPaise = 0;
     isCycleOpen = true;
@@ -166,7 +167,7 @@ const getTrainerPayoutBalanceHelper = async (trainerId) => {
     hasActiveRequest,
     canRequest,
     blockReason,
-    testMode: PAYOUT_TEST_MODE,
+    testMode: isPayoutTestMode,
     unpaidEarnings,
     boundary,
     account
