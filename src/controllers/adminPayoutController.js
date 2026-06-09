@@ -577,17 +577,25 @@ const getAdminTrainerPayoutRequestById = async (req, res) => {
         status: { in: ["requested", "approved", "processing"] }
       }
     });
+
+    const paidPayoutRequests = await prisma.trainerPayoutRequest.findMany({
+      where: {
+        trainerId: request.trainerId,
+        status: "paid"
+      }
+    });
+
     const lockedAmountPaise = activePayoutRequests.reduce((sum, r) => sum + r.requestedAmountPaise, 0);
+    const totalPaidPaise = paidPayoutRequests.reduce((sum, r) => sum + r.requestedAmountPaise, 0);
 
-    const totalUnpaidEarningsPaise = earnings
-      .filter(e => e.status === "unpaid")
+    const excludedStatuses = ["rejected", "adjusted", "pending_session_completion", "failed", "cancelled", "on_hold"];
+    const totalEarnedPaise = earnings
+      .filter(e => !excludedStatuses.includes(e.status))
       .reduce((sum, e) => sum + e.finalPayablePaise, 0);
 
-    const availableBalancePaise = Math.max(totalUnpaidEarningsPaise - lockedAmountPaise, 0);
+    const availableBalancePaise = Math.max(totalEarnedPaise - totalPaidPaise - lockedAmountPaise, 0);
 
-    const paidAmountPaise = earnings
-      .filter(e => e.status === "paid")
-      .reduce((sum, e) => sum + e.finalPayablePaise, 0);
+    const paidAmountPaise = totalPaidPaise;
 
     return res.status(200).json({
       success: true,

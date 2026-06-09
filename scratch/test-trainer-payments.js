@@ -415,6 +415,40 @@ async function runTests() {
     }
   }
 
+  // 12b. Test GET Payment Summary (after payout request is marked paid partially)
+  {
+    console.log("\n--- Test: GET Payment Summary (after payout request is marked paid partially) ---");
+    // Simulate admin marking the request as paid for 100000 paise instead of 120000 paise
+    await prisma.trainerPayoutRequest.update({
+      where: { id: payoutRequestId },
+      data: {
+        status: "paid",
+        requestedAmountPaise: 100000
+      }
+    });
+
+    // Also simulate that earnings are marked as paid
+    await prisma.trainerEarning.updateMany({
+      where: { payoutRequestId },
+      data: { status: "paid" }
+    });
+
+    const res = mockRes();
+    await getPaymentSummary(req, res);
+    console.log("Status:", res.statusCode);
+    console.log("Body:", res.body.data);
+
+    if (res.body.data.availableBalancePaise !== 20000) {
+      throw new Error(`Expected availableBalancePaise to be 20000, got ${res.body.data.availableBalancePaise}`);
+    }
+    if (res.body.data.isPayoutWindowOpen !== false) {
+      throw new Error("Expected isPayoutWindowOpen to be false");
+    }
+    if (res.body.data.payoutBlockReason !== "INSUFFICIENT_BALANCE") {
+      throw new Error(`Expected payoutBlockReason to be INSUFFICIENT_BALANCE, got ${res.body.data.payoutBlockReason}`);
+    }
+  }
+
   // 13. Clean up
   console.log("\nCleaning up test data...");
   await prisma.trainerEarning.deleteMany({ where: { trainerId: testTrainer.id } });

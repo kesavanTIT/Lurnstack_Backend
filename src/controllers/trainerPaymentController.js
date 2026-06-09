@@ -78,12 +78,11 @@ const validateTrainer = (req, res) => {
 
 // Helper to calculate trainer payout balance
 const getTrainerPayoutBalanceHelper = async (trainerId) => {
-  const unpaidEarnings = await prisma.trainerEarning.findMany({
-    where: {
-      trainerId,
-      status: "unpaid"
-    }
+  const earnings = await prisma.trainerEarning.findMany({
+    where: { trainerId }
   });
+
+  const unpaidEarnings = earnings.filter(e => e.status === "unpaid" || e.status === "payable");
 
   const activePayoutRequests = await prisma.trainerPayoutRequest.findMany({
     where: {
@@ -92,19 +91,23 @@ const getTrainerPayoutBalanceHelper = async (trainerId) => {
     }
   });
 
+  const paidPayoutRequests = await prisma.trainerPayoutRequest.findMany({
+    where: {
+      trainerId,
+      status: "paid"
+    }
+  });
+
   const lockedAmountPaise = activePayoutRequests.reduce((sum, r) => sum + r.requestedAmountPaise, 0);
+  const totalPaidPaise = paidPayoutRequests.reduce((sum, r) => sum + r.requestedAmountPaise, 0);
   const hasActiveRequest = activePayoutRequests.length > 0;
 
-  const now = new Date();
-  const { cycleStart, cycleEnd } = getCurrentCycleInfo(now);
+  const excludedStatuses = ["rejected", "adjusted", "pending_session_completion", "failed", "cancelled", "on_hold"];
+  const totalEarnedPaise = earnings
+    .filter(e => !excludedStatuses.includes(e.status))
+    .reduce((sum, e) => sum + e.finalPayablePaise, 0);
 
-  const totalUnpaidEarningsPaise = unpaidEarnings.reduce((sum, e) => sum + e.finalPayablePaise, 0);
-
-  const cycleClearedEarningsPaise = totalUnpaidEarningsPaise;
-  const pendingCycleEarningsPaise = 0;
-  const isCycleOpen = true;
-
-  const availableBalancePaise = Math.max(totalUnpaidEarningsPaise - lockedAmountPaise, 0);
+  const availableBalancePaise = Math.max(totalEarnedPaise - totalPaidPaise - lockedAmountPaise, 0);
 
   const account = await prisma.trainerPayoutAccount.findUnique({
     where: { trainerId }
@@ -128,16 +131,21 @@ const getTrainerPayoutBalanceHelper = async (trainerId) => {
 
   const canRequest = !blockReason;
 
+  const now = new Date();
+  const { cycleStart, cycleEnd } = getCurrentCycleInfo(now);
+
   return {
-    totalUnpaidEarningsPaise,
-    cycleClearedEarningsPaise,
-    pendingCycleEarningsPaise,
+    totalEarnedPaise,
+    totalPaidPaise,
+    totalUnpaidEarningsPaise: totalEarnedPaise,
+    cycleClearedEarningsPaise: totalEarnedPaise,
+    pendingCycleEarningsPaise: 0,
     lockedAmountPaise,
     availableBalancePaise,
     minimumPayoutPaise: 50000,
     cycleStartDate: formatDate(cycleStart),
     cycleEndDate: formatDate(cycleEnd),
-    isCycleOpen,
+    isCycleOpen: true,
     hasActiveRequest,
     canRequest,
     blockReason,
@@ -155,39 +163,19 @@ const getPaymentSummary = async (req, res) => {
 
     const balanceData = await getTrainerPayoutBalanceHelper(trainerId);
 
-    const earnings = await prisma.trainerEarning.findMany({
-      where: { trainerId }
-    });
-
-    let totalEarningsPaise = 0;
-    let paidAmountPaise = 0;
-    let requestedAmountPaise = 0;
-
-    for (const e of earnings) {
-      if (e.status === "rejected" || e.status === "adjusted") {
-        continue;
-      }
-      const amount = e.finalPayablePaise;
-      totalEarningsPaise += amount;
-
-      if (e.status === "paid") {
-        paidAmountPaise += amount;
-      } else if (e.status === "requested") {
-        requestedAmountPaise += amount;
-      }
-    }
-
     const { nextPayoutDate } = getCurrentCycleInfo(new Date());
 
     return res.status(200).json({
       success: true,
       data: {
-        totalEarningsPaise,
+        totalEarningsPaise: balanceData.totalEarnedPaise,
+        totalEarnedPaise: balanceData.totalEarnedPaise,
+        totalPaidPaise: balanceData.totalPaidPaise,
         pendingEarningsPaise: balanceData.pendingCycleEarningsPaise,
         availableBalancePaise: balanceData.availableBalancePaise,
         lockedAmountPaise: balanceData.lockedAmountPaise,
-        requestedAmountPaise,
-        paidAmountPaise,
+        requestedAmountPaise: balanceData.lockedAmountPaise,
+        paidAmountPaise: balanceData.totalPaidPaise,
         minimumPayoutPaise: balanceData.minimumPayoutPaise,
         payoutCycleDays: 15,
         cycleStart: balanceData.cycleStartDate,
@@ -220,6 +208,8 @@ const getPayoutBalance = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: {
+        totalEarnedPaise: balanceData.totalEarnedPaise,
+        totalPaidPaise: balanceData.totalPaidPaise,
         totalUnpaidEarningsPaise: balanceData.totalUnpaidEarningsPaise,
         cycleClearedEarningsPaise: balanceData.cycleClearedEarningsPaise,
         pendingCycleEarningsPaise: balanceData.pendingCycleEarningsPaise,
