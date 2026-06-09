@@ -233,20 +233,24 @@ const getPayoutBalance = async (req, res) => {
 
 
 // 2. GET /api/trainer/session-earnings
+// 2. GET /api/trainer/session-earnings
 const getSessionEarnings = async (req, res) => {
   try {
     const trainerId = validateTrainer(req, res);
     if (!trainerId) return;
 
-    const { status, search } = req.query;
+    const { search } = req.query;
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 100;
     const skip = (page - 1) * limit;
 
-    // 1. Fetch all earnings for the trainer (so we can group them comprehensively)
+    // 1. Fetch all earnings for the trainer (so we can group them comprehensively without status exclusion)
     const earnings = await prisma.trainerEarning.findMany({
       where: { trainerId },
       include: {
+        session: {
+          select: { id: true }
+        },
         booking: {
           include: {
             student: {
@@ -269,17 +273,23 @@ const getSessionEarnings = async (req, res) => {
     );
 
     const sessionsMap = new Map();
+    const flatEarnings = [];
     const excludedStatuses = ["rejected", "adjusted", "pending_session_completion", "failed", "cancelled", "on_hold"];
 
     for (const e of earnings) {
-      // Filter by search/status on the earning if requested
-      if (status && e.status !== status) continue;
+      // Filter by search on the earning if requested
       if (search && e.sessionTitle && !e.sessionTitle.toLowerCase().includes(search.toLowerCase())) continue;
 
       // 1. Resolve stable sessionId
       let sessionId = e.sessionId;
+      if (!sessionId && e.session && e.session.id) {
+        sessionId = e.session.id;
+      }
       if (!sessionId && e.booking && e.booking.sessionId) {
         sessionId = e.booking.sessionId;
+      }
+      if (!sessionId && e.booking && e.booking.liveSessionId) {
+        sessionId = e.booking.liveSessionId;
       }
       if (!sessionId) {
         const normalizedTitle = String(e.sessionTitle || "Unknown Session")
@@ -327,12 +337,14 @@ const getSessionEarnings = async (req, res) => {
         summaryStatus = "unpaid";
       }
 
-      // 3. Format earning row
+      const paidDateStr = e.paidAt ? formatDate(e.paidAt) : formatDate(e.createdAt);
+
+      // 3. Format earning row for nested list
       const earningRow = {
         earningId: e.id,
         paymentId: e.paymentId || (e.booking && e.booking.payments?.[0]?.id) || null,
         studentName: e.booking?.student?.fullName || "Student",
-        paidDate: e.paidAt ? formatDate(e.paidAt) : formatDate(e.createdAt),
+        paidDate: paidDateStr,
         sessionPricePaise: e.sessionPricePaise,
         trainerSharePercentage: e.trainerSharePercentage,
         trainerEarningPaise: e.trainerEarningPaise,
@@ -382,6 +394,20 @@ const getSessionEarnings = async (req, res) => {
       if (e.createdAt > group.latestEarningDate) {
         group.latestEarningDate = e.createdAt;
       }
+
+      // Legacy flat earnings array item for backward compatibility
+      flatEarnings.push({
+        earningId: e.id,
+        sessionId,
+        sessionTitle: e.sessionTitle,
+        sessionPricePaise: e.sessionPricePaise,
+        trainerSharePercentage: e.trainerSharePercentage,
+        trainerEarningPaise: e.trainerEarningPaise,
+        finalPayablePaise: e.finalPayablePaise,
+        payoutStatus,
+        payoutRequestId,
+        paidDate: paidDateStr
+      });
     }
 
     const sessions = Array.from(sessionsMap.values()).map(s => ({
@@ -392,6 +418,11 @@ const getSessionEarnings = async (req, res) => {
     // Sort sessions by latestEarningDate desc so newest sessions are shown first
     sessions.sort((a, b) => new Date(b.latestEarningDate) - new Date(a.latestEarningDate));
 
+    // Required Debug Logs
+    console.log("trainerId", trainerId);
+    console.log("trainer earnings count", earnings.length);
+    console.log("grouped sessions count", sessions.length);
+
     const total = sessions.length;
     const totalPages = Math.ceil(total / limit);
     const paginatedSessions = sessions.slice(skip, skip + limit);
@@ -399,8 +430,10 @@ const getSessionEarnings = async (req, res) => {
     return res.status(200).json({
       success: true,
       sessions: paginatedSessions, // root level sessions array
+      earnings: flatEarnings, // legacy flat earnings array
       data: {
-        sessions: paginatedSessions // data level sessions array
+        sessions: paginatedSessions, // data level sessions array
+        earnings: flatEarnings // data level flat earnings array
       },
       pagination: {
         page,

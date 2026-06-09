@@ -350,6 +350,10 @@ async function runTests() {
     if (sessionObj.statusSummary.unpaid !== 2) {
       throw new Error(`Expected statusSummary unpaid to be 2, got ${sessionObj.statusSummary.unpaid}`);
     }
+    // Verify legacy flat earnings array is present
+    if (!res.body.earnings || res.body.earnings.length !== 3) {
+      throw new Error(`Expected exactly 3 legacy flat earnings, got ${res.body.earnings?.length}`);
+    }
   }
 
   // 8. Test GET Payment Summary (Cycle-Free)
