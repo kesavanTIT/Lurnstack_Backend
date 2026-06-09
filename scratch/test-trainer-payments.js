@@ -319,6 +319,39 @@ async function runTests() {
     data: { status: "verified" }
   });
 
+  // 7b. Test GET Session Earnings (Grouped Structure)
+  {
+    console.log("\n--- Test: GET Session Earnings (Grouped Structure) ---");
+    const res = mockRes();
+    await getSessionEarnings(req, res);
+    console.log("Status:", res.statusCode);
+    console.log("Body sessions:", res.body.sessions);
+
+    if (res.statusCode !== 200) {
+      throw new Error("Expected session earnings query to succeed");
+    }
+    if (!res.body.sessions || res.body.sessions.length !== 1) {
+      throw new Error(`Expected exactly 1 grouped session, got ${res.body.sessions?.length}`);
+    }
+    const sessionObj = res.body.sessions[0];
+    if (sessionObj.sessionId !== session.id) {
+      throw new Error(`Expected session ID ${session.id}, got ${sessionObj.sessionId}`);
+    }
+    if (sessionObj.earnings.length !== 3) {
+      throw new Error(`Expected 3 earning rows nested, got ${sessionObj.earnings.length}`);
+    }
+    // Verify totals
+    if (sessionObj.paidStudentCount !== 2) {
+      throw new Error(`Expected 2 paid student bookings, got ${sessionObj.paidStudentCount}`);
+    }
+    if (sessionObj.grossRevenuePaise !== 300000) {
+      throw new Error(`Expected grossRevenuePaise to be 300000, got ${sessionObj.grossRevenuePaise}`);
+    }
+    if (sessionObj.statusSummary.unpaid !== 2) {
+      throw new Error(`Expected statusSummary unpaid to be 2, got ${sessionObj.statusSummary.unpaid}`);
+    }
+  }
+
   // 8. Test GET Payment Summary (Cycle-Free)
   {
     console.log("\n--- Test: GET Payment Summary (Cycle-Free) ---");

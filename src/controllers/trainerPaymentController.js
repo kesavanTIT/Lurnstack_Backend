@@ -243,43 +243,165 @@ const getSessionEarnings = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 100;
     const skip = (page - 1) * limit;
 
-    const where = { trainerId };
-    if (status) {
-      where.status = status;
-    }
-    if (search) {
-      where.sessionTitle = { contains: search, mode: "insensitive" };
-    }
-
-    const total = await prisma.trainerEarning.count({ where });
-    const totalPages = Math.ceil(total / limit);
-
+    // 1. Fetch all earnings for the trainer (so we can group them comprehensively)
     const earnings = await prisma.trainerEarning.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip,
-      take: limit
+      where: { trainerId },
+      include: {
+        booking: {
+          include: {
+            student: {
+              select: { fullName: true }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: "asc" }
     });
 
-    const formatted = earnings.map(e => ({
-      id: e.id,
-      sessionId: e.sessionId,
-      sessionTitle: e.sessionTitle,
-      paidStudentCount: e.paidStudentCount,
-      sessionPricePaise: e.sessionPricePaise,
-      trainerSharePercentage: e.trainerSharePercentage,
-      trainerEarningPaise: e.trainerEarningPaise,
-      refundAdjustmentPaise: e.refundAdjustmentPaise,
-      finalPayablePaise: e.finalPayablePaise,
-      status: e.status,
-      availableFrom: e.availableAfter || e.createdAt,
-      createdAt: e.createdAt,
-      updatedAt: e.updatedAt
+    // 2. Fetch all payout requests for the trainer
+    const payoutRequests = await prisma.trainerPayoutRequest.findMany({
+      where: { trainerId }
+    });
+
+    const payoutRequestMap = new Map(payoutRequests.map(pr => [pr.id, pr]));
+    const requestRemainingAmountMap = new Map(
+      payoutRequests.map(pr => [pr.id, pr.requestedAmountPaise])
+    );
+
+    const sessionsMap = new Map();
+    const excludedStatuses = ["rejected", "adjusted", "pending_session_completion", "failed", "cancelled", "on_hold"];
+
+    for (const e of earnings) {
+      // Filter by search/status on the earning if requested
+      if (status && e.status !== status) continue;
+      if (search && e.sessionTitle && !e.sessionTitle.toLowerCase().includes(search.toLowerCase())) continue;
+
+      // 1. Resolve stable sessionId
+      let sessionId = e.sessionId;
+      if (!sessionId && e.booking && e.booking.sessionId) {
+        sessionId = e.booking.sessionId;
+      }
+      if (!sessionId) {
+        const normalizedTitle = String(e.sessionTitle || "Unknown Session")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "-");
+        sessionId = `fallback-${trainerId}-${normalizedTitle}`;
+      }
+
+      // 2. Resolve payout status and portions
+      let payoutStatus = e.status;
+      let payoutRequestId = e.payoutRequestId;
+      let paidPortion = 0;
+      let lockedPortion = 0;
+      let availablePortion = e.finalPayablePaise;
+
+      if (excludedStatuses.includes(e.status)) {
+        availablePortion = 0;
+      }
+
+      if (e.payoutRequestId && payoutRequestMap.has(e.payoutRequestId)) {
+        const pr = payoutRequestMap.get(e.payoutRequestId);
+        payoutStatus = pr.status;
+        const rem = requestRemainingAmountMap.get(pr.id) || 0;
+        if (pr.status === "paid") {
+          paidPortion = Math.min(e.finalPayablePaise, rem);
+          requestRemainingAmountMap.set(pr.id, Math.max(rem - paidPortion, 0));
+          availablePortion = excludedStatuses.includes(e.status) ? 0 : Math.max(e.finalPayablePaise - paidPortion, 0);
+        } else if (["requested", "approved", "processing"].includes(pr.status)) {
+          lockedPortion = Math.min(e.finalPayablePaise, rem);
+          requestRemainingAmountMap.set(pr.id, Math.max(rem - lockedPortion, 0));
+          availablePortion = excludedStatuses.includes(e.status) ? 0 : Math.max(e.finalPayablePaise - lockedPortion, 0);
+        }
+      }
+
+      // Determine statusSummary key
+      let summaryStatus = null;
+      if (payoutStatus === "paid") {
+        summaryStatus = "paid";
+      } else if (["requested", "approved"].includes(payoutStatus)) {
+        summaryStatus = "requested";
+      } else if (payoutStatus === "processing") {
+        summaryStatus = "processing";
+      } else if (["unpaid", "payable"].includes(payoutStatus)) {
+        summaryStatus = "unpaid";
+      }
+
+      // 3. Format earning row
+      const earningRow = {
+        earningId: e.id,
+        paymentId: e.paymentId || (e.booking && e.booking.payments?.[0]?.id) || null,
+        studentName: e.booking?.student?.fullName || "Student",
+        paidDate: e.paidAt ? formatDate(e.paidAt) : formatDate(e.createdAt),
+        sessionPricePaise: e.sessionPricePaise,
+        trainerSharePercentage: e.trainerSharePercentage,
+        trainerEarningPaise: e.trainerEarningPaise,
+        finalPayablePaise: e.finalPayablePaise,
+        payoutStatus,
+        payoutRequestId
+      };
+
+      // 4. Update group
+      if (!sessionsMap.has(sessionId)) {
+        sessionsMap.set(sessionId, {
+          sessionId,
+          sessionTitle: e.sessionTitle || "Live Session",
+          adminSetPricePaise: e.sessionPricePaise,
+          trainerSharePercentage: e.trainerSharePercentage,
+          paidStudentCount: 0,
+          grossRevenuePaise: 0,
+          trainerEarningPaise: 0,
+          paidAmountPaise: 0,
+          availableBalancePaise: 0,
+          statusSummary: {
+            paid: 0,
+            unpaid: 0,
+            requested: 0,
+            processing: 0
+          },
+          latestEarningDate: e.createdAt,
+          earnings: []
+        });
+      }
+
+      const group = sessionsMap.get(sessionId);
+      group.earnings.push(earningRow);
+
+      if (!excludedStatuses.includes(e.status)) {
+        group.paidStudentCount += 1;
+      }
+      group.grossRevenuePaise += e.grossRevenuePaise;
+      group.trainerEarningPaise += e.finalPayablePaise;
+      group.paidAmountPaise += paidPortion;
+      group.availableBalancePaise += availablePortion;
+
+      if (summaryStatus && group.statusSummary[summaryStatus] !== undefined) {
+        group.statusSummary[summaryStatus] += 1;
+      }
+
+      if (e.createdAt > group.latestEarningDate) {
+        group.latestEarningDate = e.createdAt;
+      }
+    }
+
+    const sessions = Array.from(sessionsMap.values()).map(s => ({
+      ...s,
+      latestEarningDate: formatDate(s.latestEarningDate)
     }));
+
+    // Sort sessions by latestEarningDate desc so newest sessions are shown first
+    sessions.sort((a, b) => new Date(b.latestEarningDate) - new Date(a.latestEarningDate));
+
+    const total = sessions.length;
+    const totalPages = Math.ceil(total / limit);
+    const paginatedSessions = sessions.slice(skip, skip + limit);
 
     return res.status(200).json({
       success: true,
-      data: formatted,
+      sessions: paginatedSessions, // root level sessions array
+      data: {
+        sessions: paginatedSessions // data level sessions array
+      },
       pagination: {
         page,
         limit,
