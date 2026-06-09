@@ -4,6 +4,7 @@ const {
   getPaymentSummary,
   getPayoutBalance,
   getSessionEarnings,
+  getSessionEarningDetail,
   getPayoutAccount,
   createPayoutAccount,
   updatePayoutAccount,
@@ -319,9 +320,9 @@ async function runTests() {
     data: { status: "verified" }
   });
 
-  // 7b. Test GET Session Earnings (Grouped Structure)
+  // 7b. Test GET Session Earnings (Grouped Structure - List API)
   {
-    console.log("\n--- Test: GET Session Earnings (Grouped Structure) ---");
+    console.log("\n--- Test: GET Session Earnings (Grouped Structure - List API) ---");
     const res = mockRes();
     await getSessionEarnings(req, res);
     console.log("Status:", res.statusCode);
@@ -337,8 +338,8 @@ async function runTests() {
     if (sessionObj.sessionId !== session.id) {
       throw new Error(`Expected session ID ${session.id}, got ${sessionObj.sessionId}`);
     }
-    if (sessionObj.earnings.length !== 3) {
-      throw new Error(`Expected 3 earning rows nested, got ${sessionObj.earnings.length}`);
+    if (sessionObj.earnings !== undefined) {
+      throw new Error("Expected earnings array to be omitted in the List API response");
     }
     // Verify totals
     if (sessionObj.paidStudentCount !== 2) {
@@ -347,12 +348,41 @@ async function runTests() {
     if (sessionObj.grossRevenuePaise !== 300000) {
       throw new Error(`Expected grossRevenuePaise to be 300000, got ${sessionObj.grossRevenuePaise}`);
     }
-    if (sessionObj.statusSummary.unpaid !== 2) {
-      throw new Error(`Expected statusSummary unpaid to be 2, got ${sessionObj.statusSummary.unpaid}`);
+    if (sessionObj.statusSummary.pending !== 2) {
+      throw new Error(`Expected statusSummary pending to be 2, got ${sessionObj.statusSummary.pending}`);
     }
     // Verify legacy flat earnings array is present
     if (!res.body.earnings || res.body.earnings.length !== 3) {
       throw new Error(`Expected exactly 3 legacy flat earnings, got ${res.body.earnings?.length}`);
+    }
+  }
+
+  // 7c. Test GET Session Earnings (Detail API)
+  {
+    console.log("\n--- Test: GET Session Earnings (Detail API) ---");
+    const detailReq = {
+      ...req,
+      params: { sessionId: session.id }
+    };
+    const res = mockRes();
+    await getSessionEarningDetail(detailReq, res);
+    console.log("Status:", res.statusCode);
+    console.log("Body session detail:", res.body.session);
+
+    if (res.statusCode !== 200) {
+      throw new Error("Expected session earnings detail query to succeed");
+    }
+    if (!res.body.session || res.body.session.sessionId !== session.id) {
+      throw new Error("Expected session detail object matching sessionId");
+    }
+    if (res.body.session.earnings.length !== 3) {
+      throw new Error(`Expected exactly 3 nested earnings in detail, got ${res.body.session.earnings.length}`);
+    }
+    if (res.body.session.paidStudentCount !== 2) {
+      throw new Error(`Expected 2 paid student bookings in detail, got ${res.body.session.paidStudentCount}`);
+    }
+    if (res.body.session.trainerEarningPaise !== 180000) {
+      throw new Error(`Expected trainerEarningPaise to be 180000 in detail, got ${res.body.session.trainerEarningPaise}`);
     }
   }
 

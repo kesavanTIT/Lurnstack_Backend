@@ -325,21 +325,18 @@ const getSessionEarnings = async (req, res) => {
         }
       }
 
-      // Determine statusSummary key
+      // Determine statusSummary key (pending, paid)
       let summaryStatus = null;
-      if (payoutStatus === "paid") {
-        summaryStatus = "paid";
-      } else if (["requested", "approved"].includes(payoutStatus)) {
-        summaryStatus = "requested";
-      } else if (payoutStatus === "processing") {
-        summaryStatus = "processing";
-      } else if (["unpaid", "payable"].includes(payoutStatus)) {
-        summaryStatus = "unpaid";
+      if (!excludedStatuses.includes(e.status)) {
+        if (payoutStatus === "paid") {
+          summaryStatus = "paid";
+        } else if (["requested", "approved", "processing", "unpaid", "payable"].includes(payoutStatus)) {
+          summaryStatus = "pending";
+        }
       }
 
       const paidDateStr = e.paidAt ? formatDate(e.paidAt) : formatDate(e.createdAt);
 
-      // 3. Format earning row for nested list
       const earningRow = {
         earningId: e.id,
         paymentId: e.paymentId || (e.booking && e.booking.payments?.[0]?.id) || null,
@@ -353,7 +350,6 @@ const getSessionEarnings = async (req, res) => {
         payoutRequestId
       };
 
-      // 4. Update group
       if (!sessionsMap.has(sessionId)) {
         sessionsMap.set(sessionId, {
           sessionId,
@@ -366,10 +362,8 @@ const getSessionEarnings = async (req, res) => {
           paidAmountPaise: 0,
           availableBalancePaise: 0,
           statusSummary: {
-            paid: 0,
-            unpaid: 0,
-            requested: 0,
-            processing: 0
+            pending: 0,
+            paid: 0
           },
           latestEarningDate: e.createdAt,
           earnings: []
@@ -395,7 +389,6 @@ const getSessionEarnings = async (req, res) => {
         group.latestEarningDate = e.createdAt;
       }
 
-      // Legacy flat earnings array item for backward compatibility
       flatEarnings.push({
         earningId: e.id,
         sessionId,
@@ -410,12 +403,14 @@ const getSessionEarnings = async (req, res) => {
       });
     }
 
-    const sessions = Array.from(sessionsMap.values()).map(s => ({
-      ...s,
-      latestEarningDate: formatDate(s.latestEarningDate)
-    }));
+    const sessions = Array.from(sessionsMap.values()).map(s => {
+      const { earnings, ...rest } = s;
+      return {
+        ...rest,
+        latestEarningDate: formatDate(s.latestEarningDate)
+      };
+    });
 
-    // Sort sessions by latestEarningDate desc so newest sessions are shown first
     sessions.sort((a, b) => new Date(b.latestEarningDate) - new Date(a.latestEarningDate));
 
     // Required Debug Logs
@@ -429,11 +424,11 @@ const getSessionEarnings = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      sessions: paginatedSessions, // root level sessions array
-      earnings: flatEarnings, // legacy flat earnings array
+      sessions: paginatedSessions,
+      earnings: flatEarnings,
       data: {
-        sessions: paginatedSessions, // data level sessions array
-        earnings: flatEarnings // data level flat earnings array
+        sessions: paginatedSessions,
+        earnings: flatEarnings
       },
       pagination: {
         page,
@@ -444,6 +439,126 @@ const getSessionEarnings = async (req, res) => {
     });
   } catch (error) {
     console.error("getSessionEarnings error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+// 2b. GET /api/trainer/session-earnings/:sessionId
+const getSessionEarningDetail = async (req, res) => {
+  try {
+    const trainerId = validateTrainer(req, res);
+    if (!trainerId) return;
+
+    const { sessionId } = req.params;
+
+    const earnings = await prisma.trainerEarning.findMany({
+      where: { trainerId },
+      include: {
+        session: { select: { id: true } },
+        booking: { include: { student: { select: { fullName: true } } } }
+      },
+      orderBy: { createdAt: "asc" }
+    });
+
+    const payoutRequests = await prisma.trainerPayoutRequest.findMany({
+      where: { trainerId }
+    });
+
+    const payoutRequestMap = new Map(payoutRequests.map(pr => [pr.id, pr]));
+    const requestRemainingAmountMap = new Map(
+      payoutRequests.map(pr => [pr.id, pr.requestedAmountPaise])
+    );
+
+    const excludedStatuses = ["rejected", "adjusted", "pending_session_completion", "failed", "cancelled", "on_hold"];
+
+    let sessionObj = null;
+
+    for (const e of earnings) {
+      let resolvedSessionId = e.sessionId || (e.session && e.session.id) || (e.booking && (e.booking.sessionId || e.booking.liveSessionId));
+      if (!resolvedSessionId) {
+        const normalizedTitle = String(e.sessionTitle || "Unknown Session").trim().toLowerCase().replace(/[^a-z0-9]/g, "-");
+        resolvedSessionId = `fallback-${trainerId}-${normalizedTitle}`;
+      }
+
+      if (resolvedSessionId !== sessionId) continue;
+
+      let payoutStatus = e.status;
+      let payoutRequestId = e.payoutRequestId;
+      let paidPortion = 0;
+      let lockedPortion = 0;
+      let availablePortion = e.finalPayablePaise;
+
+      if (excludedStatuses.includes(e.status)) {
+        availablePortion = 0;
+      }
+
+      if (e.payoutRequestId && payoutRequestMap.has(e.payoutRequestId)) {
+        const pr = payoutRequestMap.get(e.payoutRequestId);
+        payoutStatus = pr.status;
+        const rem = requestRemainingAmountMap.get(pr.id) || 0;
+        if (pr.status === "paid") {
+          paidPortion = Math.min(e.finalPayablePaise, rem);
+          requestRemainingAmountMap.set(pr.id, Math.max(rem - paidPortion, 0));
+          availablePortion = excludedStatuses.includes(e.status) ? 0 : Math.max(e.finalPayablePaise - paidPortion, 0);
+        } else if (["requested", "approved", "processing"].includes(pr.status)) {
+          lockedPortion = Math.min(e.finalPayablePaise, rem);
+          requestRemainingAmountMap.set(pr.id, Math.max(rem - lockedPortion, 0));
+          availablePortion = excludedStatuses.includes(e.status) ? 0 : Math.max(e.finalPayablePaise - lockedPortion, 0);
+        }
+      }
+
+      let displayPayoutStatus = "pending";
+      if (payoutStatus === "paid") {
+        displayPayoutStatus = "paid";
+      } else if (["requested", "approved", "processing"].includes(payoutStatus)) {
+        displayPayoutStatus = payoutStatus;
+      }
+
+      const earningRow = {
+        earningId: e.id,
+        studentName: e.booking?.student?.fullName || "Student",
+        paymentId: e.paymentId || (e.booking && e.booking.payments?.[0]?.id) || null,
+        paidDate: e.paidAt ? formatDate(e.paidAt) : formatDate(e.createdAt),
+        sessionPricePaise: e.sessionPricePaise,
+        trainerSharePercentage: e.trainerSharePercentage,
+        trainerEarningPaise: e.trainerEarningPaise,
+        finalPayablePaise: e.finalPayablePaise,
+        payoutStatus: displayPayoutStatus,
+        payoutRequestId
+      };
+
+      if (!sessionObj) {
+        sessionObj = {
+          sessionId: resolvedSessionId,
+          sessionTitle: e.sessionTitle || "Live Session",
+          adminSetPricePaise: e.sessionPricePaise,
+          trainerSharePercentage: e.trainerSharePercentage,
+          paidStudentCount: 0,
+          trainerEarningPaise: 0,
+          earnings: []
+        };
+      }
+
+      sessionObj.earnings.push(earningRow);
+      if (!excludedStatuses.includes(e.status)) {
+        sessionObj.paidStudentCount += 1;
+      }
+      sessionObj.trainerEarningPaise += e.finalPayablePaise;
+    }
+
+    if (!sessionObj) {
+      return res.status(404).json({ success: false, message: "Session earnings not found." });
+    }
+
+    return res.status(200).json({
+      success: true,
+      session: sessionObj,
+      data: {
+        session: sessionObj
+      }
+    });
+  } catch (error) {
+    console.error("getSessionEarningDetail error:", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
@@ -954,6 +1069,7 @@ module.exports = {
   getPaymentSummary,
   getPayoutBalance,
   getSessionEarnings,
+  getSessionEarningDetail,
   getPayoutAccount,
   createPayoutAccount,
   updatePayoutAccount,

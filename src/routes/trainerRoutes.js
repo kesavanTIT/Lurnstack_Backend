@@ -20,6 +20,7 @@ const {
   getPaymentSummary,
   getPayoutBalance,
   getSessionEarnings,
+  getSessionEarningDetail,
   getPayoutAccount,
   createPayoutAccount,
   updatePayoutAccount,
@@ -45,6 +46,7 @@ router.use(protect);
 router.get("/payment-summary", getPaymentSummary);
 router.get("/payout-balance", getPayoutBalance);
 router.get("/session-earnings", getSessionEarnings);
+router.get("/session-earnings/:sessionId", getSessionEarningDetail);
 router.get("/payout-account", getPayoutAccount);
 router.post("/payout-account", createPayoutAccount);
 router.patch("/payout-account", updatePayoutAccount);
