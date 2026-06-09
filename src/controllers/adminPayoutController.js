@@ -579,26 +579,11 @@ const getAdminTrainerPayoutRequestById = async (req, res) => {
     });
     const lockedAmountPaise = activePayoutRequests.reduce((sum, r) => sum + r.requestedAmountPaise, 0);
 
-    const now = new Date();
-    const boundary = getBoundaryStartDate(now);
-
-    console.log("PAYOUT_TEST_MODE (admin)", process.env.PAYOUT_TEST_MODE);
-    const isPayoutTestMode = process.env.PAYOUT_TEST_MODE !== undefined && String(process.env.PAYOUT_TEST_MODE).trim().toLowerCase() === "true";
-
     const totalUnpaidEarningsPaise = earnings
       .filter(e => e.status === "unpaid")
       .reduce((sum, e) => sum + e.finalPayablePaise, 0);
 
-    let cycleClearedEarningsPaise = 0;
-    if (isPayoutTestMode) {
-      cycleClearedEarningsPaise = totalUnpaidEarningsPaise;
-    } else {
-      cycleClearedEarningsPaise = earnings
-        .filter(e => e.status === "unpaid" && e.createdAt < boundary)
-        .reduce((sum, e) => sum + e.finalPayablePaise, 0);
-    }
-
-    const availableBalancePaise = Math.max(cycleClearedEarningsPaise - lockedAmountPaise, 0);
+    const availableBalancePaise = Math.max(totalUnpaidEarningsPaise - lockedAmountPaise, 0);
 
     const paidAmountPaise = earnings
       .filter(e => e.status === "paid")

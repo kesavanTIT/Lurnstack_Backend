@@ -78,11 +78,6 @@ const validateTrainer = (req, res) => {
 
 // Helper to calculate trainer payout balance
 const getTrainerPayoutBalanceHelper = async (trainerId) => {
-  console.log("PAYOUT_TEST_MODE", process.env.PAYOUT_TEST_MODE);
-  const isPayoutTestMode = process.env.PAYOUT_TEST_MODE !== undefined && String(process.env.PAYOUT_TEST_MODE).trim().toLowerCase() === "true";
-  const TEST_PAYOUT_IGNORE_MINIMUM = process.env.TEST_PAYOUT_IGNORE_MINIMUM === "true";
-  const minimumPayoutPaise = (isPayoutTestMode && TEST_PAYOUT_IGNORE_MINIMUM) ? 0 : 50000;
-
   const unpaidEarnings = await prisma.trainerEarning.findMany({
     where: {
       trainerId,
@@ -101,34 +96,15 @@ const getTrainerPayoutBalanceHelper = async (trainerId) => {
   const hasActiveRequest = activePayoutRequests.length > 0;
 
   const now = new Date();
-  const boundary = getBoundaryStartDate(now);
   const { cycleStart, cycleEnd } = getCurrentCycleInfo(now);
 
   const totalUnpaidEarningsPaise = unpaidEarnings.reduce((sum, e) => sum + e.finalPayablePaise, 0);
 
-  let cycleClearedEarningsPaise = 0;
-  let pendingCycleEarningsPaise = 0;
-  let isCycleOpen = true;
+  const cycleClearedEarningsPaise = totalUnpaidEarningsPaise;
+  const pendingCycleEarningsPaise = 0;
+  const isCycleOpen = true;
 
-  if (isPayoutTestMode) {
-    cycleClearedEarningsPaise = totalUnpaidEarningsPaise;
-    pendingCycleEarningsPaise = 0;
-    isCycleOpen = true;
-  } else {
-    cycleClearedEarningsPaise = unpaidEarnings
-      .filter(e => e.createdAt < boundary)
-      .reduce((sum, e) => sum + e.finalPayablePaise, 0);
-    pendingCycleEarningsPaise = totalUnpaidEarningsPaise - cycleClearedEarningsPaise;
-    isCycleOpen = (cycleClearedEarningsPaise > 0 || totalUnpaidEarningsPaise === 0);
-  }
-
-  let availableBalancePaise = 0;
-  if (!isCycleOpen) {
-    availableBalancePaise = 0;
-    pendingCycleEarningsPaise = totalUnpaidEarningsPaise;
-  } else {
-    availableBalancePaise = Math.max(cycleClearedEarningsPaise - lockedAmountPaise, 0);
-  }
+  const availableBalancePaise = Math.max(totalUnpaidEarningsPaise - lockedAmountPaise, 0);
 
   const account = await prisma.trainerPayoutAccount.findUnique({
     where: { trainerId }
@@ -146,9 +122,7 @@ const getTrainerPayoutBalanceHelper = async (trainerId) => {
     }
   } else if (hasActiveRequest) {
     blockReason = "ACTIVE_REQUEST_EXISTS";
-  } else if (!isCycleOpen) {
-    blockReason = "PAYOUT_CYCLE_NOT_OPEN";
-  } else if (availableBalancePaise < minimumPayoutPaise) {
+  } else if (availableBalancePaise < 50000) {
     blockReason = "INSUFFICIENT_BALANCE";
   }
 
@@ -160,16 +134,15 @@ const getTrainerPayoutBalanceHelper = async (trainerId) => {
     pendingCycleEarningsPaise,
     lockedAmountPaise,
     availableBalancePaise,
-    minimumPayoutPaise,
+    minimumPayoutPaise: 50000,
     cycleStartDate: formatDate(cycleStart),
     cycleEndDate: formatDate(cycleEnd),
     isCycleOpen,
     hasActiveRequest,
     canRequest,
     blockReason,
-    testMode: isPayoutTestMode,
+    testMode: false,
     unpaidEarnings,
-    boundary,
     account
   };
 };
@@ -735,23 +708,15 @@ const createPayoutRequest = async (req, res) => {
       });
     }
 
-    if (!balanceData.isCycleOpen) {
-      return res.status(400).json({
-        success: false,
-        message: "The payout cycle is not open."
-      });
-    }
-
     if (amountPaise > balanceData.availableBalancePaise) {
       return res.status(400).json({
         success: false,
-        message: "Requested amount exceeds your available cycle-cleared balance."
+        message: "Requested amount exceeds your available balance."
       });
     }
 
     // Select subset of earnings to satisfy requested amount (using order by createdAt asc)
     const sortedAvailableEarnings = balanceData.unpaidEarnings
-      .filter(e => balanceData.testMode || e.createdAt < balanceData.boundary)
       .sort((a, b) => a.createdAt - b.createdAt);
 
     let selectedEarnings = [];
