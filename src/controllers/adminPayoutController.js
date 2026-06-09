@@ -571,24 +571,37 @@ const getAdminTrainerPayoutRequestById = async (req, res) => {
       where: { trainerId: request.trainerId }
     });
 
+    const activePayoutRequests = await prisma.trainerPayoutRequest.findMany({
+      where: {
+        trainerId: request.trainerId,
+        status: { in: ["requested", "approved", "processing"] }
+      }
+    });
+    const lockedAmountPaise = activePayoutRequests.reduce((sum, r) => sum + r.requestedAmountPaise, 0);
+
     const now = new Date();
     const boundary = getBoundaryStartDate(now);
 
-    let availableBalancePaise = 0;
-    let lockedAmountPaise = 0;
-    let paidAmountPaise = 0;
+    const PAYOUT_TEST_MODE = process.env.PAYOUT_TEST_MODE === "true";
 
-    for (const e of earnings) {
-      if (e.status === "unpaid" && e.createdAt < boundary) {
-        availableBalancePaise += e.trainerEarningPaise;
-      }
-      if (["requested", "approved", "processing"].includes(e.status)) {
-        lockedAmountPaise += e.trainerEarningPaise;
-      }
-      if (e.status === "paid") {
-        paidAmountPaise += e.trainerEarningPaise;
-      }
+    const totalUnpaidEarningsPaise = earnings
+      .filter(e => e.status === "unpaid")
+      .reduce((sum, e) => sum + e.finalPayablePaise, 0);
+
+    let cycleClearedEarningsPaise = 0;
+    if (PAYOUT_TEST_MODE) {
+      cycleClearedEarningsPaise = totalUnpaidEarningsPaise;
+    } else {
+      cycleClearedEarningsPaise = earnings
+        .filter(e => e.status === "unpaid" && e.createdAt < boundary)
+        .reduce((sum, e) => sum + e.finalPayablePaise, 0);
     }
+
+    const availableBalancePaise = Math.max(cycleClearedEarningsPaise - lockedAmountPaise, 0);
+
+    const paidAmountPaise = earnings
+      .filter(e => e.status === "paid")
+      .reduce((sum, e) => sum + e.finalPayablePaise, 0);
 
     return res.status(200).json({
       success: true,

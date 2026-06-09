@@ -18,6 +18,7 @@ const {
 
 const {
   getPaymentSummary,
+  getPayoutBalance,
   getSessionEarnings,
   getPayoutAccount,
   createPayoutAccount,
@@ -42,6 +43,7 @@ router.use(protect);
 
 // ── Trainer Payouts & Earnings Endpoints (Mounted at top to prevent routing conflict) ──
 router.get("/payment-summary", getPaymentSummary);
+router.get("/payout-balance", getPayoutBalance);
 router.get("/session-earnings", getSessionEarnings);
 router.get("/payout-account", getPayoutAccount);
 router.post("/payout-account", createPayoutAccount);

@@ -2,6 +2,7 @@ require("dotenv").config();
 const prisma = require("../src/config/db");
 const {
   getPaymentSummary,
+  getPayoutBalance,
   getSessionEarnings,
   getPayoutAccount,
   createPayoutAccount,
@@ -48,6 +49,10 @@ async function runTests() {
     await prisma.trainerEarning.deleteMany({ where: { trainerId: testTrainer.id } });
     await prisma.trainerPayoutRequest.deleteMany({ where: { trainerId: testTrainer.id } });
     await prisma.trainerPayoutAccount.deleteMany({ where: { trainerId: testTrainer.id } });
+    await prisma.payment.deleteMany({ where: { studentId: testTrainer.id } });
+    await prisma.booking.deleteMany({ where: { studentId: testTrainer.id } });
+    await prisma.sessionPricing.deleteMany({ where: { session: { trainerId: testTrainer.id } } });
+    await prisma.liveSession.deleteMany({ where: { trainerId: testTrainer.id } });
   }
 
   const req = {
@@ -67,8 +72,8 @@ async function runTests() {
     await getPayoutAccount(req, res);
     console.log("Status:", res.statusCode);
     console.log("Body:", res.body);
-    if (res.statusCode !== 200 || res.body.data !== null) {
-      throw new Error("Expected initial account to be null");
+    if (res.statusCode !== 200 || res.body.data.status !== "missing") {
+      throw new Error("Expected initial account status to be missing");
     }
   }
 
@@ -236,7 +241,7 @@ async function runTests() {
     }
   });
 
-  // Earning 1: Pending Session Completion
+  // Earning 1: Pending Session Completion (status is not unpaid)
   const earningPending = await prisma.trainerEarning.create({
     data: {
       trainerId: testTrainer.id,
@@ -244,15 +249,23 @@ async function runTests() {
       sessionDate: booking1.sessionDate,
       bookingId: booking1.id,
       paymentId: payment1.id,
-      grossAmountPaise: 100000,
-      platformFeePaise: 40000,
-      trainerAmountPaise: 60000,
+      trainerName: "Payment Trainer",
+      trainerEmail: "payment_trainer@lurnstack.com",
+      sessionTitle: "Test Payment Session",
+      paidStudentCount: 1,
+      sessionPricePaise: 100000,
+      grossRevenuePaise: 100000,
+      trainerSharePercentage: 60.0,
+      trainerEarningPaise: 60000,
+      platformSharePercentage: 40.0,
+      platformEarningPaise: 40000,
+      finalPayablePaise: 60000,
       status: "pending_session_completion",
       availableAfter: new Date()
     }
   });
 
-  // Earning 2: Payable but Uncleared (created now, in current cycle)
+  // Earning 2: Unpaid but Uncleared (created now, in current cycle)
   const earningUncleared = await prisma.trainerEarning.create({
     data: {
       trainerId: testTrainer.id,
@@ -260,16 +273,24 @@ async function runTests() {
       sessionDate: booking2.sessionDate,
       bookingId: booking2.id,
       paymentId: payment2.id,
-      grossAmountPaise: 100000,
-      platformFeePaise: 40000,
-      trainerAmountPaise: 60000,
-      status: "payable",
+      trainerName: "Payment Trainer",
+      trainerEmail: "payment_trainer@lurnstack.com",
+      sessionTitle: "Test Payment Session",
+      paidStudentCount: 1,
+      sessionPricePaise: 100000,
+      grossRevenuePaise: 100000,
+      trainerSharePercentage: 60.0,
+      trainerEarningPaise: 60000,
+      platformSharePercentage: 40.0,
+      platformEarningPaise: 40000,
+      finalPayablePaise: 60000,
+      status: "unpaid",
       availableAfter: new Date(),
       createdAt: new Date()
     }
   });
 
-  // Earning 3: Payable and Cleared (created 20 days ago)
+  // Earning 3: Unpaid and Cleared (created 20 days ago)
   const pastDate = new Date();
   pastDate.setDate(pastDate.getDate() - 20);
   const earningCleared = await prisma.trainerEarning.create({
@@ -279,31 +300,63 @@ async function runTests() {
       sessionDate: booking3.sessionDate,
       bookingId: booking3.id,
       paymentId: payment3.id,
-      grossAmountPaise: 100000,
-      platformFeePaise: 40000,
-      trainerAmountPaise: 60000,
-      status: "payable",
+      trainerName: "Payment Trainer",
+      trainerEmail: "payment_trainer@lurnstack.com",
+      sessionTitle: "Test Payment Session",
+      paidStudentCount: 1,
+      sessionPricePaise: 100000,
+      grossRevenuePaise: 100000,
+      trainerSharePercentage: 60.0,
+      trainerEarningPaise: 60000,
+      platformSharePercentage: 40.0,
+      platformEarningPaise: 40000,
+      finalPayablePaise: 60000,
+      status: "unpaid",
       availableAfter: pastDate,
       createdAt: pastDate
     }
   });
 
-  // 8. Test GET Payment Summary (with earnings, account pending)
+  // Set to Normal Mode (PAYOUT_TEST_MODE = false)
+  process.env.PAYOUT_TEST_MODE = "false";
+
+  // 8. Test GET Payment Summary (with earnings, account pending, normal mode)
   {
-    console.log("\n--- Test: GET Payment Summary (with earnings, account pending) ---");
+    console.log("\n--- Test: GET Payment Summary (with earnings, account pending, normal mode) ---");
     const res = mockRes();
     await getPaymentSummary(req, res);
     console.log("Status:", res.statusCode);
     console.log("Body:", res.body.data);
     if (res.body.data.availableBalancePaise !== 60000) {
-      throw new Error("Expected availableBalancePaise to be exactly 60000 (from cleared earning)");
+      throw new Error(`Expected availableBalancePaise to be exactly 60000, got ${res.body.data.availableBalancePaise}`);
     }
-    if (res.body.data.pendingEarningsPaise !== 120000) {
-      // 60000 pending + 60000 uncleared = 120000
-      throw new Error(`Expected pendingEarningsPaise to be 120000, got ${res.body.data.pendingEarningsPaise}`);
+    if (res.body.data.pendingEarningsPaise !== 60000) {
+      // only the uncleared 60000 unpaid earning is pending cycle earning
+      throw new Error(`Expected pendingEarningsPaise to be 60000, got ${res.body.data.pendingEarningsPaise}`);
     }
     if (res.body.data.isPayoutWindowOpen !== false || res.body.data.payoutBlockReason !== "ACCOUNT_PENDING_VERIFICATION") {
       throw new Error("Expected payout to be blocked because account is pending verification");
+    }
+  }
+
+  // 8b. Test GET Payout Balance (with earnings, account pending, normal mode)
+  {
+    console.log("\n--- Test: GET Payout Balance (with earnings, account pending, normal mode) ---");
+    const res = mockRes();
+    await getPayoutBalance(req, res);
+    console.log("Status:", res.statusCode);
+    console.log("Body:", res.body.data);
+    if (res.body.data.availableBalancePaise !== 60000) {
+      throw new Error(`Expected availableBalancePaise to be exactly 60000, got ${res.body.data.availableBalancePaise}`);
+    }
+    if (res.body.data.pendingCycleEarningsPaise !== 60000) {
+      throw new Error(`Expected pendingCycleEarningsPaise to be 60000, got ${res.body.data.pendingCycleEarningsPaise}`);
+    }
+    if (res.body.data.blockReason !== "ACCOUNT_PENDING_VERIFICATION") {
+      throw new Error("Expected blockReason to be ACCOUNT_PENDING_VERIFICATION");
+    }
+    if (res.body.data.canRequest !== false) {
+      throw new Error("Expected canRequest to be false");
     }
   }
 
@@ -352,10 +405,10 @@ async function runTests() {
     }
   }
 
-  // 12. Test POST Create Payout Request (valid request)
+  // 12. Test POST Create Payout Request (valid request, normal mode)
   let payoutRequestId;
   {
-    console.log("\n--- Test: POST Create Payout Request (valid) ---");
+    console.log("\n--- Test: POST Create Payout Request (valid, normal mode) ---");
     req.body = { amountPaise: 60000 };
     const res = mockRes();
     await createPayoutRequest(req, res);
@@ -370,9 +423,9 @@ async function runTests() {
     }
   }
 
-  // 13. Test GET Payment Summary (after requesting)
+  // 13. Test GET Payment Summary (after requesting, normal mode)
   {
-    console.log("\n--- Test: GET Payment Summary (after request) ---");
+    console.log("\n--- Test: GET Payment Summary (after request, normal mode) ---");
     const res = mockRes();
     await getPaymentSummary(req, res);
     console.log("Status:", res.statusCode);
@@ -440,7 +493,61 @@ async function runTests() {
     }
   }
 
-  // 17. Clean up
+  // Reset/Clear request in database to test Test Mode calculations and requests
+  await prisma.trainerPayoutRequest.deleteMany({ where: { trainerId: testTrainer.id } });
+  await prisma.trainerEarning.updateMany({
+    where: {
+      trainerId: testTrainer.id,
+      id: { in: [earningUncleared.id, earningCleared.id] }
+    },
+    data: { status: "unpaid", payoutRequestId: null, lockedAmountPaise: 0 }
+  });
+
+  // Switch to Testing Mode (PAYOUT_TEST_MODE = true)
+  process.env.PAYOUT_TEST_MODE = "true";
+
+  // 17. Test GET Payout Balance (Testing Mode)
+  {
+    console.log("\n--- Test: GET Payout Balance (Testing Mode) ---");
+    const res = mockRes();
+    await getPayoutBalance(req, res);
+    console.log("Status:", res.statusCode);
+    console.log("Body:", res.body.data);
+    // In test mode: both earnings should be available (60000 + 60000 = 120000 paise)
+    if (res.body.data.availableBalancePaise !== 120000) {
+      throw new Error(`Expected availableBalancePaise to be 120000, got ${res.body.data.availableBalancePaise}`);
+    }
+    if (res.body.data.pendingCycleEarningsPaise !== 0) {
+      throw new Error(`Expected pendingCycleEarningsPaise to be 0, got ${res.body.data.pendingCycleEarningsPaise}`);
+    }
+    if (res.body.data.isCycleOpen !== true) {
+      throw new Error("Expected isCycleOpen to be true");
+    }
+    if (res.body.data.canRequest !== true) {
+      throw new Error("Expected canRequest to be true");
+    }
+    if (res.body.data.blockReason !== null) {
+      throw new Error("Expected blockReason to be null");
+    }
+    if (res.body.data.testMode !== true) {
+      throw new Error("Expected testMode to be true");
+    }
+  }
+
+  // 18. Test POST Create Payout Request (Testing Mode, valid request)
+  {
+    console.log("\n--- Test: POST Create Payout Request (Testing Mode) ---");
+    req.body = { amountPaise: 120000 };
+    const res = mockRes();
+    await createPayoutRequest(req, res);
+    console.log("Status:", res.statusCode);
+    console.log("Body:", res.body);
+    if (res.statusCode !== 201) {
+      throw new Error("Expected request creation to succeed in test mode");
+    }
+  }
+
+  // 19. Clean up
   console.log("\nCleaning up test data...");
   await prisma.trainerEarning.deleteMany({ where: { trainerId: testTrainer.id } });
   await prisma.booking.deleteMany({
@@ -449,8 +556,8 @@ async function runTests() {
   await prisma.payment.deleteMany({
     where: { id: { in: [payment1.id, payment2.id, payment3.id] } }
   });
-  await prisma.sessionPricing.deleteMany({ where: { sessionId: session.id } });
-  await prisma.liveSession.deleteMany({ where: { id: session.id } });
+  await prisma.sessionPricing.deleteMany({ where: { session: { trainerId: testTrainer.id } } });
+  await prisma.liveSession.deleteMany({ where: { trainerId: testTrainer.id } });
   await prisma.trainerPayoutRequest.deleteMany({ where: { trainerId: testTrainer.id } });
   await prisma.trainerPayoutAccount.deleteMany({ where: { trainerId: testTrainer.id } });
   await prisma.user.delete({ where: { id: testTrainer.id } });
