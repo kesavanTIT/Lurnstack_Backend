@@ -27,7 +27,7 @@ const getBoundaryStartDate = (date = new Date()) => {
 // 1. GET /api/admin/trainer-earnings
 const getAdminTrainerEarnings = async (req, res) => {
   try {
-    const { trainerId, sessionId, status, from, to, search } = req.query;
+    const { trainerId, sessionId, status, from, to, search, groupBy } = req.query;
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip = (page - 1) * limit;
@@ -49,6 +49,240 @@ const getAdminTrainerEarnings = async (req, res) => {
         { trainerEmail: { contains: search, mode: "insensitive" } },
         { sessionTitle: { contains: search, mode: "insensitive" } }
       ];
+    }
+
+    if (groupBy === "session") {
+      // Fetch all matching earnings to group them in memory
+      const earnings = await prisma.trainerEarning.findMany({
+        where,
+        include: {
+          booking: {
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  fullName: true
+                }
+              }
+            }
+          },
+          payment: {
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  fullName: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: { createdAt: "desc" }
+      });
+
+      const groups = {};
+      for (const e of earnings) {
+        // Resolve stable sessionId
+        let resolvedSessionId = e.sessionId;
+        if (!resolvedSessionId && e.session && e.session.id) {
+          resolvedSessionId = e.session.id;
+        }
+        if (!resolvedSessionId && e.booking && e.booking.sessionId) {
+          resolvedSessionId = e.booking.sessionId;
+        }
+        if (!resolvedSessionId && e.booking && e.booking.liveSessionId) {
+          resolvedSessionId = e.booking.liveSessionId;
+        }
+        if (!resolvedSessionId) {
+          const normalizedTitle = String(e.sessionTitle || "Unknown Session")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, "-");
+          resolvedSessionId = `fallback-${e.trainerId}-${normalizedTitle}`;
+        }
+
+        if (!groups[resolvedSessionId]) {
+          groups[resolvedSessionId] = {
+            sessionId: resolvedSessionId,
+            sessionTitle: e.sessionTitle || "Live Session",
+            trainerId: e.trainerId,
+            trainerName: e.trainerName || "Trainer",
+            trainerEmail: e.trainerEmail || "",
+            paidStudentCount: 0,
+            sessionPricePaise: e.sessionPricePaise || 0,
+            grossRevenuePaise: 0,
+            trainerSharePercentage: e.trainerSharePercentage || 50,
+            platformCommissionPercentage: e.platformSharePercentage || 50,
+            trainerEarningPaise: 0,
+            platformEarningPaise: 0,
+            refundAdjustmentPaise: 0,
+            finalPayablePaise: 0,
+            payoutStatus: "unpaid",
+            createdAt: e.createdAt,
+            updatedAt: e.updatedAt,
+            earningRows: [],
+            payoutRequestIds: new Set(),
+            rawEarnings: []
+          };
+        }
+
+        const group = groups[resolvedSessionId];
+        group.rawEarnings.push(e);
+
+        const excludedStatuses = ["rejected", "adjusted", "pending_session_completion", "failed", "cancelled", "on_hold"];
+        if (!excludedStatuses.includes(e.status)) {
+          group.paidStudentCount += 1;
+        }
+
+        group.grossRevenuePaise += e.grossRevenuePaise || 0;
+        group.trainerEarningPaise += e.trainerEarningPaise || 0;
+        group.platformEarningPaise += e.platformEarningPaise || 0;
+        group.refundAdjustmentPaise += e.refundAdjustmentPaise || 0;
+        group.finalPayablePaise += e.finalPayablePaise || 0;
+
+        if (e.payoutRequestId) {
+          group.payoutRequestIds.add(e.payoutRequestId);
+        }
+
+        if (new Date(e.createdAt) < new Date(group.createdAt)) {
+          group.createdAt = e.createdAt;
+        }
+        if (new Date(e.updatedAt) > new Date(group.updatedAt)) {
+          group.updatedAt = e.updatedAt;
+        }
+
+        const studentId = e.booking?.studentId || e.payment?.studentId || null;
+        const studentName = e.booking?.student?.fullName || e.payment?.student?.fullName || "Student";
+        const paymentId = e.paymentId || (e.booking && e.booking.payments?.[0]?.id) || null;
+
+        group.earningRows.push({
+          id: e.id,
+          studentId,
+          studentName,
+          paymentId,
+          amountPaidPaise: e.grossRevenuePaise || 0,
+          trainerEarningPaise: e.trainerEarningPaise || 0,
+          refundAdjustmentPaise: e.refundAdjustmentPaise || 0,
+          status: e.status,
+          createdAt: e.createdAt
+        });
+      }
+
+      // Collect all unique payoutRequestIds across all groups
+      const allPayoutRequestIds = new Set();
+      for (const group of Object.values(groups)) {
+        for (const id of group.payoutRequestIds) {
+          allPayoutRequestIds.add(id);
+        }
+      }
+
+      // Query all associated payout requests and their histories
+      const payoutRequests = await prisma.trainerPayoutRequest.findMany({
+        where: {
+          id: { in: Array.from(allPayoutRequestIds) }
+        },
+        include: {
+          history: true
+        }
+      });
+      const payoutRequestsMap = new Map(payoutRequests.map(pr => [pr.id, pr]));
+
+      const statusPriority = ["processing", "approved", "requested", "unpaid", "paid", "rejected", "adjusted", "on_hold", "cancelled", "failed", "pending_session_completion"];
+
+      // Map group structures to the final output list
+      const sessionEarningsList = Object.values(groups).map(group => {
+        // Determine group payout status
+        const statuses = group.rawEarnings.map(re => re.status);
+        let resolvedPayoutStatus = "unpaid";
+        for (const pStatus of statusPriority) {
+          if (statuses.includes(pStatus)) {
+            resolvedPayoutStatus = pStatus;
+            break;
+          }
+        }
+        group.payoutStatus = resolvedPayoutStatus;
+
+        // Build history timeline
+        const historyList = [];
+        for (const e of group.rawEarnings) {
+          historyList.push({
+            id: `${e.id}-created`,
+            type: "earning_created",
+            amountPaise: e.trainerEarningPaise || 0,
+            status: e.status,
+            note: "Earning created from student booking",
+            createdAt: e.createdAt,
+            adminName: null
+          });
+
+          if (e.refundAdjustmentPaise !== 0 || e.status === "adjusted") {
+            historyList.push({
+              id: `${e.id}-adjusted`,
+              type: "refund_adjusted",
+              amountPaise: e.refundAdjustmentPaise || 0,
+              status: e.status,
+              note: "Refund adjustment applied",
+              createdAt: e.updatedAt,
+              adminName: null
+            });
+          }
+        }
+
+        for (const prId of group.payoutRequestIds) {
+          const pr = payoutRequestsMap.get(prId);
+          if (pr) {
+            const sessionEarningsInPr = group.rawEarnings.filter(re => re.payoutRequestId === prId);
+            const amountPaise = sessionEarningsInPr.reduce((sum, re) => sum + (re.finalPayablePaise || 0), 0);
+
+            if (pr.history && pr.history.length > 0) {
+              for (const h of pr.history) {
+                let type = "payout_requested";
+                if (h.action === "approved") type = "payout_approved";
+                else if (h.action === "rejected") type = "rejected";
+                else if (h.action === "processing") type = "processing";
+                else if (h.action === "paid") type = "paid";
+
+                historyList.push({
+                  id: h.id,
+                  type,
+                  amountPaise,
+                  status: h.newStatus,
+                  note: h.note,
+                  createdAt: h.createdAt,
+                  adminName: h.adminName
+                });
+              }
+            }
+          }
+        }
+
+        // Sort history descending (latest first)
+        historyList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        group.history = historyList;
+
+        // Cleanup temporary properties
+        const { payoutRequestIds, rawEarnings, ...rest } = group;
+        return rest;
+      });
+
+      // Sort sessions by latest createdAt descending
+      sessionEarningsList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      // In-memory pagination
+      const total = sessionEarningsList.length;
+      const totalPages = Math.ceil(total / limit);
+      const paginatedData = sessionEarningsList.slice(skip, skip + limit);
+
+      return res.status(200).json({
+        success: true,
+        data: paginatedData,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages
+        }
+      });
     }
 
     const total = await prisma.trainerEarning.count({ where });

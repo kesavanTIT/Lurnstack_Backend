@@ -791,6 +791,182 @@ const getMe = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// @desc    Update current logged-in user profile details
+// @route   PUT /api/auth/profile
+// @access  Private
+// ─────────────────────────────────────────────
+const updateProfile = async (req, res) => {
+  try {
+    const userId = parseInt(req.user.id);
+    const { fullName, email, phoneNumber } = req.body;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    const updateData = {};
+
+    // 1. Validate & Update fullName
+    if (fullName !== undefined) {
+      const trimmedName = String(fullName || "").trim();
+      if (!trimmedName) {
+        return res.status(400).json({
+          success: false,
+          message: "Full Name cannot be empty.",
+        });
+      }
+      updateData.fullName = trimmedName;
+    }
+
+    // 2. Validate & Update email
+    if (email !== undefined) {
+      const trimmedEmail = String(email || "").trim().toLowerCase();
+      if (!trimmedEmail || !trimmedEmail.includes("@")) {
+        return res.status(400).json({
+          success: false,
+          message: "A valid Email Address is required.",
+        });
+      }
+
+      if (trimmedEmail !== user.email) {
+        // Check duplicate email
+        const emailExists = await prisma.user.findUnique({
+          where: { email: trimmedEmail },
+        });
+        if (emailExists) {
+          return res.status(409).json({
+            success: false,
+            message: "Email address is already registered.",
+          });
+        }
+        updateData.email = trimmedEmail;
+      }
+    }
+
+    // 3. Validate & Update phoneNumber
+    if (phoneNumber !== undefined) {
+      const trimmedPhone = String(phoneNumber || "").trim();
+      if (!trimmedPhone) {
+        updateData.phoneNumber = null;
+        updateData.phoneNormalized = null;
+      } else {
+        const phoneNormalized = normalizePhone(trimmedPhone);
+        if (phoneNormalized !== user.phoneNormalized) {
+          // Check duplicate phone number
+          const localNumber = phoneNormalized.length >= 10 ? phoneNormalized.slice(-10) : phoneNormalized;
+          const phoneExists = await prisma.user.findFirst({
+            where: {
+              id: { not: userId },
+              OR: [
+                { phoneNormalized: phoneNormalized },
+                { phoneNormalized: { endsWith: localNumber } },
+                { phoneNumber: { endsWith: localNumber } },
+              ],
+            },
+          });
+          if (phoneExists) {
+            return res.status(409).json({
+              success: false,
+              message: "Mobile number is already registered.",
+            });
+          }
+          updateData.phoneNumber = trimmedPhone;
+          updateData.phoneNormalized = phoneNormalized;
+        }
+      }
+    }
+
+    // Perform database update
+    let updatedUser = user;
+    if (Object.keys(updateData).length > 0) {
+      updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: updateData,
+      });
+    }
+
+    // Format profile output
+    const formattedRole = updatedUser.role === "TRAINER" ? "trainer" : updatedUser.role;
+    const profileData = {
+      id: updatedUser.id,
+      fullName: updatedUser.fullName,
+      email: updatedUser.email,
+      phoneNumber: updatedUser.phoneNumber,
+      role: formattedRole,
+      isActive: updatedUser.isActive,
+      createdAt: updatedUser.createdAt,
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully!",
+      user: profileData,
+      data: profileData,
+    });
+  } catch (error) {
+    console.error("Update Profile Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error updating profile.",
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Self-service account deletion (Soft Delete)
+// @route   DELETE /api/auth/profile
+// @access  Private
+// ─────────────────────────────────────────────
+const deleteAccount = async (req, res) => {
+  try {
+    const userId = parseInt(req.user.id);
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    // Soft delete: deactivate, release email and phone constraints
+    const timestamp = Date.now();
+    const deletedEmail = `deleted-${userId}-${timestamp}-${user.email}`;
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        isActive: false,
+        email: deletedEmail,
+        phoneNumber: null,
+        phoneNormalized: null,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Your account has been deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Delete Account Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error deleting account.",
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -801,4 +977,6 @@ module.exports = {
   initiateGoogleAuth,
   googleAuthCallback,
   getMe,
+  updateProfile,
+  deleteAccount,
 };

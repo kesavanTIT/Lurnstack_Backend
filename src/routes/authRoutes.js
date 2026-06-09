@@ -10,6 +10,8 @@ const {
   initiateGoogleAuth,
   googleAuthCallback,
   getMe,
+  updateProfile,
+  deleteAccount,
 } = require("../controllers/authController");
 const { protect } = require("../middleware/authMiddleware");
 
@@ -69,6 +71,16 @@ router.get("/google/callback", googleAuthCallback);
 // @desc    Get current authenticated user profile
 // @access  Private (Authenticated Users)
 router.get("/me", protect, getMe);
+
+// @route   PUT /api/auth/profile
+// @desc    Update current authenticated user profile details
+// @access  Private (Authenticated Users)
+router.put("/profile", protect, updateProfile);
+
+// @route   DELETE /api/auth/profile
+// @desc    Self-service account deletion (Soft Delete)
+// @access  Private (Authenticated Users)
+router.delete("/profile", protect, deleteAccount);
 
 module.exports = router;
 
