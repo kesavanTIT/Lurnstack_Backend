@@ -176,6 +176,7 @@ model Attendance {
 
   session              LiveSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   student              User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  isJoined             Boolean           @default(false)
 
   events               AttendanceEvent[]
 

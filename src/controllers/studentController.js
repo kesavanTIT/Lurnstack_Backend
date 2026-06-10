@@ -140,8 +140,8 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
 
   const isAddedToCard = session.cards ? session.cards.length > 0 : false;
   
-  const todayStr = getKolkataDateString(now);
-  const isJoined = session.attendances ? session.attendances.some(att => att.joinDate === todayStr) : false;
+  const attendanceRecord = session.attendances && session.attendances.length > 0 ? session.attendances[0] : null;
+  const isJoined = attendanceRecord ? true : false;
 
   let thumbnail = session.thumbnail || null;
   if (thumbnail && req && !thumbnail.startsWith("http://") && !thumbnail.startsWith("https://")) {
@@ -203,7 +203,6 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
   }
 
   // Attendance details
-  const attendanceRecord = session.attendances && session.attendances.length > 0 ? session.attendances[0] : null;
   const attendance = attendanceRecord ? {
     id: attendanceRecord.id,
     status: attendanceRecord.status,
@@ -215,6 +214,7 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
   } : null;
   const attendanceStatus = attendanceRecord ? attendanceRecord.status : null;
   const joinedAt = attendanceRecord ? (attendanceRecord.joinedAt || attendanceRecord.firstJoinedAt) : null;
+  const lastJoinedAt = attendanceRecord ? attendanceRecord.lastJoinedAt : null;
 
   const isFree = !paymentRequired;
 
@@ -277,6 +277,7 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
     attendance,
     attendanceStatus,
     joinedAt,
+    lastJoinedAt,
     recordingUrl: session.recordingUrl || null,
     materials: session.materials || null,
     liveClass
@@ -347,7 +348,8 @@ const getAllLiveClasses = async (req, res) => {
     const sessionMappedClasses = sessions.map(session => {
       const todayStatus = calculateSessionTodayStatus(session, now);
       const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
-      const isJoinedToday = session.attendances.some(att => att.joinDate === todayStr);
+      const attendanceRecord = session.attendances && session.attendances.length > 0 ? session.attendances[0] : null;
+      const isJoined = attendanceRecord ? true : false;
 
       const categoryRecord = session.courseId ? categoryMap.get(session.courseId) : null;
       let courseTitle = null;
@@ -415,7 +417,6 @@ const getAllLiveClasses = async (req, res) => {
 
       const isFree = !paymentRequired;
 
-      const attendanceRecord = session.attendances && session.attendances.length > 0 ? session.attendances[0] : null;
       const attendance = attendanceRecord ? {
         id: attendanceRecord.id,
         status: attendanceRecord.status,
@@ -427,6 +428,7 @@ const getAllLiveClasses = async (req, res) => {
       } : null;
       const attendanceStatus = attendanceRecord ? attendanceRecord.status : null;
       const joinedAt = attendanceRecord ? (attendanceRecord.joinedAt || attendanceRecord.firstJoinedAt) : null;
+      const lastJoinedAt = attendanceRecord ? attendanceRecord.lastJoinedAt : null;
 
       const liveClass = {
         id: session.id,
@@ -471,7 +473,7 @@ const getAllLiveClasses = async (req, res) => {
         todayStatus: todayStatus,
         cancellationReason: null,
         isAddedToCard: session.cards.length > 0,
-        isJoined: isJoinedToday,
+        isJoined: isJoined,
         isPaid,
         hasCourseAccess,
         paymentRequired,
@@ -480,6 +482,7 @@ const getAllLiveClasses = async (req, res) => {
         attendance,
         attendanceStatus,
         joinedAt,
+        lastJoinedAt,
         recordingUrl: session.recordingUrl || null,
         materials: session.materials || null,
         liveClass
@@ -581,7 +584,8 @@ const getLiveClassById = async (req, res) => {
     const now = new Date();
     const todayStatus = calculateSessionTodayStatus(session, now);
     const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
-    const isJoinedToday = session.attendances.some(att => att.joinDate === getKolkataDateString(now));
+    const attendanceRecord = session.attendances && session.attendances.length > 0 ? session.attendances[0] : null;
+    const isJoined = attendanceRecord ? true : false;
 
     let durationMinutes = 60;
     if (session.startTime && session.endTime) {
@@ -635,7 +639,6 @@ const getLiveClassById = async (req, res) => {
 
     const isFree = !paymentRequired;
 
-    const attendanceRecord = session.attendances && session.attendances.length > 0 ? session.attendances[0] : null;
     const attendance = attendanceRecord ? {
       id: attendanceRecord.id,
       status: attendanceRecord.status,
@@ -647,6 +650,7 @@ const getLiveClassById = async (req, res) => {
     } : null;
     const attendanceStatus = attendanceRecord ? attendanceRecord.status : null;
     const joinedAt = attendanceRecord ? (attendanceRecord.joinedAt || attendanceRecord.firstJoinedAt) : null;
+    const lastJoinedAt = attendanceRecord ? attendanceRecord.lastJoinedAt : null;
 
     const liveClass = {
       id: session.id,
@@ -693,7 +697,7 @@ const getLiveClassById = async (req, res) => {
         todayStatus: todayStatus,
         cancellationReason: null,
         isAddedToCard: session.cards.length > 0,
-        isJoined: isJoinedToday,
+        isJoined: isJoined,
         isPaid,
         hasCourseAccess,
         paymentRequired,
@@ -702,6 +706,7 @@ const getLiveClassById = async (req, res) => {
         attendance,
         attendanceStatus,
         joinedAt,
+        lastJoinedAt,
         recordingUrl: session.recordingUrl || null,
         materials: session.materials || null,
         liveClass
@@ -765,14 +770,35 @@ const getStudentSessions = async (req, res) => {
     const { category, search, filter } = req.query;
     const studentId = parseInt(req.user.id);
 
-    let whereClause = { status: { not: "ended" } };
+    let whereClause = {
+      OR: [
+        { status: { not: "ended" } },
+        {
+          attendances: {
+            some: {
+              studentId: studentId
+            }
+          }
+        }
+      ]
+    };
 
     if (category) {
-      whereClause.courseId = category;
+      whereClause = {
+        AND: [
+          whereClause,
+          { courseId: category }
+        ]
+      };
     }
 
     if (search) {
-      whereClause.title = { contains: search, mode: "insensitive" };
+      whereClause = {
+        AND: [
+          whereClause,
+          { title: { contains: search, mode: "insensitive" } }
+        ]
+      };
     }
 
     const sessions = await prisma.liveSession.findMany({
@@ -1202,6 +1228,72 @@ const joinSession = async (req, res) => {
       }
     }
 
+    // Calculate attendance rules: graceEndTime is scheduledAtTime + 15 minutes
+    const graceEndTime = new Date(scheduledAtTime.getTime() + 15 * 60 * 1000);
+    const resolvedStatus = joinedAtTime <= graceEndTime ? "joined" : "late";
+
+    // 1. Find or create SessionOccurrence
+    let occurrence = await prisma.sessionOccurrence.findUnique({
+      where: {
+        sessionId_occurrenceDate: {
+          sessionId: session.id,
+          occurrenceDate: targetDate
+        }
+      }
+    });
+
+    if (!occurrence) {
+      occurrence = await prisma.sessionOccurrence.create({
+        data: {
+          courseId: session.courseId || "default",
+          sessionId: session.id,
+          trainerId: session.trainerId,
+          occurrenceDate: targetDate,
+          startsAt: scheduledAtTime,
+          endsAt: endsAtTime,
+          status: "scheduled"
+        }
+      });
+    }
+
+    // 2. Create or update StudentAttendance
+    let studentAttendance = await prisma.studentAttendance.findUnique({
+      where: {
+        occurrenceId_studentId: {
+          occurrenceId: occurrence.id,
+          studentId: studentId
+        }
+      }
+    });
+
+    if (studentAttendance) {
+      studentAttendance = await prisma.studentAttendance.update({
+        where: { id: studentAttendance.id },
+        data: {
+          joinCount: studentAttendance.joinCount + 1,
+          lastJoinedAt: joinedAtTime,
+          status: resolvedStatus
+        }
+      });
+    } else {
+      studentAttendance = await prisma.studentAttendance.create({
+        data: {
+          courseId: session.courseId || "default",
+          sessionId: session.id,
+          occurrenceId: occurrence.id,
+          occurrenceDate: targetDate,
+          studentId: studentId,
+          trainerId: session.trainerId,
+          firstJoinedAt: joinedAtTime,
+          lastJoinedAt: joinedAtTime,
+          joinCount: 1,
+          status: resolvedStatus,
+          source: "join_button"
+        }
+      });
+    }
+
+    // 3. Create or update Attendance
     let attendance = await prisma.attendance.findFirst({
       where: {
         studentId,
@@ -1217,7 +1309,9 @@ const joinSession = async (req, res) => {
         where: { id: attendance.id },
         data: {
           joinCount: attendance.joinCount + 1,
-          lastJoinedAt: joinedAtTime
+          lastJoinedAt: joinedAtTime,
+          isJoined: true,
+          status: resolvedStatus
         }
       });
     } else {
@@ -1226,11 +1320,12 @@ const joinSession = async (req, res) => {
           studentId,
           sessionId: session.id,
           occurrenceDate: targetDate,
-          status: "pending",
+          status: resolvedStatus,
           firstJoinedAt: joinedAtTime,
           lastJoinedAt: joinedAtTime,
           joinCount: 1,
-          totalDurationSeconds: 0
+          totalDurationSeconds: 0,
+          isJoined: true
         }
       });
     }
