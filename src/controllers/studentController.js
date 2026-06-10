@@ -157,7 +157,18 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
   // Course access check
   const hasCourseAccess = activeCourseIds && session.courseId ? activeCourseIds.has(session.courseId) : false;
 
-  const paymentRequired = hasCourseAccess ? false : (priceInPaise !== null || (pricing ? pricing.isActive : false));
+  let paymentRequired = hasCourseAccess ? false : (priceInPaise !== null || (pricing ? pricing.isActive : false));
+
+  // Course status override checks
+  let sessionStatus = session.status;
+  if (categoryRecord && categoryRecord.status && categoryRecord.status !== "active") {
+    sessionStatus = categoryRecord.status;
+  }
+  
+  // If the course or session is ended/completed/cancelled, do not require payment
+  if (sessionStatus === "ended" || sessionStatus === "completed" || sessionStatus === "cancelled") {
+    paymentRequired = false;
+  }
 
   // Booking calculations
   const hasPaidBooking = (session.billingBookings ? session.billingBookings.some(b => b.status === "paid") : false) || hasCourseAccess;
@@ -182,8 +193,48 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
 
   const canJoin = isSessionActive && isNotCancelled && isInsideWindow && (hasPaidBookingForToday || hasCourseAccess);
 
+  // Duration
+  let durationMinutes = session.durationMinutes || 60;
+  if (session.startTime && session.endTime) {
+    const [sh, sm] = session.startTime.split(":").map(Number);
+    const [eh, em] = session.endTime.split(":").map(Number);
+    durationMinutes = (eh * 60 + em) - (sh * 60 + sm);
+    if (durationMinutes < 0) durationMinutes += 1440;
+  }
+
+  // Attendance details
+  const attendanceRecord = session.attendances && session.attendances.length > 0 ? session.attendances[0] : null;
+  const attendance = attendanceRecord ? {
+    id: attendanceRecord.id,
+    status: attendanceRecord.status,
+    firstJoinedAt: attendanceRecord.firstJoinedAt,
+    lastJoinedAt: attendanceRecord.lastJoinedAt,
+    joinCount: attendanceRecord.joinCount,
+    totalDurationSeconds: attendanceRecord.totalDurationSeconds,
+    attendanceStatus: attendanceRecord.status
+  } : null;
+  const attendanceStatus = attendanceRecord ? attendanceRecord.status : null;
+  const joinedAt = attendanceRecord ? (attendanceRecord.joinedAt || attendanceRecord.firstJoinedAt) : null;
+
+  const isFree = !paymentRequired;
+
+  const liveClass = {
+    id: session.id,
+    courseId: session.courseId,
+    courseAccessId: session.courseId,
+    title: session.title,
+    scheduledAt,
+    endsAt,
+    durationMinutes,
+    meetUrl: session.meetingLink || "",
+    status: sessionStatus,
+    isPaid,
+    paymentRequired
+  };
+
   return {
     id: session.id,
+    title: session.title,
     courseId: session.courseId,
     trainerCourseId: session.courseId,
     courseAccessId: session.courseId,
@@ -193,7 +244,6 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
     courseTitle: courseTitle,
     category: categoryName,
     classTitle: session.title,
-    title: session.title,
     subtitle: session.subtitle,
     description: session.description,
     thumbnail,
@@ -205,7 +255,7 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
     meetingLink: session.meetingLink,
     isRecurring: session.isRecurring,
     recurrenceType: session.recurrenceType,
-    status: session.status,
+    status: sessionStatus,
     todayStatus,
     cancellationReason: null,
     isAddedToCard,
@@ -218,10 +268,18 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
     amountPaise,
     currency,
     paymentRequired,
+    isFree,
     isPaid,
     hasCourseAccess,
     canJoin,
-    bookingStatus
+    bookingStatus,
+    durationMinutes,
+    attendance,
+    attendanceStatus,
+    joinedAt,
+    recordingUrl: session.recordingUrl || null,
+    materials: session.materials || null,
+    liveClass
   };
 };
 
@@ -334,7 +392,55 @@ const getAllLiveClasses = async (req, res) => {
       const isPaid = hasPaidBooking;
       const priceInPaise = session.priceInPaise !== undefined ? session.priceInPaise : null;
       const pricing = session.pricing || null;
-      const paymentRequired = hasCourseAccess ? false : (priceInPaise !== null || (pricing ? pricing.isActive : false));
+      let paymentRequired = hasCourseAccess ? false : (priceInPaise !== null || (pricing ? pricing.isActive : false));
+
+      let sessionStatus = session.status;
+      if (categoryRecord && categoryRecord.status && categoryRecord.status !== "active") {
+        sessionStatus = categoryRecord.status;
+      }
+      if (sessionStatus === "ended" || sessionStatus === "completed" || sessionStatus === "cancelled") {
+        paymentRequired = false;
+      }
+
+      legacyStatus = "upcoming";
+      if (todayStatus === "live" || todayStatus === "join_open") {
+        legacyStatus = "live";
+      } else if (todayStatus === "completed_today" || todayStatus === "ended" || sessionStatus === "ended" || sessionStatus === "completed") {
+        legacyStatus = "completed";
+      } else if (todayStatus === "paused") {
+        legacyStatus = "paused";
+      } else if (todayStatus === "cancelled" || todayStatus === "cancelled_today" || sessionStatus === "cancelled") {
+        legacyStatus = "cancelled";
+      }
+
+      const isFree = !paymentRequired;
+
+      const attendanceRecord = session.attendances && session.attendances.length > 0 ? session.attendances[0] : null;
+      const attendance = attendanceRecord ? {
+        id: attendanceRecord.id,
+        status: attendanceRecord.status,
+        firstJoinedAt: attendanceRecord.firstJoinedAt,
+        lastJoinedAt: attendanceRecord.lastJoinedAt,
+        joinCount: attendanceRecord.joinCount,
+        totalDurationSeconds: attendanceRecord.totalDurationSeconds,
+        attendanceStatus: attendanceRecord.status
+      } : null;
+      const attendanceStatus = attendanceRecord ? attendanceRecord.status : null;
+      const joinedAt = attendanceRecord ? (attendanceRecord.joinedAt || attendanceRecord.firstJoinedAt) : null;
+
+      const liveClass = {
+        id: session.id,
+        courseId: session.courseId,
+        courseAccessId: session.courseId,
+        title: session.title,
+        scheduledAt,
+        endsAt,
+        durationMinutes,
+        meetUrl: session.meetingLink || "",
+        status: sessionStatus,
+        isPaid,
+        paymentRequired
+      };
 
       return {
         id: session.id,
@@ -369,7 +475,14 @@ const getAllLiveClasses = async (req, res) => {
         isPaid,
         hasCourseAccess,
         paymentRequired,
-        bookingStatus
+        bookingStatus,
+        isFree,
+        attendance,
+        attendanceStatus,
+        joinedAt,
+        recordingUrl: session.recordingUrl || null,
+        materials: session.materials || null,
+        liveClass
       };
     });
 
@@ -397,24 +510,24 @@ const getLiveClassById = async (req, res) => {
   try {
     const { classId } = req.params;
 
-    let liveClass = null;
+    let dbLiveClass = null;
     const classIdInt = parseInt(classId, 10);
     if (!isNaN(classIdInt)) {
-      liveClass = await prisma.liveClass.findUnique({
+      dbLiveClass = await prisma.liveClass.findUnique({
         where: { id: classIdInt },
       });
     }
 
-    if (liveClass) {
-      if (liveClass.thumbnail) {
-        liveClass.thumbnail = liveClass.thumbnail.startsWith("http://") || liveClass.thumbnail.startsWith("https://") ? liveClass.thumbnail : `${req.protocol}://${req.get("host")}/${liveClass.thumbnail.replace(/\\/g, "/")}`;
+    if (dbLiveClass) {
+      if (dbLiveClass.thumbnail) {
+        dbLiveClass.thumbnail = dbLiveClass.thumbnail.startsWith("http://") || dbLiveClass.thumbnail.startsWith("https://") ? dbLiveClass.thumbnail : `${req.protocol}://${req.get("host")}/${dbLiveClass.thumbnail.replace(/\\/g, "/")}`;
       }
       return res.status(200).json({
         success: true,
         data: {
-          ...liveClass,
-          isRecurring: liveClass.isRecurring,
-          recurrenceType: liveClass.recurrenceType
+          ...dbLiveClass,
+          isRecurring: dbLiveClass.isRecurring,
+          recurrenceType: dbLiveClass.recurrenceType
         },
       });
     }
@@ -499,7 +612,55 @@ const getLiveClassById = async (req, res) => {
     const isPaid = hasPaidBooking;
     const priceInPaise = session.priceInPaise !== undefined ? session.priceInPaise : null;
     const pricing = session.pricing || null;
-    const paymentRequired = hasCourseAccess ? false : (priceInPaise !== null || (pricing ? pricing.isActive : false));
+    let paymentRequired = hasCourseAccess ? false : (priceInPaise !== null || (pricing ? pricing.isActive : false));
+
+    let sessionStatus = session.status;
+    if (categoryRecord && categoryRecord.status && categoryRecord.status !== "active") {
+      sessionStatus = categoryRecord.status;
+    }
+    if (sessionStatus === "ended" || sessionStatus === "completed" || sessionStatus === "cancelled") {
+      paymentRequired = false;
+    }
+
+    legacyStatus = "upcoming";
+    if (todayStatus === "live" || todayStatus === "join_open") {
+      legacyStatus = "live";
+    } else if (todayStatus === "completed_today" || todayStatus === "ended" || sessionStatus === "ended" || sessionStatus === "completed") {
+      legacyStatus = "completed";
+    } else if (todayStatus === "paused") {
+      legacyStatus = "paused";
+    } else if (todayStatus === "cancelled" || todayStatus === "cancelled_today" || sessionStatus === "cancelled") {
+      legacyStatus = "cancelled";
+    }
+
+    const isFree = !paymentRequired;
+
+    const attendanceRecord = session.attendances && session.attendances.length > 0 ? session.attendances[0] : null;
+    const attendance = attendanceRecord ? {
+      id: attendanceRecord.id,
+      status: attendanceRecord.status,
+      firstJoinedAt: attendanceRecord.firstJoinedAt,
+      lastJoinedAt: attendanceRecord.lastJoinedAt,
+      joinCount: attendanceRecord.joinCount,
+      totalDurationSeconds: attendanceRecord.totalDurationSeconds,
+      attendanceStatus: attendanceRecord.status
+    } : null;
+    const attendanceStatus = attendanceRecord ? attendanceRecord.status : null;
+    const joinedAt = attendanceRecord ? (attendanceRecord.joinedAt || attendanceRecord.firstJoinedAt) : null;
+
+    const liveClass = {
+      id: session.id,
+      courseId: session.courseId,
+      courseAccessId: session.courseId,
+      title: session.title,
+      scheduledAt,
+      endsAt,
+      durationMinutes,
+      meetUrl: session.meetingLink || "",
+      status: sessionStatus,
+      isPaid,
+      paymentRequired
+    };
 
     return res.status(200).json({
       success: true,
@@ -536,7 +697,14 @@ const getLiveClassById = async (req, res) => {
         isPaid,
         hasCourseAccess,
         paymentRequired,
-        bookingStatus
+        bookingStatus,
+        isFree,
+        attendance,
+        attendanceStatus,
+        joinedAt,
+        recordingUrl: session.recordingUrl || null,
+        materials: session.materials || null,
+        liveClass
       }
     });
 

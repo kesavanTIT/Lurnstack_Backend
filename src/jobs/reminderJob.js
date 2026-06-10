@@ -81,12 +81,22 @@ cron.schedule("* * * * *", async () => {
 
           const paidBookings = await prisma.booking.findMany({
             where: {
-              sessionId: session.id,
-              status:    "paid",
+              OR: [
+                {
+                  sessionId: session.id,
+                  status:    "paid",
+                },
+                session.courseId ? {
+                  courseId: session.courseId,
+                  accessScope: "course",
+                  status: "paid",
+                } : null,
+              ].filter(Boolean),
             },
             include: {
               student: {
                 select: {
+                  id:              true,
                   email:           true,
                   phoneNumber:     true,
                   isActive:        true,
@@ -97,18 +107,28 @@ cron.schedule("* * * * *", async () => {
 
           const activeBookings = paidBookings.filter((b) => b.student?.isActive);
 
-          recipientEmails = activeBookings
+          // Deduplicate active bookings by student ID
+          const seenStudentIds = new Set();
+          const uniqueActiveBookings = [];
+          for (const b of activeBookings) {
+            if (b.student && !seenStudentIds.has(b.student.id)) {
+              seenStudentIds.add(b.student.id);
+              uniqueActiveBookings.push(b);
+            }
+          }
+
+          recipientEmails = uniqueActiveBookings
             .filter((b) => b.student?.email)
             .map((b) => b.student.email);
 
-          recipientPhones = activeBookings
+          recipientPhones = uniqueActiveBookings
             .filter((b) => b.student?.phoneNumber)
             .map((b) => {
               return b.student.phoneNumber.replace(/[^0-9]/g, '');
             });
 
           console.log(
-            `[REMINDER]   → ${recipientEmails.length} email(s), ${recipientPhones.length} phone(s) for paid students.`
+            `[REMINDER]   → ${recipientEmails.length} unique email(s), ${recipientPhones.length} unique phone(s) for paid students.`
           );
         } else {
           // ── FREE / PENDING_PRICE SESSION → all active STUDENT-role users

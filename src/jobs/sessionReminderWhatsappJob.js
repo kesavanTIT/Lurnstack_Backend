@@ -76,19 +76,38 @@ const runWhatsappReminderJob = async () => {
         // Paid session reminders go to students with booking status: paid, joined, completed
         const bookings = await prisma.booking.findMany({
           where: {
-            sessionId: session.id,
-            status: {
-              in: ["paid", "joined", "completed"],
-            },
+            OR: [
+              {
+                sessionId: session.id,
+                status: {
+                  in: ["paid", "joined", "completed"],
+                },
+              },
+              session.courseId ? {
+                courseId: session.courseId,
+                accessScope: "course",
+                status: "paid",
+              } : null,
+            ].filter(Boolean),
           },
           include: {
             student: true,
           },
         });
 
-        console.log(`[WHATSAPP-JOB]   → Found ${bookings.length} paid bookings eligible for reminder.`);
+        // Deduplicate bookings by student ID
+        const seenStudentIds = new Set();
+        const uniqueBookings = [];
+        for (const b of bookings) {
+          if (b.student && !seenStudentIds.has(b.student.id)) {
+            seenStudentIds.add(b.student.id);
+            uniqueBookings.push(b);
+          }
+        }
 
-        for (const booking of bookings) {
+        console.log(`[WHATSAPP-JOB]   → Found ${uniqueBookings.length} unique paid bookings eligible for reminder.`);
+
+        for (const booking of uniqueBookings) {
           const student = booking.student;
           if (!student || !student.isActive || !student.phoneNumber) {
             // Update booking status so we don't repeat checks

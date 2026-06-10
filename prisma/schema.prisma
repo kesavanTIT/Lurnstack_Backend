@@ -131,6 +131,9 @@ model LiveSession {
   occurrences        SessionOccurrence[]
   studentAttendances StudentAttendance[]
   whatsappReminders    WhatsAppReminder[]
+
+  recordingUrl    String?
+  materials       String?
 }
 
 model SessionCard {
