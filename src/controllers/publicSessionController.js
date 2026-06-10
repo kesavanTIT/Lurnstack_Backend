@@ -67,6 +67,9 @@ const formatPublicSession = (session, categoryMap = new Map(), req = null) => {
 
   return {
     id: session.id,
+    courseId: session.courseId,
+    trainerCourseId: session.courseId,
+    courseAccessId: session.courseId,
     courseTitle: courseTitle,
     classTitle: session.title,
     category: categoryName,
@@ -83,6 +86,7 @@ const formatPublicSession = (session, categoryMap = new Map(), req = null) => {
     currency,
     paymentRequired,
     status: session.status === "active" ? "published" : session.status,
+    hasCourseAccess: false,
   };
 };
 

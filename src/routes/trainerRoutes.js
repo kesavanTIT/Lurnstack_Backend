@@ -14,6 +14,9 @@ const {
   endSession,
   cancelTodaySession,
   uncancelTodaySession,
+  endCourse,
+  completeCourse,
+  cancelCourse,
 } = require("../controllers/trainerSessionController");
 
 const {
@@ -93,6 +96,11 @@ router.delete("/sessions/:sessionId/cancel-today", uncancelTodaySession);
 
 // DELETE /api/trainer/sessions/:sessionId  → Delete a session permanently
 router.delete("/sessions/:sessionId", deleteTrainerSession);
+
+// ── Trainer Course Management Endpoints ──────────────────
+router.post("/courses/:courseId/end", endCourse);
+router.post("/courses/:courseId/complete", completeCourse);
+router.post("/courses/:courseId/cancel", cancelCourse);
 
 // ── Trainer Attendance Endpoints ─────────────────────────
 router.get("/courses/:courseId/attendance-summary", getCourseAttendanceSummary);

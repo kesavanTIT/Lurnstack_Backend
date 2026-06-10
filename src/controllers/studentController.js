@@ -119,7 +119,7 @@ const calculateSessionTodayStatus = (session, now = new Date()) => {
 };
 
 // Helper: build response shape for student session
-const formatSession = (session, categoryMap = new Map(), studentId = null, req = null) => {
+const formatSession = (session, categoryMap = new Map(), studentId = null, req = null, activeCourseIds = new Set()) => {
   const now = new Date();
   const todayStatus = calculateSessionTodayStatus(session, now);
   const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
@@ -153,12 +153,19 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
   const priceInPaise = session.priceInPaise !== undefined ? session.priceInPaise : null;
   const amountPaise = priceInPaise !== null ? priceInPaise : (pricing ? pricing.amountPaise : 0);
   const currency = pricing ? pricing.currency : "INR";
-  const paymentRequired = priceInPaise !== null || (pricing ? pricing.isActive : false);
+
+  // Course access check
+  const hasCourseAccess = activeCourseIds && session.courseId ? activeCourseIds.has(session.courseId) : false;
+
+  const paymentRequired = hasCourseAccess ? false : (priceInPaise !== null || (pricing ? pricing.isActive : false));
 
   // Booking calculations
-  const hasPaidBooking = session.billingBookings ? session.billingBookings.some(b => b.status === "paid") : false;
+  const hasPaidBooking = (session.billingBookings ? session.billingBookings.some(b => b.status === "paid") : false) || hasCourseAccess;
   const latestBooking = session.billingBookings && session.billingBookings.length > 0 ? session.billingBookings[0] : null;
-  const bookingStatus = hasPaidBooking ? "paid" : (latestBooking ? latestBooking.status : null);
+  let bookingStatus = hasPaidBooking ? "paid" : (latestBooking ? latestBooking.status : null);
+  if (hasCourseAccess) {
+    bookingStatus = "paid";
+  }
   const isPaid = hasPaidBooking;
 
   // Join logic rules
@@ -173,11 +180,13 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
     hasPaidBookingForToday = true;
   }
 
-  const canJoin = isSessionActive && isNotCancelled && isInsideWindow && hasPaidBookingForToday;
+  const canJoin = isSessionActive && isNotCancelled && isInsideWindow && (hasPaidBookingForToday || hasCourseAccess);
 
   return {
     id: session.id,
     courseId: session.courseId,
+    trainerCourseId: session.courseId,
+    courseAccessId: session.courseId,
     trainerId: `trainer_${session.trainerId}`,
     trainerName: session.trainer?.fullName ?? null,
     trainerEmail: session.trainer?.email ?? null,
@@ -210,6 +219,7 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
     currency,
     paymentRequired,
     isPaid,
+    hasCourseAccess,
     canJoin,
     bookingStatus
   };
@@ -251,6 +261,12 @@ const getAllLiveClasses = async (req, res) => {
 
     // Merge sessions into live-classes query for backwards compatibility
     const studentId = parseInt(req.user.id);
+    const activeCourseBookings = await prisma.booking.findMany({
+      where: { studentId, accessScope: "course", status: "paid" },
+      select: { courseId: true }
+    });
+    const activeCourseIds = new Set(activeCourseBookings.map(b => b.courseId).filter(Boolean));
+
     const sessions = await prisma.liveSession.findMany({
       include: {
         trainer: true,
@@ -308,6 +324,18 @@ const getAllLiveClasses = async (req, res) => {
         legacyStatus = "cancelled";
       }
 
+      const hasCourseAccess = activeCourseIds.has(session.courseId);
+      const hasPaidBooking = session.billingBookings.some(b => b.status === "paid") || hasCourseAccess;
+      const latestBooking = session.billingBookings.length > 0 ? session.billingBookings[0] : null;
+      let bookingStatus = hasPaidBooking ? "paid" : (latestBooking ? latestBooking.status : null);
+      if (hasCourseAccess) {
+        bookingStatus = "paid";
+      }
+      const isPaid = hasPaidBooking;
+      const priceInPaise = session.priceInPaise !== undefined ? session.priceInPaise : null;
+      const pricing = session.pricing || null;
+      const paymentRequired = hasCourseAccess ? false : (priceInPaise !== null || (pricing ? pricing.isActive : false));
+
       return {
         id: session.id,
         courseName: courseTitle || "Live Session",
@@ -328,6 +356,8 @@ const getAllLiveClasses = async (req, res) => {
         isRecurring: session.isRecurring,
         recurrenceType: session.recurrenceType,
         courseId: session.courseId,
+        trainerCourseId: session.courseId,
+        courseAccessId: session.courseId,
         trainerId: `trainer_${session.trainerId}`,
         title: session.title,
         subtitle: session.subtitle,
@@ -335,7 +365,11 @@ const getAllLiveClasses = async (req, res) => {
         todayStatus: todayStatus,
         cancellationReason: null,
         isAddedToCard: session.cards.length > 0,
-        isJoined: isJoinedToday
+        isJoined: isJoinedToday,
+        isPaid,
+        hasCourseAccess,
+        paymentRequired,
+        bookingStatus
       };
     });
 
@@ -387,12 +421,23 @@ const getLiveClassById = async (req, res) => {
 
     // Try finding in LiveSession for backwards compatibility
     const studentId = parseInt(req.user.id);
+    const activeCourseBookings = await prisma.booking.findMany({
+      where: { studentId, accessScope: "course", status: "paid" },
+      select: { courseId: true }
+    });
+    const activeCourseIds = new Set(activeCourseBookings.map(b => b.courseId).filter(Boolean));
+
     const session = await prisma.liveSession.findUnique({
       where: { id: classId },
       include: {
         trainer: true,
         cards: { where: { studentId } },
-        attendances: { where: { studentId } }
+        attendances: { where: { studentId } },
+        pricing: true,
+        billingBookings: {
+          where: { studentId },
+          orderBy: { createdAt: 'desc' }
+        }
       }
     });
 
@@ -444,6 +489,18 @@ const getLiveClassById = async (req, res) => {
       legacyStatus = "cancelled";
     }
 
+    const hasCourseAccess = activeCourseIds.has(session.courseId);
+    const hasPaidBooking = session.billingBookings.some(b => b.status === "paid") || hasCourseAccess;
+    const latestBooking = session.billingBookings.length > 0 ? session.billingBookings[0] : null;
+    let bookingStatus = hasPaidBooking ? "paid" : (latestBooking ? latestBooking.status : null);
+    if (hasCourseAccess) {
+      bookingStatus = "paid";
+    }
+    const isPaid = hasPaidBooking;
+    const priceInPaise = session.priceInPaise !== undefined ? session.priceInPaise : null;
+    const pricing = session.pricing || null;
+    const paymentRequired = hasCourseAccess ? false : (priceInPaise !== null || (pricing ? pricing.isActive : false));
+
     return res.status(200).json({
       success: true,
       data: {
@@ -466,6 +523,8 @@ const getLiveClassById = async (req, res) => {
         isRecurring: session.isRecurring,
         recurrenceType: session.recurrenceType,
         courseId: session.courseId,
+        trainerCourseId: session.courseId,
+        courseAccessId: session.courseId,
         trainerId: `trainer_${session.trainerId}`,
         title: session.title,
         subtitle: session.subtitle,
@@ -473,7 +532,11 @@ const getLiveClassById = async (req, res) => {
         todayStatus: todayStatus,
         cancellationReason: null,
         isAddedToCard: session.cards.length > 0,
-        isJoined: isJoinedToday
+        isJoined: isJoinedToday,
+        isPaid,
+        hasCourseAccess,
+        paymentRequired,
+        bookingStatus
       }
     });
 
@@ -559,10 +622,16 @@ const getStudentSessions = async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
+    const activeCourseBookings = await prisma.booking.findMany({
+      where: { studentId, accessScope: "course", status: "paid" },
+      select: { courseId: true }
+    });
+    const activeCourseIds = new Set(activeCourseBookings.map(b => b.courseId).filter(Boolean));
+
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
 
-    let formattedSessions = sessions.map(session => formatSession(session, categoryMap, studentId, req));
+    let formattedSessions = sessions.map(session => formatSession(session, categoryMap, studentId, req, activeCourseIds));
 
     if (filter) {
       formattedSessions = formattedSessions.filter(s => s.todayStatus === filter || s.status === filter);
@@ -606,13 +675,19 @@ const getStudentSessionDetails = async (req, res) => {
       return res.status(404).json({ success: false, message: "Session not found." });
     }
 
+    const activeCourseBookings = await prisma.booking.findMany({
+      where: { studentId, accessScope: "course", status: "paid" },
+      select: { courseId: true }
+    });
+    const activeCourseIds = new Set(activeCourseBookings.map(b => b.courseId).filter(Boolean));
+
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     res.status(200).json({
       success: true,
       message: "Session details fetched successfully",
-      data: formatSession(session, categoryMap, studentId, req)
+      data: formatSession(session, categoryMap, studentId, req, activeCourseIds)
     });
   } catch (error) {
     console.error("Get Student Session Details Error:", error);
@@ -714,6 +789,12 @@ const getMySessionCards = async (req, res) => {
       orderBy: { addedAt: 'desc' }
     });
 
+    const activeCourseBookings = await prisma.booking.findMany({
+      where: { studentId, accessScope: "course", status: "paid" },
+      select: { courseId: true }
+    });
+    const activeCourseIds = new Set(activeCourseBookings.map(b => b.courseId).filter(Boolean));
+
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
 
@@ -723,7 +804,7 @@ const getMySessionCards = async (req, res) => {
         ...session,
         cards: [card]
       };
-      const formatted = formatSession(sessionEnriched, categoryMap, studentId, req);
+      const formatted = formatSession(sessionEnriched, categoryMap, studentId, req, activeCourseIds);
       return {
         cardId: card.id,
         ...formatted
@@ -876,6 +957,21 @@ const joinSession = async (req, res) => {
       !session.priceInPaise ||
       session.priceInPaise <= 0;
 
+    let hasCourseAccess = false;
+    if (session.courseId) {
+      const activeCourseBooking = await prisma.booking.findFirst({
+        where: {
+          studentId,
+          courseId: session.courseId,
+          accessScope: "course",
+          status: "paid"
+        }
+      });
+      if (activeCourseBooking) {
+        hasCourseAccess = true;
+      }
+    }
+
     let booking = await prisma.booking.findFirst({
       where: {
         studentId,
@@ -884,6 +980,31 @@ const joinSession = async (req, res) => {
       },
       orderBy: { createdAt: "desc" }
     });
+
+    if (!booking && hasCourseAccess) {
+      booking = await prisma.booking.findFirst({
+        where: {
+          studentId,
+          sessionId: session.id,
+          status: { in: ["paid", "joined", "completed"] }
+        },
+        orderBy: { createdAt: "desc" }
+      });
+      if (!booking) {
+        booking = await prisma.booking.create({
+          data: {
+            studentId,
+            sessionId: session.id,
+            sessionDate: targetDate,
+            amountPaise: 0,
+            currency: "INR",
+            status: "joined",
+            accessScope: "session",
+            courseId: session.courseId
+          }
+        });
+      }
+    }
 
     if (!booking) {
       if (isFree) {
@@ -1252,12 +1373,18 @@ const getMyJoinedSessions = async (req, res) => {
       orderBy: { joinedAt: 'desc' }
     });
 
+    const activeCourseBookings = await prisma.booking.findMany({
+      where: { studentId, accessScope: "course", status: "paid" },
+      select: { courseId: true }
+    });
+    const activeCourseIds = new Set(activeCourseBookings.map(b => b.courseId).filter(Boolean));
+
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     const formattedBookings = attendances.map(att => {
       const session = att.session;
-      const formatted = formatSession(session, categoryMap, studentId, req);
+      const formatted = formatSession(session, categoryMap, studentId, req, activeCourseIds);
       return {
         bookingId: att.id,
         ...formatted,
@@ -1285,7 +1412,7 @@ const getMyJoinedSessions = async (req, res) => {
 const createBooking = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { sessionDate } = req.body;
+    const { sessionDate, accessScope, courseId } = req.body;
     const studentId = parseInt(req.user.id);
 
     console.log(`[BOOKING] Initiating booking for session ${sessionId} by student ${studentId}`);
@@ -1314,26 +1441,54 @@ const createBooking = async (req, res) => {
     const amountPaise = session.priceInPaise;
     const currency = "INR";
 
-    // 2. Paid-access check
-    console.log(`[BOOKING] Checking active paid access for student ${studentId} on session ${sessionId}`);
-    const existingPaidBooking = await prisma.booking.findFirst({
-      where: {
-        studentId,
-        sessionId,
-        status: "paid"
-      }
-    });
+    const scope = accessScope || "session";
+    const targetCourseId = courseId || session.courseId;
 
-    if (existingPaidBooking) {
-      console.log(`[BOOKING] Student ${studentId} already has active access to session ${sessionId}`);
-      return res.status(409).json({
-        success: false,
-        alreadyPaid: true,
-        message: "You already have active access for this session.",
-        bookingStatus: "paid",
-        paymentRequired: false,
-        sessionId
+    // 2. Paid-access check
+    console.log(`[BOOKING] Checking active paid access for student ${studentId} on course/session`);
+    if (targetCourseId) {
+      const activeCourseBooking = await prisma.booking.findFirst({
+        where: {
+          studentId,
+          courseId: targetCourseId,
+          accessScope: "course",
+          status: "paid"
+        }
       });
+      if (activeCourseBooking) {
+        console.log(`[BOOKING] Student ${studentId} already has active course access for course ${targetCourseId}`);
+        return res.status(409).json({
+          success: false,
+          alreadyPaid: true,
+          alreadyPurchased: true,
+          message: "You already have active access for this course.",
+          bookingStatus: "paid",
+          paymentRequired: false,
+          courseId: targetCourseId
+        });
+      }
+    }
+
+    if (scope === "session") {
+      const existingPaidBooking = await prisma.booking.findFirst({
+        where: {
+          studentId,
+          sessionId,
+          status: "paid"
+        }
+      });
+
+      if (existingPaidBooking) {
+        console.log(`[BOOKING] Student ${studentId} already has active access to session ${sessionId}`);
+        return res.status(409).json({
+          success: false,
+          alreadyPaid: true,
+          message: "You already have active access for this session.",
+          bookingStatus: "paid",
+          paymentRequired: false,
+          sessionId
+        });
+      }
     }
 
     if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
@@ -1351,7 +1506,9 @@ const createBooking = async (req, res) => {
         sessionDate: bookingDate,
         amountPaise,
         currency,
-        status: "pending_payment"
+        status: "pending_payment",
+        accessScope: scope,
+        courseId: targetCourseId || null
       }
     });
 
@@ -1366,7 +1523,8 @@ const createBooking = async (req, res) => {
         sessionId: sessionId,
         studentId: studentId.toString(),
         sessionDate: sessionDate,
-        accessScope: "session"
+        accessScope: scope,
+        courseId: targetCourseId || null
       }
     };
 
@@ -1412,7 +1570,8 @@ const createBooking = async (req, res) => {
           email: studentUser?.email || "",
           phone: studentUser?.phoneNumber || ""
         },
-        accessScope: "session"
+        accessScope: booking.accessScope,
+        courseId: booking.courseId
       }
     });
   } catch (error) {
@@ -1691,6 +1850,7 @@ module.exports = {
   getSessionAttendance,
   getStudentAttendance,
   heartbeatSession,
-  leaveSession
+  leaveSession,
+  formatSession
 };
 

@@ -145,6 +145,8 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
   return {
     id: session.id,
     courseId: session.courseId,
+    trainerCourseId: session.courseId,
+    courseAccessId: session.courseId,
     trainerId: `trainer_${session.trainerId}`,
     trainerName: session.trainer?.fullName ?? null,
     trainerEmail: session.trainer?.email ?? null,
@@ -936,6 +938,105 @@ const uncancelTodaySession = async (req, res) => {
   }
 };
 
+const endCourse = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const category = await prisma.category.findUnique({ where: { id: courseId } });
+    if (!category) {
+      return res.status(404).json({ success: false, message: "Course not found." });
+    }
+
+    await prisma.$transaction([
+      prisma.category.update({
+        where: { id: courseId },
+        data: { status: "ended" }
+      }),
+      prisma.booking.updateMany({
+        where: { courseId, accessScope: "course", status: "paid" },
+        data: { status: "completed" }
+      }),
+      prisma.liveSession.updateMany({
+        where: { courseId, status: "active" },
+        data: { status: "ended", endedAt: new Date() }
+      })
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Course ended successfully. Student access marked inactive."
+    });
+  } catch (error) {
+    console.error("endCourse Error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+const completeCourse = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const category = await prisma.category.findUnique({ where: { id: courseId } });
+    if (!category) {
+      return res.status(404).json({ success: false, message: "Course not found." });
+    }
+
+    await prisma.$transaction([
+      prisma.category.update({
+        where: { id: courseId },
+        data: { status: "completed" }
+      }),
+      prisma.booking.updateMany({
+        where: { courseId, accessScope: "course", status: "paid" },
+        data: { status: "completed" }
+      }),
+      prisma.liveSession.updateMany({
+        where: { courseId, status: "active" },
+        data: { status: "ended", endedAt: new Date() }
+      })
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Course completed successfully. Student access marked inactive."
+    });
+  } catch (error) {
+    console.error("completeCourse Error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+const cancelCourse = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const category = await prisma.category.findUnique({ where: { id: courseId } });
+    if (!category) {
+      return res.status(404).json({ success: false, message: "Course not found." });
+    }
+
+    await prisma.$transaction([
+      prisma.category.update({
+        where: { id: courseId },
+        data: { status: "cancelled" }
+      }),
+      prisma.booking.updateMany({
+        where: { courseId, accessScope: "course", status: "paid" },
+        data: { status: "cancelled" }
+      }),
+      prisma.liveSession.updateMany({
+        where: { courseId, status: "active" },
+        data: { status: "cancelled" }
+      })
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Course cancelled successfully. Student access marked inactive."
+    });
+  } catch (error) {
+    console.error("cancelCourse Error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
 module.exports = {
   getTrainerStatus,
   getTrainerCourses,
@@ -949,6 +1050,9 @@ module.exports = {
   endSession,
   cancelTodaySession,
   uncancelTodaySession,
+  endCourse,
+  completeCourse,
+  cancelCourse,
   // Mappings for legacy routing
   publishSession: resumeSession,
   cancelSession: cancelTodaySession
