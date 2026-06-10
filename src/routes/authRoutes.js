@@ -12,8 +12,11 @@ const {
   getMe,
   updateProfile,
   deleteAccount,
+  uploadProfilePhoto,
+  deleteProfilePhoto,
 } = require("../controllers/authController");
 const { protect } = require("../middleware/authMiddleware");
+const profilePhotoUploadMiddleware = require("../middleware/profileUploadMiddleware");
 
 // ── Existing auth routes ──────────────────────────────────────────────────────
 
@@ -81,6 +84,16 @@ router.put("/profile", protect, updateProfile);
 // @desc    Self-service account deletion (Soft Delete)
 // @access  Private (Authenticated Users)
 router.delete("/profile", protect, deleteAccount);
+
+// @route   POST /api/auth/profile/photo
+// @desc    Upload profile photo
+// @access  Private (Authenticated Users)
+router.post("/profile/photo", protect, profilePhotoUploadMiddleware, uploadProfilePhoto);
+
+// @route   DELETE /api/auth/profile/photo
+// @desc    Delete profile photo
+// @access  Private (Authenticated Users)
+router.delete("/profile/photo", protect, deleteProfilePhoto);
 
 module.exports = router;
 

@@ -753,6 +753,7 @@ const getMe = async (req, res) => {
         role: true,
         isActive: true,
         createdAt: true,
+        profilePhotoUrl: true,
       },
     });
 
@@ -775,6 +776,7 @@ const getMe = async (req, res) => {
       role: formattedRole,
       isActive: user.isActive,
       createdAt: user.createdAt,
+      profilePhotoUrl: user.profilePhotoUrl || user.PROFILE_PHOTO_URL || null,
     };
 
     return res.status(200).json({
@@ -799,7 +801,15 @@ const getMe = async (req, res) => {
 const updateProfile = async (req, res) => {
   try {
     const userId = parseInt(req.user.id);
-    const { fullName, email, phoneNumber } = req.body;
+    const { fullName, email, EMAIL_ADDRESS, phoneNumber, profilePhotoUrl } = req.body;
+
+    // Reject email update from this endpoint
+    if (email !== undefined || EMAIL_ADDRESS !== undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Email cannot be updated from profile.",
+      });
+    }
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -826,32 +836,7 @@ const updateProfile = async (req, res) => {
       updateData.fullName = trimmedName;
     }
 
-    // 2. Validate & Update email
-    if (email !== undefined) {
-      const trimmedEmail = String(email || "").trim().toLowerCase();
-      if (!trimmedEmail || !trimmedEmail.includes("@")) {
-        return res.status(400).json({
-          success: false,
-          message: "A valid Email Address is required.",
-        });
-      }
-
-      if (trimmedEmail !== user.email) {
-        // Check duplicate email
-        const emailExists = await prisma.user.findUnique({
-          where: { email: trimmedEmail },
-        });
-        if (emailExists) {
-          return res.status(409).json({
-            success: false,
-            message: "Email address is already registered.",
-          });
-        }
-        updateData.email = trimmedEmail;
-      }
-    }
-
-    // 3. Validate & Update phoneNumber
+    // 2. Validate & Update phoneNumber
     if (phoneNumber !== undefined) {
       const trimmedPhone = String(phoneNumber || "").trim();
       if (!trimmedPhone) {
@@ -884,6 +869,15 @@ const updateProfile = async (req, res) => {
       }
     }
 
+    // 3. Update profilePhotoUrl
+    if (profilePhotoUrl !== undefined) {
+      if (profilePhotoUrl === null || profilePhotoUrl === "") {
+        updateData.profilePhotoUrl = null;
+      } else {
+        updateData.profilePhotoUrl = String(profilePhotoUrl).trim();
+      }
+    }
+
     // Perform database update
     let updatedUser = user;
     if (Object.keys(updateData).length > 0) {
@@ -903,6 +897,7 @@ const updateProfile = async (req, res) => {
       role: formattedRole,
       isActive: updatedUser.isActive,
       createdAt: updatedUser.createdAt,
+      profilePhotoUrl: updatedUser.profilePhotoUrl || updatedUser.PROFILE_PHOTO_URL || null,
     };
 
     return res.status(200).json({
@@ -967,6 +962,153 @@ const deleteAccount = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// @desc    Helper to delete profile photo from disk safely
+// ─────────────────────────────────────────────
+const safeDeleteFile = (fileUrl) => {
+  if (!fileUrl) return;
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    // Ensure we are working with our local uploads
+    if (fileUrl.includes("/uploads/profiles/")) {
+      const parts = fileUrl.split("/uploads/profiles/");
+      const rawFilename = parts[parts.length - 1];
+      const filename = path.basename(rawFilename); // prevents path traversal
+      const filePath = path.join("uploads", "profiles", filename);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
+  } catch (error) {
+    console.error("Error deleting old profile photo:", error);
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Upload user profile photo
+// @route   POST /api/auth/profile/photo
+// @access  Private
+// ─────────────────────────────────────────────
+const uploadProfilePhoto = async (req, res) => {
+  try {
+    const userId = parseInt(req.user.id);
+    
+    // 1. Fetch user to check if they have an existing profile photo
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    // 2. Delete old profile photo if it exists locally
+    if (user.profilePhotoUrl) {
+      safeDeleteFile(user.profilePhotoUrl);
+    }
+
+    // 3. Resolve uploaded file URL
+    const protocol = req.protocol;
+    const host = req.get("host");
+    const profilePhotoUrl = `${protocol}://${host}/uploads/profiles/${req.file.filename}`;
+
+    // 4. Update database
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { profilePhotoUrl },
+    });
+
+    // 5. Format response
+    const formattedRole = updatedUser.role === "TRAINER" ? "trainer" : updatedUser.role;
+    const profileData = {
+      id: updatedUser.id,
+      fullName: updatedUser.fullName,
+      email: updatedUser.email,
+      phoneNumber: updatedUser.phoneNumber,
+      role: formattedRole,
+      isActive: updatedUser.isActive,
+      createdAt: updatedUser.createdAt,
+      profilePhotoUrl: updatedUser.profilePhotoUrl || updatedUser.PROFILE_PHOTO_URL || null,
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile photo updated successfully.",
+      profilePhotoUrl: updatedUser.profilePhotoUrl,
+      user: profileData,
+    });
+  } catch (error) {
+    console.error("Upload Profile Photo Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error uploading profile photo.",
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Delete user profile photo
+// @route   DELETE /api/auth/profile/photo
+// @access  Private
+// ─────────────────────────────────────────────
+const deleteProfilePhoto = async (req, res) => {
+  try {
+    const userId = parseInt(req.user.id);
+
+    // 1. Fetch user
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    // 2. Delete file if it exists locally
+    if (user.profilePhotoUrl) {
+      safeDeleteFile(user.profilePhotoUrl);
+    }
+
+    // 3. Nullify field in database
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { profilePhotoUrl: null },
+    });
+
+    // 4. Format response
+    const formattedRole = updatedUser.role === "TRAINER" ? "trainer" : updatedUser.role;
+    const profileData = {
+      id: updatedUser.id,
+      fullName: updatedUser.fullName,
+      email: updatedUser.email,
+      phoneNumber: updatedUser.phoneNumber,
+      role: formattedRole,
+      isActive: updatedUser.isActive,
+      createdAt: updatedUser.createdAt,
+      profilePhotoUrl: null,
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile photo removed successfully.",
+      user: profileData,
+    });
+  } catch (error) {
+    console.error("Delete Profile Photo Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error removing profile photo.",
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -979,4 +1121,6 @@ module.exports = {
   getMe,
   updateProfile,
   deleteAccount,
+  uploadProfilePhoto,
+  deleteProfilePhoto,
 };

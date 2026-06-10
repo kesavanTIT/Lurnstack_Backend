@@ -21,6 +21,7 @@ model User {
   role            Role             @default(STUDENT)
   isActive        Boolean          @default(true)
   createdAt       DateTime         @default(now())
+  profilePhotoUrl String?          @map("PROFILE_PHOTO_URL")
   liveSessions        LiveSession[]
   sessionCards        SessionCard[]
   sessionBookings     SessionBooking[]
