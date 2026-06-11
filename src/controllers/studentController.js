@@ -777,14 +777,24 @@ const getStudentSessions = async (req, res) => {
     const studentId = parseInt(req.user.id);
 
     let whereClause = {
-      OR: [
-        { status: { not: "ended" } },
+      AND: [
         {
-          attendances: {
-            some: {
-              studentId: studentId
+          OR: [
+            { status: { not: "ended" } },
+            {
+              attendances: {
+                some: {
+                  studentId: studentId
+                }
+              }
             }
-          }
+          ]
+        },
+        {
+          OR: [
+            { sectionType: { not: "TIT" } },
+            { sectionType: null }
+          ]
         }
       ]
     };
@@ -2103,10 +2113,13 @@ const getStudentAttendance = async (req, res) => {
 
 const getStudentTITClasses = async (req, res) => {
   try {
-    const classes = await prisma.liveClass.findMany({
+    const classes = await prisma.liveSession.findMany({
       where: {
         sectionType: "TIT",
-        source: "admin_tit_classes",
+        publishState: "PUBLISHED",
+      },
+      include: {
+        trainer: { select: { fullName: true } }
       },
       orderBy: { scheduledAt: "asc" },
     });
@@ -2114,7 +2127,7 @@ const getStudentTITClasses = async (req, res) => {
     const now = new Date();
 
     const formatted = classes.map((cls) => {
-      const startTime = cls.scheduledAt ? new Date(cls.scheduledAt) : null;
+      const startTime = cls.scheduledAt ? new Date(cls.scheduledAt.replace(" ", "T") + "+05:30") : null;
       const duration = cls.durationMinutes || 60;
       const endTime = startTime ? new Date(startTime.getTime() + duration * 60000) : null;
 
@@ -2132,14 +2145,14 @@ const getStudentTITClasses = async (req, res) => {
 
       return {
         id: cls.id,
-        courseName: cls.courseName,
-        classTitle: cls.classTitle,
-        instructor: cls.instructor,
-        description: cls.description,
-        date: cls.date,
-        time: cls.time,
-        duration: cls.duration,
-        meetLink: cls.meetLink,
+        courseName: cls.courseTitle || cls.category || "Live Session",
+        classTitle: cls.title || cls.classTitle || "",
+        instructor: cls.trainer?.fullName || "Trainer",
+        description: cls.description || "",
+        date: cls.scheduledDate || "",
+        time: cls.startTime || "",
+        duration: cls.durationMinutes ? `${cls.durationMinutes} mins` : "",
+        meetLink: cls.meetingLink || "",
         thumbnail: thumbnail,
         status,
         sectionType: cls.sectionType,

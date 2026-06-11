@@ -155,6 +155,10 @@ const getUpcomingSessions = async (req, res) => {
           // Exclude permanently ended or cancelled sessions
           notIn: ["ended", "cancelled"],
         },
+        OR: [
+          { sectionType: { not: "TIT" } },
+          { sectionType: null },
+        ],
       },
       include: {
         trainer: { select: { fullName: true } },

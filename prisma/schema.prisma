@@ -138,6 +138,9 @@ model LiveSession {
 
   recordingUrl    String?
   materials       String?
+
+  sectionType     String?
+  source          String?
 }
 
 model SessionCard {

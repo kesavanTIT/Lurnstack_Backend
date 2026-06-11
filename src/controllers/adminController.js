@@ -371,6 +371,31 @@ const addMinutesToTime = (timeStr, minutes) => {
   return `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`;
 };
 
+const normalizeTimeToHHMM = (timeStr) => {
+  if (!timeStr) return "12:00";
+  const normalized = timeStr.replace(".", ":").trim();
+  let timePart = normalized;
+  let modifier = "";
+  if (normalized.toUpperCase().includes("AM") || normalized.toUpperCase().includes("PM")) {
+    const parts = normalized.split(/\s+/);
+    timePart = parts[0];
+    modifier = parts[1] ? parts[1].toUpperCase() : "";
+    if (!modifier && (normalized.toUpperCase().endsWith("AM") || normalized.toUpperCase().endsWith("PM"))) {
+      const match = normalized.match(/^([\d:]+)\s*(AM|PM)$/i);
+      if (match) {
+        timePart = match[1];
+        modifier = match[2].toUpperCase();
+      }
+    }
+  }
+  let [hours, minutes] = timePart.split(":").map(Number);
+  if (Number.isNaN(hours)) hours = 12;
+  if (Number.isNaN(minutes)) minutes = 0;
+  if (modifier === "PM" && hours < 12) hours += 12;
+  if (modifier === "AM" && hours === 12) hours = 0;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+};
+
 // @desc    Create a new live class
 // @route   POST /api/admin/create-live-class
 // @access  Private/Admin
@@ -400,6 +425,112 @@ const createLiveClass = async (req, res) => {
 
     const scheduledAt = parseScheduledAt(date, time);
     const durationMinutes = parseDurationMinutes(duration);
+
+    const isTIT = sectionType === "TIT" || source === "admin_tit_classes";
+    if (isTIT) {
+      // 1. Resolve trainerId from instructor name
+      let trainerId = null;
+      if (instructor) {
+        const matchedTrainer = await prisma.user.findFirst({
+          where: {
+            role: "TRAINER",
+            fullName: { contains: instructor, mode: "insensitive" }
+          }
+        });
+        if (matchedTrainer) {
+          trainerId = matchedTrainer.id;
+        }
+      }
+      if (!trainerId) {
+        const anyTrainer = await prisma.user.findFirst({
+          where: { role: "TRAINER", isActive: true }
+        });
+        if (anyTrainer) {
+          trainerId = anyTrainer.id;
+        } else {
+          const anyUser = await prisma.user.findFirst();
+          if (anyUser) {
+            trainerId = anyUser.id;
+          } else {
+            return res.status(400).json({
+              success: false,
+              message: "No trainer or user found in system to assign to this session."
+            });
+          }
+        }
+      }
+
+      // 2. Parse and normalize time and date
+      const formattedTime = normalizeTimeToHHMM(time);
+      const scheduledDate = date; // e.g. "2026-06-11"
+      const scheduledAtStr = `${scheduledDate} ${formattedTime}`;
+      const endTime = addMinutesToTime(formattedTime, durationMinutes);
+      const endsAt = endTime ? `${scheduledDate} ${endTime}` : null;
+
+      // Try to find a matching category by courseName
+      let resolvedCourseId = null;
+      const existingCategory = await prisma.category.findFirst({
+        where: { name: { equals: courseName, mode: 'insensitive' } }
+      });
+      if (existingCategory) {
+        resolvedCourseId = existingCategory.id;
+      }
+
+      // 3. Create LiveSession
+      const newSession = await prisma.liveSession.create({
+        data: {
+          courseId: resolvedCourseId,
+          courseTitle: courseName,
+          category: courseName,
+          trainerId,
+          title: classTitle,
+          classTitle: classTitle,
+          description: description || null,
+          startTime: formattedTime,
+          endTime: endTime || null,
+          timezone: "Asia/Kolkata",
+          meetingLink: meetLink,
+          isRecurring: req.body.isRecurring === true || req.body.isRecurring === "true" || req.body.isRecurring === "1",
+          recurrenceType: (req.body.isRecurring === true || req.body.isRecurring === "true" || req.body.isRecurring === "1") ? req.body.recurrenceType : null,
+          status: "active",
+          cancelledDates: [],
+          thumbnail,
+          pricingState: "PENDING_PRICE",
+          publishState: "DRAFT",
+          sectionType: "TIT",
+          source: "admin_tit_classes",
+          scheduledDate,
+          scheduledAt: scheduledAtStr,
+          endsAt,
+          durationMinutes
+        },
+      });
+
+      let thumbnailResponse = newSession.thumbnail;
+      if (thumbnailResponse && !thumbnailResponse.startsWith("http")) {
+        thumbnailResponse = `${req.protocol}://${req.get("host")}/${thumbnailResponse.replace(/\\/g, "/")}`;
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: "Live class created successfully!",
+        data: {
+          id: newSession.id,
+          courseName: newSession.courseTitle || "",
+          classTitle: newSession.title || "",
+          instructor: instructor || "",
+          description: newSession.description || "",
+          date: newSession.scheduledDate || scheduledDate || "",
+          time: newSession.startTime || "",
+          duration: duration || "",
+          meetLink: newSession.meetingLink || "",
+          thumbnail: thumbnailResponse,
+          status: "Scheduled",
+          sectionType: newSession.sectionType,
+          source: newSession.source,
+        },
+      });
+    }
 
     const newClass = await prisma.liveClass.create({
       data: {
@@ -755,10 +886,13 @@ const testWhatsappReminderManual = async (req, res) => {
 // @access  Private/Admin
 const getLiveClasses = async (req, res) => {
   try {
-    const classes = await prisma.liveClass.findMany({
+    const classes = await prisma.liveSession.findMany({
       where: {
         sectionType: "TIT",
         source: "admin_tit_classes",
+      },
+      include: {
+        trainer: { select: { fullName: true } }
       },
       orderBy: { createdAt: "desc" },
     });
@@ -770,14 +904,14 @@ const getLiveClasses = async (req, res) => {
       }
       return {
         id: c.id,
-        courseName: c.courseName,
-        classTitle: c.classTitle,
-        instructor: c.instructor,
-        description: c.description,
-        date: c.date,
-        time: c.time,
-        duration: c.duration,
-        meetLink: c.meetLink,
+        courseName: c.courseTitle || c.category || "Live Session",
+        classTitle: c.title || c.classTitle || "",
+        instructor: c.trainer?.fullName || "Trainer",
+        description: c.description || "",
+        date: c.scheduledDate || "",
+        time: c.startTime || "",
+        duration: c.durationMinutes ? `${c.durationMinutes} mins` : "",
+        meetLink: c.meetingLink || "",
         thumbnail: thumbnail,
         status: "Scheduled",
         sectionType: c.sectionType,
