@@ -14,6 +14,7 @@ const {
   createBooking,
   verifyPayment,
   getStudentPayments,
+  getStudentTITClasses,
 } = require("../controllers/studentController");
 const { protect } = require("../middleware/authMiddleware");
 
@@ -22,6 +23,9 @@ router.use(protect);
 
 // @route   GET /api/student/live-classes
 router.get("/live-classes", getAllLiveClasses);
+
+// @route   GET /api/student/tit-classes
+router.get("/tit-classes", getStudentTITClasses);
 
 // @route   GET /api/student/live-class/:classId
 router.get("/live-class/:classId", getLiveClassById);

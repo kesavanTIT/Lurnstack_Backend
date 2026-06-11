@@ -64,7 +64,10 @@ model LiveClass {
   updatedAt       DateTime  @default(now()) @updatedAt
   isRecurring     Boolean   @default(false)
   recurrenceType  String?
+  sectionType     String?
+  source          String?
 }
+
 
 model Category {
   id          String   @id @default(uuid())

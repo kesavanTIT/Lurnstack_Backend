@@ -292,6 +292,12 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
 const getAllLiveClasses = async (req, res) => {
   try {
     const liveClasses = await prisma.liveClass.findMany({
+      where: {
+        OR: [
+          { sectionType: { not: "TIT" } },
+          { sectionType: null },
+        ],
+      },
       orderBy: { scheduledAt: "asc" },
     });
 
@@ -2095,6 +2101,65 @@ const getStudentAttendance = async (req, res) => {
   }
 };
 
+const getStudentTITClasses = async (req, res) => {
+  try {
+    const classes = await prisma.liveClass.findMany({
+      where: {
+        sectionType: "TIT",
+        source: "admin_tit_classes",
+      },
+      orderBy: { scheduledAt: "asc" },
+    });
+
+    const now = new Date();
+
+    const formatted = classes.map((cls) => {
+      const startTime = cls.scheduledAt ? new Date(cls.scheduledAt) : null;
+      const duration = cls.durationMinutes || 60;
+      const endTime = startTime ? new Date(startTime.getTime() + duration * 60000) : null;
+
+      let status = "upcoming";
+      if (endTime && now > endTime) {
+        status = "completed";
+      } else if (startTime && now > startTime && now < endTime) {
+        status = "live";
+      }
+
+      let thumbnail = cls.thumbnail;
+      if (thumbnail && !thumbnail.startsWith("http")) {
+        thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+      }
+
+      return {
+        id: cls.id,
+        courseName: cls.courseName,
+        classTitle: cls.classTitle,
+        instructor: cls.instructor,
+        description: cls.description,
+        date: cls.date,
+        time: cls.time,
+        duration: cls.duration,
+        meetLink: cls.meetLink,
+        thumbnail: thumbnail,
+        status,
+        sectionType: cls.sectionType,
+        source: cls.source,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: formatted,
+    });
+  } catch (error) {
+    console.error("Get Student TIT Classes Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to fetch TIT classes.",
+    });
+  }
+};
+
 module.exports = {
   getAllLiveClasses,
   getLiveClassById,
@@ -2114,6 +2179,7 @@ module.exports = {
   getStudentAttendance,
   heartbeatSession,
   leaveSession,
-  formatSession
+  formatSession,
+  getStudentTITClasses,
 };
 

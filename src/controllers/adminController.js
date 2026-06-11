@@ -385,6 +385,8 @@ const createLiveClass = async (req, res) => {
       time,
       duration,
       meetLink,
+      sectionType,
+      source,
     } = req.body;
 
     const thumbnail = req.file ? req.file.path : null;
@@ -412,6 +414,8 @@ const createLiveClass = async (req, res) => {
         durationMinutes,
         meetLink,
         thumbnail,
+        sectionType: sectionType || null,
+        source: source || null,
       },
     });
 
@@ -451,6 +455,8 @@ const updateLiveClass = async (req, res) => {
       time,
       duration,
       meetLink,
+      sectionType,
+      source,
     } = req.body;
 
     if (isNumericId) {
@@ -484,6 +490,8 @@ const updateLiveClass = async (req, res) => {
           durationMinutes,
           meetLink: meetLink || existingClass.meetLink,
           thumbnail: req.file ? req.file.path : existingClass.thumbnail,
+          sectionType: sectionType !== undefined ? sectionType : existingClass.sectionType,
+          source: source !== undefined ? source : existingClass.source,
         },
       });
 
@@ -748,6 +756,10 @@ const testWhatsappReminderManual = async (req, res) => {
 const getLiveClasses = async (req, res) => {
   try {
     const classes = await prisma.liveClass.findMany({
+      where: {
+        sectionType: "TIT",
+        source: "admin_tit_classes",
+      },
       orderBy: { createdAt: "desc" },
     });
 
@@ -767,7 +779,9 @@ const getLiveClasses = async (req, res) => {
         duration: c.duration,
         meetLink: c.meetLink,
         thumbnail: thumbnail,
-        status: "Scheduled", // Default status as requested in response format
+        status: "Scheduled",
+        sectionType: c.sectionType,
+        source: c.source,
       };
     });
 
