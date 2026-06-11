@@ -1,6 +1,6 @@
 const prisma = require("../config/db");
 
-// Helper for parsing global attendance filtersSSSSSSSsssssss
+// Helper for parsing global attendance filtersSSSSSSSsssssssssssssss
 const buildGlobalFilters = (query) => {
   const { trainerId, courseId, studentId, status, startDate, endDate } = query;
   const filter = {};
