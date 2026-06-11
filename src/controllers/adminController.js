@@ -742,6 +742,48 @@ const testWhatsappReminderManual = async (req, res) => {
   }
 };
 
+// @desc    Get all admin-created live classes
+// @route   GET /api/admin/get-live-classes
+// @access  Private/Admin
+const getLiveClasses = async (req, res) => {
+  try {
+    const classes = await prisma.liveClass.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+
+    const formatted = classes.map((c) => {
+      let thumbnail = c.thumbnail;
+      if (thumbnail && !thumbnail.startsWith("http")) {
+        thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+      }
+      return {
+        id: c.id,
+        courseName: c.courseName,
+        classTitle: c.classTitle,
+        instructor: c.instructor,
+        description: c.description,
+        date: c.date,
+        time: c.time,
+        duration: c.duration,
+        meetLink: c.meetLink,
+        thumbnail: thumbnail,
+        status: "Scheduled", // Default status as requested in response format
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: formatted,
+    });
+  } catch (error) {
+    console.error("Get Live Classes Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to fetch live classes.",
+    });
+  }
+};
+
 module.exports = {
   getDashboardSummary,
   getStudents,
@@ -755,5 +797,7 @@ module.exports = {
   deleteLiveClass,
   testSessionReminderWhatsapp,
   testWhatsappReminderManual,
+  getLiveClasses,
 };
+
 
