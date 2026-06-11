@@ -366,7 +366,11 @@ const getOfferCampaigns = async (req, res) => {
         sentAt: true,
         createdAt: true,
         templateType: true,
-        buttonLink: true
+        buttonLink: true,
+        logoVariant: true,
+        logoAssetKey: true,
+        logoAlt: true,
+        logoUrl: true
       }
     });
 
@@ -490,6 +494,10 @@ const createOfferCampaign = async (req, res) => {
         buttonText: sanitizePlainText(payload.buttonText),
         buttonLink,
         templateType: payload.templateType || "offer",
+        logoVariant: payload.logoVariant || null,
+        logoAssetKey: payload.logoAssetKey || null,
+        logoAlt: payload.logoAlt ? sanitizePlainText(payload.logoAlt) : null,
+        logoUrl: payload.logoUrl || null,
         showLogo: showLogoBool,
         heroImageUrl,
         status: statusToUse,
@@ -605,6 +613,18 @@ const updateOfferCampaign = async (req, res) => {
     }
     if (payload.buttonLink !== undefined) {
       updateData.buttonLink = payload.buttonLink;
+    }
+    if (payload.logoVariant !== undefined) {
+      updateData.logoVariant = payload.logoVariant;
+    }
+    if (payload.logoAssetKey !== undefined) {
+      updateData.logoAssetKey = payload.logoAssetKey;
+    }
+    if (payload.logoAlt !== undefined) {
+      updateData.logoAlt = payload.logoAlt ? sanitizePlainText(payload.logoAlt) : null;
+    }
+    if (payload.logoUrl !== undefined) {
+      updateData.logoUrl = payload.logoUrl;
     }
 
     if (req.file) {

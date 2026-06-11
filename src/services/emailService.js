@@ -71,6 +71,50 @@ const getResolvedButtonLink = (campaign) => {
   return link;
 };
 
+/**
+ * Returns the <img> tag for the campaign logo based on showLogo, theme, and logoUrl.
+ */
+const getLogoImgTag = (campaign) => {
+  const showLogo = campaign.showLogo === true || campaign.showLogo === "true" || campaign.showLogo === undefined;
+  if (!showLogo) return "";
+
+  const altText = campaign.logoAlt ? campaign.logoAlt.replace(/"/g, '&quot;') : "Team Tamil Info Technology";
+
+  let url = campaign.logoUrl ? campaign.logoUrl.trim() : "";
+  if (url) {
+    // Check if it's a React source, assets, or build path
+    if (url.includes("src/assets") || url.includes("src/Assets") || url.includes("dist/") || url.includes("build/")) {
+      const match = url.match(/Logo\d*\.png/i);
+      const filename = match ? match[0] : (campaign.theme === "dark" ? "Logo3.png" : "Logo4.png");
+      const serverUrl = (process.env.SERVER_URL || "https://api.lurnstack.com").replace(/\/+$/, "");
+      url = `${serverUrl}/uploads/${filename}`;
+    }
+    
+    // Convert localhost to public server URL
+    if (url.includes("localhost")) {
+      const serverUrl = (process.env.SERVER_URL || "https://api.lurnstack.com").replace(/\/+$/, "");
+      url = url.replace(/https?:\/\/localhost:\d+/, serverUrl);
+    }
+    
+    // Convert relative path to absolute
+    if (url.startsWith("/") && !url.startsWith("//")) {
+      const serverUrl = (process.env.SERVER_URL || "https://api.lurnstack.com").replace(/\/+$/, "");
+      url = `${serverUrl}${url}`;
+    }
+
+    return `<img src="${url}" alt="${altText}" style="display:block;width:150px;max-width:48%;height:auto;">`;
+  }
+
+  // If logoUrl is empty, serve Logo3.png and Logo4.png as public static files from backend
+  const serverUrl = (process.env.SERVER_URL || "https://api.lurnstack.com").replace(/\/+$/, "");
+  const isDark = campaign.theme === "dark";
+  const defaultLogoFile = isDark ? "Logo3.png" : "Logo4.png";
+  const defaultLogoUrl = `${serverUrl}/uploads/${defaultLogoFile}`;
+
+  return `<img src="${defaultLogoUrl}" alt="${altText}" style="display:block;width:150px;max-width:48%;height:auto;">`;
+};
+
+
 // ─── Session Reminder Email ───────────────────────────────────────────────────
 
 /**
@@ -293,16 +337,15 @@ const renderOfferCampaignHtml = (campaign, resolvedLink) => {
       })
     : "";
 
+  const logoTag = getLogoImgTag(campaign);
   let logoHtml = "";
-  if (showLogo) {
-    const serverUrl = process.env.SERVER_URL || "https://api.lurnstack.com";
-    const logoUrl = `${serverUrl}/uploads/Logo3.png`;
+  if (logoTag) {
     const logoWrapperStyle = isDark 
       ? "margin-bottom: 24px; text-align: left;"
       : "background-color: #0f172a; padding: 12px 18px; border-radius: 8px; margin-bottom: 24px; text-align: left; display: inline-block;";
     logoHtml = `
       <div style="${logoWrapperStyle}">
-        <img src="${logoUrl}" alt="Tamil Info Technology" width="130" style="display:block;" />
+        ${logoTag}
       </div>
     `;
   }
@@ -425,13 +468,12 @@ const renderSessionIntimationHtml = (campaign, resolvedLink) => {
   const linkColor = "#16a34a";
   const borderColor = "#e2e8f0";
 
+  const logoTag = getLogoImgTag(campaign);
   let logoHtml = "";
-  if (showLogo) {
-    const serverUrl = process.env.SERVER_URL || "https://api.lurnstack.com";
-    const logoUrl = `${serverUrl}/uploads/Logo3.png`;
+  if (logoTag) {
     logoHtml = `
       <div style="background-color: #004d3d; padding: 16px 20px; border-radius: 8px 8px 0 0; text-align: left; margin-bottom: 24px;">
-        <img src="${logoUrl}" alt="LurnStack" width="130" style="display:block;" />
+        ${logoTag}
       </div>
     `;
   }
@@ -519,8 +561,8 @@ const renderSessionIntimationHtml = (campaign, resolvedLink) => {
                     <!-- 9. Regards Block -->
                     <div style="color:${bodyTextColor};font-size:12px;text-align:left;opacity:0.9;">
                       <p style="margin:0 0 4px;font-weight:700;color:${textColor};">Regards,</p>
-                      <p style="margin:0;font-weight:600;color:${textColor};">Team LurnStack</p>
-                      <p style="margin:4px 0 0;">Tamil Info Technology, Chennai, India</p>
+                      <p style="margin:0;font-weight:600;color:${textColor};">Team Tamil Info Technology</p>
+                      <p style="margin:4px 0 0;">LurnStack, Chennai, India</p>
                     </div>
                   </div>
                 </td>
