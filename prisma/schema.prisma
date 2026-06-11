@@ -456,6 +456,7 @@ model OfferCampaign {
   body             String
   buttonText       String
   buttonLink       String
+  templateType     String                  @default("offer") // "offer" | "session_intimation"
   showLogo         Boolean
   heroImageUrl     String?
   status           String                  @default("draft") // "draft" | "ready" | "sending" | "sent" | "failed"

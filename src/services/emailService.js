@@ -55,6 +55,22 @@ const formatISTDateTime = (date) => {
   }) + " IST";
 };
 
+/**
+ * Resolves placeholders inside a campaign's buttonLink.
+ * e.g., replacing :id with sessionId, courseId, or categoryId, and :campaignId with campaign id.
+ */
+const getResolvedButtonLink = (campaign) => {
+  let link = campaign.buttonLink || "";
+  if (link.includes(":id")) {
+    const idValue = campaign.sessionId || campaign.courseId || (campaign.categoryIds && campaign.categoryIds[0]) || "";
+    link = link.replace(/:id/g, encodeURIComponent(idValue));
+  }
+  if (link.includes(":campaignId")) {
+    link = link.replace(/:campaignId/g, campaign.id);
+  }
+  return link;
+};
+
 // ─── Session Reminder Email ───────────────────────────────────────────────────
 
 /**
@@ -242,14 +258,14 @@ const sendSessionReminderEmail = async (recipientEmails, session, occurrence) =>
 // ─── Campaign Email Sending ─────────────────────────────────────────────────
 
 /**
+/**
  * Renders the HTML content for an offer campaign email using the white responsive template.
  */
-const renderCampaignHtml = (campaign) => {
+const renderOfferCampaignHtml = (campaign, resolvedLink) => {
   const {
     heading,
     body,
     buttonText,
-    buttonLink,
     offerTitle,
     validTill,
     showLogo,
@@ -257,6 +273,7 @@ const renderCampaignHtml = (campaign) => {
     theme
   } = campaign;
 
+  const buttonLink = resolvedLink;
   const isDark = theme === "dark";
   const bgColor = isDark ? "#0f172a" : "#f8fafc";
   const containerBgColor = isDark ? "#1e293b" : "#ffffff";
@@ -387,6 +404,148 @@ const renderCampaignHtml = (campaign) => {
 };
 
 /**
+ * Renders the HTML content for a session intimation email campaign.
+ */
+const renderSessionIntimationHtml = (campaign, resolvedLink) => {
+  const {
+    heading,
+    body,
+    buttonText,
+    offerTitle,
+    showLogo,
+    heroImageUrl
+  } = campaign;
+
+  const bgColor = "#f4fbf7";
+  const containerBgColor = "#ffffff";
+  const textColor = "#004d3d";
+  const bodyTextColor = "#334155";
+  const btnBgColor = "#004d3d";
+  const btnTextColor = "#ffffff";
+  const linkColor = "#16a34a";
+  const borderColor = "#e2e8f0";
+
+  let logoHtml = "";
+  if (showLogo) {
+    const serverUrl = process.env.SERVER_URL || "https://api.lurnstack.com";
+    const logoUrl = `${serverUrl}/uploads/Logo3.png`;
+    logoHtml = `
+      <div style="background-color: #004d3d; padding: 16px 20px; border-radius: 8px 8px 0 0; text-align: left; margin-bottom: 24px;">
+        <img src="${logoUrl}" alt="LurnStack" width="130" style="display:block;" />
+      </div>
+    `;
+  }
+
+  let heroImageHtml = "";
+  if (heroImageUrl) {
+    let absoluteHeroUrl = heroImageUrl;
+    if (heroImageUrl && !heroImageUrl.startsWith("http://") && !heroImageUrl.startsWith("https://")) {
+      const serverUrl = process.env.SERVER_URL || "https://api.lurnstack.com";
+      absoluteHeroUrl = `${serverUrl}/${heroImageUrl.replace(/\\/g, "/")}`;
+    }
+    heroImageHtml = `
+      <div style="margin-bottom: 24px; text-align: center;">
+        <img src="${absoluteHeroUrl}" alt="${offerTitle}" style="max-width: 100%; height: auto; border-radius: 8px; display: block; margin: 0 auto;" />
+      </div>
+    `;
+  }
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>${heading}</title>
+    </head>
+    <body style="margin:0;padding:0;background-color:${bgColor};font-family:'Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background-color:${bgColor};padding:32px 16px;">
+        <tr>
+          <td align="center">
+            <table width="100%" max-width="640" style="max-width:640px;width:100%;background-color:${containerBgColor};border:1px solid ${borderColor};border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.03);">
+              <tr>
+                <td>
+                  <!-- 1. Header / Logo -->
+                  ${logoHtml}
+
+                  <div style="padding: 0 32px 32px 32px;">
+                    <!-- 2. Greeting -->
+                    <p style="margin:0 0 16px;color:${bodyTextColor};font-size:15px;font-weight:500;text-align:left;">
+                      Hey learner,
+                    </p>
+
+                    <!-- 3. Badge & Heading -->
+                    <div style="display:inline-block;background:rgba(0, 77, 61, 0.08);border-radius:20px;padding:4px 14px;margin-bottom:12px;">
+                      <p style="margin:0;color:#004d3d;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">
+                        📅 Live Session Intimation
+                      </p>
+                    </div>
+
+                    <h1 style="color:${textColor};font-size:24px;font-weight:800;margin:0 0 16px;line-height:1.3;text-align:left;">
+                      ${heading}
+                    </h1>
+
+                    <!-- 4. Session Highlight Card -->
+                    <div style="background:#f0fdf4;border-left:4px solid #004d3d;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
+                      <h3 style="margin:0 0 4px;color:#004d3d;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Topic / Session</h3>
+                      <p style="margin:0;color:#1e293b;font-size:16px;font-weight:700;">${offerTitle}</p>
+                    </div>
+
+                    <!-- 5. Optional Image -->
+                    ${heroImageHtml}
+
+                    <!-- 6. Body Text -->
+                    <div style="color:${bodyTextColor};font-size:15px;line-height:1.6;margin-bottom:28px;text-align:left;">
+                      ${body}
+                    </div>
+
+                    <!-- 7. CTA Button -->
+                    <div style="text-align:center; margin-bottom:24px;">
+                      <a href="${resolvedLink}" target="_blank" style="background-color:${btnBgColor};color:${btnTextColor};font-size:16px;font-weight:700;text-decoration:none;padding:14px 40px;border-radius:8px;display:inline-block;letter-spacing:0.5px;box-shadow:0 4px 6px rgba(0,77,61,0.15);">
+                        ${buttonText}
+                      </a>
+                    </div>
+
+                    <!-- 8. Fallback Link -->
+                    <p style="margin:0 0 8px;color:${bodyTextColor};font-size:11px;text-align:center;opacity:0.8;">
+                      If the button doesn't work, copy and paste this link into your browser:
+                    </p>
+                    <p style="margin:0 0 24px;word-break:break-all;text-align:center;">
+                      <a href="${resolvedLink}" style="color:${linkColor};font-size:11px;text-decoration:underline;">${resolvedLink}</a>
+                    </p>
+
+                    <hr style="border:0;border-top:1px solid ${borderColor};margin:24px 0;" />
+
+                    <!-- 9. Regards Block -->
+                    <div style="color:${bodyTextColor};font-size:12px;text-align:left;opacity:0.9;">
+                      <p style="margin:0 0 4px;font-weight:700;color:${textColor};">Regards,</p>
+                      <p style="margin:0;font-weight:600;color:${textColor};">Team LurnStack</p>
+                      <p style="margin:4px 0 0;">Tamil Info Technology, Chennai, India</p>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `;
+};
+
+/**
+ * Dispatcher to render the campaign HTML based on templateType.
+ */
+const renderCampaignHtml = (campaign) => {
+  const resolvedLink = getResolvedButtonLink(campaign);
+  if (campaign.templateType === "session_intimation") {
+    return renderSessionIntimationHtml(campaign, resolvedLink);
+  }
+  return renderOfferCampaignHtml(campaign, resolvedLink);
+};
+
+/**
  * Sends a single campaign email to the specified recipient.
  */
 const sendCampaignEmail = async (email, campaign) => {
@@ -397,12 +556,13 @@ const sendCampaignEmail = async (email, campaign) => {
 
   const transporter = getTransporter();
   const htmlBody = renderCampaignHtml(campaign);
+  const resolvedLink = getResolvedButtonLink(campaign);
 
   return transporter.sendMail({
     from: `"LurnStack" <${from}>`,
     to: email,
     subject: campaign.subject,
-    text: `${campaign.offerTitle}\n\n${campaign.heading}\n\n${campaign.body}\n\nView Offer: ${campaign.buttonLink}`,
+    text: `${campaign.offerTitle}\n\n${campaign.heading}\n\n${campaign.body}\n\nView Offer: ${resolvedLink}`,
     html: htmlBody,
   });
 };
@@ -412,6 +572,7 @@ const sendCampaignEmail = async (email, campaign) => {
 module.exports = {
   sendSessionReminderEmail,
   renderCampaignHtml,
-  sendCampaignEmail
+  sendCampaignEmail,
+  getResolvedButtonLink
 };
 

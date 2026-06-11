@@ -1,7 +1,7 @@
 "use strict";
 
 const prisma = require("../config/db");
-const { renderCampaignHtml, sendCampaignEmail } = require("../services/emailService");
+const { renderCampaignHtml, sendCampaignEmail, getResolvedButtonLink } = require("../services/emailService");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 
@@ -364,7 +364,9 @@ const getOfferCampaigns = async (req, res) => {
         failedCount: true,
         validTill: true,
         sentAt: true,
-        createdAt: true
+        createdAt: true,
+        templateType: true,
+        buttonLink: true
       }
     });
 
@@ -388,6 +390,9 @@ const createOfferCampaign = async (req, res) => {
     const payload = req.body;
 
     // Validation checks with clear error messages
+    if (payload.templateType && !["offer", "session_intimation"].includes(payload.templateType)) {
+      return res.status(400).json({ success: false, message: "templateType must be 'offer' or 'session_intimation'" });
+    }
     if (!payload.campaignName) {
       return res.status(400).json({ success: false, message: "campaignName is required" });
     }
@@ -452,7 +457,7 @@ const createOfferCampaign = async (req, res) => {
 
     // Generate Campaign UUID and Button Link
     const campaignId = crypto.randomUUID();
-    const buttonLink = generateButtonLink(campaignId, categoryIds, cleanCourseId, cleanSessionId);
+    const buttonLink = payload.buttonLink || generateButtonLink(campaignId, categoryIds, cleanCourseId, cleanSessionId);
 
     // Resolve estimated recipient count
     const recipients = await resolveRecipients({
@@ -484,6 +489,7 @@ const createOfferCampaign = async (req, res) => {
         body: sanitizeHtml(payload.body),
         buttonText: sanitizePlainText(payload.buttonText),
         buttonLink,
+        templateType: payload.templateType || "offer",
         showLogo: showLogoBool,
         heroImageUrl,
         status: statusToUse,
@@ -591,6 +597,15 @@ const updateOfferCampaign = async (req, res) => {
         updateData.status = payload.status;
       }
     }
+    if (payload.templateType !== undefined) {
+      if (!["offer", "session_intimation"].includes(payload.templateType)) {
+        return res.status(400).json({ success: false, message: "templateType must be 'offer' or 'session_intimation'" });
+      }
+      updateData.templateType = payload.templateType;
+    }
+    if (payload.buttonLink !== undefined) {
+      updateData.buttonLink = payload.buttonLink;
+    }
 
     if (req.file) {
       updateData.heroImageUrl = req.file.path.replace(/\\/g, "/");
@@ -626,8 +641,13 @@ const updateOfferCampaign = async (req, res) => {
       updateData.courseId = cleanCourseId;
       updateData.sessionId = cleanSessionId;
 
-      // Regenerate Link
-      updateData.buttonLink = generateButtonLink(id, categoryIdsToUse, cleanCourseId, cleanSessionId);
+      // Regenerate Link (only if buttonLink wasn't explicitly updated in this request)
+      if (payload.buttonLink === undefined) {
+        const isCustomLink = existing.buttonLink && (existing.buttonLink.includes(":id") || existing.buttonLink.includes("redirect="));
+        if (!isCustomLink) {
+          updateData.buttonLink = generateButtonLink(id, categoryIdsToUse, cleanCourseId, cleanSessionId);
+        }
+      }
 
       // Recalculate estimated recipients
       const recipients = await resolveRecipients({
@@ -726,7 +746,7 @@ const previewOfferCampaign = async (req, res) => {
       success: true,
       data: {
         recipientCount: recipients.length,
-        buttonLink: campaign.buttonLink,
+        buttonLink: getResolvedButtonLink(campaign),
         html
       }
     });
