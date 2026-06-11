@@ -134,8 +134,12 @@ const runWhatsappReminderJob = async () => {
           });
 
           if (existingReminder && (existingReminder.status === "sent" || existingReminder.status === "accepted")) {
-            // Already sent or accepted, skip
-            continue;
+            // Check if sent within the last 12 hours (to allow recurring daily reminders)
+            const timeSinceLastSend = new Date().getTime() - new Date(existingReminder.updatedAt).getTime();
+            const twelveHoursMs = 12 * 60 * 60 * 1000;
+            if (timeSinceLastSend < twelveHoursMs) {
+              continue;
+            }
           }
 
           try {
@@ -236,8 +240,12 @@ const runWhatsappReminderJob = async () => {
           });
 
           if (existingReminder && (existingReminder.status === "sent" || existingReminder.status === "accepted")) {
-            // Already sent or accepted, skip
-            continue;
+            // Check if sent within the last 12 hours (to allow recurring daily reminders)
+            const timeSinceLastSend = new Date().getTime() - new Date(existingReminder.updatedAt).getTime();
+            const twelveHoursMs = 12 * 60 * 60 * 1000;
+            if (timeSinceLastSend < twelveHoursMs) {
+              continue;
+            }
           }
 
           try {
