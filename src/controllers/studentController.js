@@ -2116,6 +2116,7 @@ const getStudentTITClasses = async (req, res) => {
     const classes = await prisma.liveSession.findMany({
       where: {
         sectionType: "TIT",
+        source: "admin_tit_classes",
         publishState: "PUBLISHED",
       },
       include: {
@@ -2124,39 +2125,35 @@ const getStudentTITClasses = async (req, res) => {
       orderBy: { scheduledAt: "asc" },
     });
 
-    const now = new Date();
-
     const formatted = classes.map((cls) => {
-      const startTime = cls.scheduledAt ? new Date(cls.scheduledAt.replace(" ", "T") + "+05:30") : null;
-      const duration = cls.durationMinutes || 60;
-      const endTime = startTime ? new Date(startTime.getTime() + duration * 60000) : null;
-
-      let status = "upcoming";
-      if (endTime && now > endTime) {
-        status = "completed";
-      } else if (startTime && now > startTime && now < endTime) {
-        status = "live";
-      }
-
       let thumbnail = cls.thumbnail;
       if (thumbnail && !thumbnail.startsWith("http")) {
         thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
       }
 
+      const isFree = cls.pricingState === "FREE" || cls.priceInPaise === 0 || !cls.priceInPaise;
+
       return {
         id: cls.id,
+        courseId: cls.courseId,
         courseName: cls.courseTitle || cls.category || "Live Session",
-        classTitle: cls.title || cls.classTitle || "",
+        title: cls.title || "",
+        classTitle: cls.classTitle || cls.title || "",
         instructor: cls.trainer?.fullName || "Trainer",
         description: cls.description || "",
         date: cls.scheduledDate || "",
+        startTime: cls.startTime || "",
+        endTime: cls.endTime || "",
         time: cls.startTime || "",
         duration: cls.durationMinutes ? `${cls.durationMinutes} mins` : "",
+        meetingLink: cls.meetingLink || "",
         meetLink: cls.meetingLink || "",
         thumbnail: thumbnail,
-        status,
-        sectionType: cls.sectionType,
-        source: cls.source,
+        priceInPaise: cls.priceInPaise || 0,
+        currency: "INR",
+        isFree,
+        publishState: cls.publishState,
+        pricingState: cls.pricingState
       };
     });
 

@@ -139,8 +139,11 @@ model LiveSession {
   recordingUrl    String?
   materials       String?
 
-  sectionType     String?
-  source          String?
+  sectionType         String?
+  source              String?
+  sessionType         String?
+  createdByRole       String?
+  requiresAdminReview Boolean? @default(false)
 }
 
 model SessionCard {

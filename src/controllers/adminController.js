@@ -402,13 +402,18 @@ const normalizeTimeToHHMM = (timeStr) => {
 const createLiveClass = async (req, res) => {
   try {
     const {
+      courseId,
       courseName,
+      title,
       classTitle,
       instructor,
       description,
       date,
+      startTime,
+      endTime,
       time,
       duration,
+      meetingLink,
       meetLink,
       sectionType,
       source,
@@ -416,14 +421,15 @@ const createLiveClass = async (req, res) => {
 
     const thumbnail = req.file ? req.file.path : null;
 
-    if (!courseName || !classTitle || !instructor || !date || !time || !duration || !meetLink) {
+    if (!courseName || (!classTitle && !title) || !instructor || !date || (!time && !startTime) || !duration || (!meetLink && !meetingLink)) {
       return res.status(400).json({
         success: false,
-        message: "Please provide all required fields (courseName, classTitle, instructor, date, time, duration, meetLink).",
+        message: "Please provide all required fields.",
       });
     }
 
-    const scheduledAt = parseScheduledAt(date, time);
+    const checkTime = time || startTime;
+    const scheduledAt = parseScheduledAt(date, checkTime);
     const durationMinutes = parseDurationMinutes(duration);
 
     const isTIT = sectionType === "TIT" || source === "admin_tit_classes";
@@ -461,20 +467,26 @@ const createLiveClass = async (req, res) => {
       }
 
       // 2. Parse and normalize time and date
-      const formattedTime = normalizeTimeToHHMM(time);
+      const formattedTime = normalizeTimeToHHMM(checkTime);
       const scheduledDate = date; // e.g. "2026-06-11"
       const scheduledAtStr = `${scheduledDate} ${formattedTime}`;
-      const endTime = addMinutesToTime(formattedTime, durationMinutes);
-      const endsAt = endTime ? `${scheduledDate} ${endTime}` : null;
+      const calculatedEndTime = addMinutesToTime(formattedTime, durationMinutes);
+      const resolvedEndTime = endTime || calculatedEndTime;
+      const endsAt = resolvedEndTime ? `${scheduledDate} ${resolvedEndTime}` : null;
 
-      // Try to find a matching category by courseName
-      let resolvedCourseId = null;
-      const existingCategory = await prisma.category.findFirst({
-        where: { name: { equals: courseName, mode: 'insensitive' } }
-      });
-      if (existingCategory) {
-        resolvedCourseId = existingCategory.id;
+      // Try to find a matching category by courseName if courseId is not explicitly passed
+      let resolvedCourseId = courseId || null;
+      if (!resolvedCourseId && courseName) {
+        const existingCategory = await prisma.category.findFirst({
+          where: { name: { equals: courseName, mode: 'insensitive' } }
+        });
+        if (existingCategory) {
+          resolvedCourseId = existingCategory.id;
+        }
       }
+
+      const isRecurring = req.body.isRecurring === true || req.body.isRecurring === "true" || req.body.isRecurring === "1" || req.body.isRecurring === 1;
+      const recurrenceType = isRecurring ? req.body.recurrenceType : null;
 
       // 3. Create LiveSession
       const newSession = await prisma.liveSession.create({
@@ -483,22 +495,25 @@ const createLiveClass = async (req, res) => {
           courseTitle: courseName,
           category: courseName,
           trainerId,
-          title: classTitle,
-          classTitle: classTitle,
+          title: title || classTitle,
+          classTitle: classTitle || title,
           description: description || null,
           startTime: formattedTime,
-          endTime: endTime || null,
+          endTime: resolvedEndTime || null,
           timezone: "Asia/Kolkata",
-          meetingLink: meetLink,
-          isRecurring: req.body.isRecurring === true || req.body.isRecurring === "true" || req.body.isRecurring === "1",
-          recurrenceType: (req.body.isRecurring === true || req.body.isRecurring === "true" || req.body.isRecurring === "1") ? req.body.recurrenceType : null,
+          meetingLink: meetingLink || meetLink,
+          isRecurring,
+          recurrenceType,
           status: "active",
           cancelledDates: [],
           thumbnail,
           pricingState: "PENDING_PRICE",
           publishState: "DRAFT",
           sectionType: "TIT",
+          sessionType: "TIT",
           source: "admin_tit_classes",
+          createdByRole: "admin",
+          requiresAdminReview: true,
           scheduledDate,
           scheduledAt: scheduledAtStr,
           endsAt,
@@ -516,18 +531,29 @@ const createLiveClass = async (req, res) => {
         message: "Live class created successfully!",
         data: {
           id: newSession.id,
+          courseId: newSession.courseId,
           courseName: newSession.courseTitle || "",
-          classTitle: newSession.title || "",
+          title: newSession.title || "",
+          classTitle: newSession.classTitle || "",
           instructor: instructor || "",
           description: newSession.description || "",
           date: newSession.scheduledDate || scheduledDate || "",
+          startTime: newSession.startTime || "",
+          endTime: newSession.endTime || "",
           time: newSession.startTime || "",
           duration: duration || "",
+          meetingLink: newSession.meetingLink || "",
           meetLink: newSession.meetingLink || "",
           thumbnail: thumbnailResponse,
-          status: "Scheduled",
+          isRecurring: newSession.isRecurring,
+          recurrenceType: newSession.recurrenceType,
+          publishState: newSession.publishState,
+          pricingState: newSession.pricingState,
+          requiresAdminReview: newSession.requiresAdminReview,
           sectionType: newSession.sectionType,
+          sessionType: newSession.sessionType,
           source: newSession.source,
+          createdByRole: newSession.createdByRole,
         },
       });
     }
