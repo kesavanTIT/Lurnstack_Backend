@@ -617,9 +617,30 @@ const googleAuthCallback = async (req, res) => {
   try {
     const { code, state, error: googleError } = req.query;
 
+    let targetRole = "STUDENT";
     if (state) {
       try {
-        frontendRedirectUrl = Buffer.from(state, "base64").toString("utf-8");
+        const decoded = Buffer.from(state, "base64").toString("utf-8");
+        frontendRedirectUrl = decoded;
+        if (decoded.startsWith("{")) {
+          const parsed = JSON.parse(decoded);
+          frontendRedirectUrl = parsed.redirect;
+          if (parsed.role && String(parsed.role).toUpperCase() === "TRAINER") {
+            targetRole = "TRAINER";
+          }
+        } else {
+          try {
+            const url = new URL(decoded);
+            const roleParam = url.searchParams.get("role") || url.searchParams.get("ROLE");
+            if (roleParam && roleParam.toUpperCase() === "TRAINER") {
+              targetRole = "TRAINER";
+            }
+          } catch (urlErr) {
+            if (decoded.includes("role=trainer") || decoded.includes("role=TRAINER") || decoded.includes("ROLE=TRAINER")) {
+              targetRole = "TRAINER";
+            }
+          }
+        }
       } catch (e) {
         console.error("Failed to decode state:", e.message);
       }
@@ -706,7 +727,7 @@ const googleAuthCallback = async (req, res) => {
           fullName: name || "Google User",
           email,
           password: hashedPassword,
-          role: "STUDENT"
+          role: targetRole
         }
       });
     }

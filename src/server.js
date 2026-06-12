@@ -11,6 +11,7 @@ const studentRoutes = require("./routes/studentRoutes");
 const trainerRoutes = require("./routes/trainerRoutes");
 const sessionRoutes = require("./routes/sessionRoutes");
 const offerCampaignRoutes = require("./routes/offerCampaignRoutes");
+const aiRoutes = require("./routes/aiRoutes");
 
 // ── App Setup ────────────────────────────────
 const app = express();
@@ -94,6 +95,7 @@ app.use("/api/student", studentRoutes);
 app.use("/api/trainer", trainerRoutes);
 app.use("/api/sessions", sessionRoutes);
 app.use("/api", offerCampaignRoutes);
+app.use("/api/ai", aiRoutes);
 
 // ── 404 Handler ──────────────────────────────
 app.use((req, res) => {
