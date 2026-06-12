@@ -178,6 +178,12 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
     pricingState: session.pricingState,
     publishState: session.publishState,
     trainerSharePercentage: session.trainerSharePercentage !== undefined ? session.trainerSharePercentage : 50,
+    enableWhatsApp: session.enableWhatsApp,
+    whatsappTemplateName: session.whatsappTemplateName,
+    whatsappCustomTitle: session.whatsappCustomTitle,
+    whatsappButtonUrl: session.whatsappButtonUrl,
+    trainerInstructions: session.trainerInstructions,
+    recurringDays: session.recurringDays,
   };
 };
 
@@ -372,6 +378,24 @@ const createSession = async (req, res) => {
       thumbnail = req.body.thumbnail;
     }
 
+    let enableWhatsAppValue = true;
+    if (req.body.enableWhatsApp !== undefined) {
+      enableWhatsAppValue = req.body.enableWhatsApp === true || req.body.enableWhatsApp === "true";
+    }
+
+    let parsedRecurringDays = null;
+    if (req.body.recurringDays) {
+      if (typeof req.body.recurringDays === "string") {
+        try {
+          parsedRecurringDays = JSON.parse(req.body.recurringDays);
+        } catch (e) {
+          parsedRecurringDays = req.body.recurringDays;
+        }
+      } else {
+        parsedRecurringDays = req.body.recurringDays;
+      }
+    }
+
     const session = await prisma.liveSession.create({
       data: {
         courseId: resolvedCourseId,
@@ -392,6 +416,12 @@ const createSession = async (req, res) => {
         thumbnail,
         pricingState: "PENDING_PRICE",
         publishState: "DRAFT",
+        enableWhatsApp: enableWhatsAppValue,
+        whatsappTemplateName: req.body.whatsappTemplateName || null,
+        whatsappCustomTitle: req.body.whatsappCustomTitle || null,
+        whatsappButtonUrl: req.body.whatsappButtonUrl || null,
+        trainerInstructions: req.body.trainerInstructions || null,
+        recurringDays: parsedRecurringDays,
       },
       include: { trainer: true },
     });
@@ -538,6 +568,37 @@ const updateTrainerSession = async (req, res) => {
 
     if (updateData.isRecurring === false) {
       updateData.recurrenceType = null;
+    }
+
+    if (req.body.enableWhatsApp !== undefined) {
+      updateData.enableWhatsApp = req.body.enableWhatsApp === true || req.body.enableWhatsApp === "true";
+    }
+    if (req.body.whatsappTemplateName !== undefined) {
+      updateData.whatsappTemplateName = req.body.whatsappTemplateName || null;
+    }
+    if (req.body.whatsappCustomTitle !== undefined) {
+      updateData.whatsappCustomTitle = req.body.whatsappCustomTitle || null;
+    }
+    if (req.body.whatsappButtonUrl !== undefined) {
+      updateData.whatsappButtonUrl = req.body.whatsappButtonUrl || null;
+    }
+    if (req.body.trainerInstructions !== undefined) {
+      updateData.trainerInstructions = req.body.trainerInstructions || null;
+    }
+    if (req.body.recurringDays !== undefined) {
+      let parsed = null;
+      if (req.body.recurringDays) {
+        if (typeof req.body.recurringDays === "string") {
+          try {
+            parsed = JSON.parse(req.body.recurringDays);
+          } catch (e) {
+            parsed = req.body.recurringDays;
+          }
+        } else {
+          parsed = req.body.recurringDays;
+        }
+      }
+      updateData.recurringDays = parsed;
     }
 
     if (req.file) {

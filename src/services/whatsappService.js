@@ -138,13 +138,14 @@ const sendWhatsAppReminder = async ({
   minutesLeft = "5",
   trainerName = "Infant",
   buttonUrl,
+  templateName: customTemplateName,
 }) => {
   const targetPhone = phone || studentPhone;
   const isEnabled = process.env.WHATSAPP_ENABLED === "true";
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const graphVersion = process.env.WHATSAPP_GRAPH_VERSION || "v23.0";
-  const templateName = process.env.WHATSAPP_TEMPLATE_SESSION_REMINDER || "lurnstack";
+  const templateName = customTemplateName || process.env.WHATSAPP_TEMPLATE_SESSION_REMINDER || "lurnstack";
   const languageCode = process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en";
 
   // Check if WhatsApp is enabled

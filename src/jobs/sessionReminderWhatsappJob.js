@@ -71,6 +71,18 @@ const runWhatsappReminderJob = async () => {
 
       console.log(`[WHATSAPP-JOB] Processing "${session.title}" (starts in ${minutesLeft} mins, ${isPaid ? "PAID" : "FREE"}).`);
 
+      // Skip TIT classes (Requirement 3: no WhatsApp reminders for TIT classes)
+      if (session.sectionType === "TIT" || session.source === "admin_tit_classes") {
+        console.log(`[WHATSAPP-JOB]   → Skipping TIT session "${session.title}". No WhatsApp reminder required.`);
+        continue;
+      }
+
+      // Respect the enableWhatsApp control setting
+      if (session.enableWhatsApp === false) {
+        console.log(`[WHATSAPP-JOB]   → Skipping session "${session.title}". WhatsApp reminders are disabled.`);
+        continue;
+      }
+
       if (isPaid) {
         // --- PAID SESSION RECIPIENTS ---
         // Paid session reminders go to students with booking status: paid, joined, completed
@@ -149,9 +161,11 @@ const runWhatsappReminderJob = async () => {
               sessionId: session.id,
               reminderType,
               studentName: student.fullName,
-              sessionTitle: session.title,
+              sessionTitle: session.whatsappCustomTitle || session.title,
               minutesLeft: String(minutesLeft),
               trainerName,
+              templateName: session.whatsappTemplateName || undefined,
+              buttonUrl: session.whatsappButtonUrl || undefined,
             });
 
             // Update booking table for compatibility
@@ -255,9 +269,11 @@ const runWhatsappReminderJob = async () => {
               sessionId: session.id,
               reminderType,
               studentName: student.fullName,
-              sessionTitle: session.title,
+              sessionTitle: session.whatsappCustomTitle || session.title,
               minutesLeft: String(minutesLeft),
               trainerName,
+              templateName: session.whatsappTemplateName || undefined,
+              buttonUrl: session.whatsappButtonUrl || undefined,
             });
           } catch (err) {
             console.error(`[WHATSAPP-JOB] Error processing free session reminder for student ${student.id}:`, err.message);

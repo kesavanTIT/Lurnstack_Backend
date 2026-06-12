@@ -37,7 +37,7 @@ const reviewAndPublishSession = async (req, res) => {
     const { sessionId } = req.params;
 
     // price is in Paise (e.g. 49900 = ₹499). Send 0 or omit to mark FREE.
-    const { price, notes } = req.body;
+    const { price, notes, enableWhatsApp, whatsappTemplateName, whatsappCustomTitle, whatsappButtonUrl } = req.body;
 
     // 1. Check the session exists
     const existing = await prisma.liveSession.findUnique({
@@ -68,16 +68,28 @@ const reviewAndPublishSession = async (req, res) => {
       priceInPaise  = parsedPrice;
     }
 
+    const updatePayload = {
+      pricingState,
+      priceInPaise,
+      publishState: "PUBLISHED",
+      status: existing.status === "active" ? "active" : existing.status,
+    };
+
+    if (enableWhatsApp !== undefined) {
+      updatePayload.enableWhatsApp = enableWhatsApp === true || enableWhatsApp === "true";
+    } else {
+      // Default to true for FREE classes, false for PAID classes
+      updatePayload.enableWhatsApp = (pricingState === "FREE");
+    }
+
+    if (whatsappTemplateName !== undefined) updatePayload.whatsappTemplateName = whatsappTemplateName || null;
+    if (whatsappCustomTitle !== undefined) updatePayload.whatsappCustomTitle = whatsappCustomTitle || null;
+    if (whatsappButtonUrl !== undefined) updatePayload.whatsappButtonUrl = whatsappButtonUrl || null;
+
     // 3. Update the session: set pricing + publish it
     const updated = await prisma.liveSession.update({
       where: { id: sessionId },
-      data: {
-        pricingState,
-        priceInPaise,
-        publishState: "PUBLISHED",
-        // Keep existing status unless it was DRAFT, promote to active
-        status: existing.status === "active" ? "active" : existing.status,
-      },
+      data: updatePayload,
       include: {
         trainer: { select: { fullName: true, email: true } },
       },

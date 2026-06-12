@@ -144,6 +144,12 @@ model LiveSession {
   sessionType         String?
   createdByRole       String?
   requiresAdminReview Boolean? @default(false)
+  enableWhatsApp       Boolean  @default(true)
+  whatsappTemplateName String?
+  whatsappCustomTitle  String?
+  whatsappButtonUrl    String?
+  trainerInstructions  String?
+  recurringDays        Json?
 }
 
 model SessionCard {

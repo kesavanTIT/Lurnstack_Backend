@@ -37,8 +37,27 @@ const generateOccurrences = async (session, daysToGenerate = 30) => {
       const currentIterDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
       const dateStr = getKolkataDateString(currentIterDate);
       
-      // Basic Recurrence logic
-      if (session.isRecurring && session.recurrenceType === "weekly") {
+      // Specific recurrence days limit (e.g., [1, 2, 3, 4] for Mon-Thu)
+      if (session.isRecurring && session.recurringDays) {
+        let daysArray = [];
+        if (Array.isArray(session.recurringDays)) {
+          daysArray = session.recurringDays;
+        } else {
+          try {
+            daysArray = typeof session.recurringDays === "string"
+              ? JSON.parse(session.recurringDays)
+              : session.recurringDays;
+          } catch (e) {
+            daysArray = [];
+          }
+        }
+        if (Array.isArray(daysArray) && daysArray.length > 0) {
+          if (!daysArray.includes(currentIterDate.getDay())) {
+            continue; // skip days that don't match
+          }
+        }
+      } else if (session.isRecurring && session.recurrenceType === "weekly") {
+        // Fallback: basic weekly recurrence on creation day of the week
         const createDayOfWeek = new Date(session.createdAt).getDay();
         if (currentIterDate.getDay() !== createDayOfWeek) {
           continue; // skip days that don't match the creation day of week
