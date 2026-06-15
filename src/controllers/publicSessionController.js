@@ -16,6 +16,13 @@ const getKolkataDateTime = (dateStr, timeStr) => {
 };
 
 const matchesRecurringDays = (session, date) => {
+  if (session.isRecurring && session.recurrenceEndDate) {
+    const dateStr = getKolkataDateString(date);
+    if (dateStr > session.recurrenceEndDate) {
+      return false;
+    }
+  }
+
   if (!session.isRecurring) return true;
   
   let daysArray = [];
@@ -143,6 +150,7 @@ const formatPublicSession = (session, categoryMap = new Map(), req = null) => {
     isRecurring: session.isRecurring,
     recurrenceType: session.recurrenceType,
     recurringDays: serializeRecurringDays(session.recurringDays),
+    recurrenceEndDate: session.recurrenceEndDate || null,
   };
 };
 

@@ -1,6 +1,7 @@
 const { Prisma } = require("@prisma/client");
 const prisma = require("../config/db");
 const { sendWhatsAppReminder, sendSessionReminderWhatsApp } = require("../services/whatsappService");
+const { generateOccurrences } = require("../services/occurrenceService");
 
 const dashboardUserSelect = {
   id: true,
@@ -68,6 +69,24 @@ const validateRecurringDays = (recurringDays) => {
   }
   return { isValid: true, parsed: parsed.map(Number) };
 };
+
+// Helper: validate recurrenceEndDate format (YYYY-MM-DD)
+const validateRecurrenceEndDate = (recurrenceEndDate) => {
+  if (recurrenceEndDate === undefined || recurrenceEndDate === null || recurrenceEndDate === "") {
+    return { isValid: true, parsed: null };
+  }
+  const dateStr = String(recurrenceEndDate).trim();
+  const match = dateStr.match(/^\d{4}-\d{2}-\d{2}$/);
+  if (!match) {
+    return { isValid: false, message: "recurrenceEndDate must be in YYYY-MM-DD format." };
+  }
+  const parsedDate = new Date(dateStr);
+  if (isNaN(parsedDate.getTime())) {
+    return { isValid: false, message: "recurrenceEndDate is not a valid calendar date." };
+  }
+  return { isValid: true, parsed: dateStr };
+};
+
 
 // @desc    Get admin dashboard student/trainer counts
 // @route   GET /api/admin/dashboard/summary
@@ -453,6 +472,15 @@ const createLiveClass = async (req, res) => {
       });
     }
 
+    const dateValidation = validateRecurrenceEndDate(req.body.recurrenceEndDate);
+    if (!dateValidation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: dateValidation.message,
+      });
+    }
+
+
     const {
       courseId,
       courseName,
@@ -575,8 +603,12 @@ const createLiveClass = async (req, res) => {
           enableWhatsApp: false, // Force false for TIT classes
           trainerInstructions: req.body.trainerInstructions || null,
           recurringDays: parsedRecurringDays,
+          recurrenceEndDate: dateValidation.parsed,
         },
       });
+
+      // Automatically generate SessionOccurrence records
+      await generateOccurrences(newSession);
 
       let thumbnailResponse = newSession.thumbnail;
       if (thumbnailResponse && !thumbnailResponse.startsWith("http")) {
@@ -605,6 +637,7 @@ const createLiveClass = async (req, res) => {
           isRecurring: newSession.isRecurring,
           recurrenceType: newSession.recurrenceType,
           recurringDays: serializeRecurringDays(newSession.recurringDays),
+          recurrenceEndDate: newSession.recurrenceEndDate || null,
           publishState: newSession.publishState,
           pricingState: newSession.pricingState,
           requiresAdminReview: newSession.requiresAdminReview,
@@ -666,6 +699,17 @@ const updateLiveClass = async (req, res) => {
         });
       }
     }
+
+    if (req.body.recurrenceEndDate !== undefined) {
+      const dateValidation = validateRecurrenceEndDate(req.body.recurrenceEndDate);
+      if (!dateValidation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: dateValidation.message,
+        });
+      }
+    }
+
 
     const rawId = req.params.classId;
     const classIdInt = Number.parseInt(rawId, 10);
@@ -778,6 +822,10 @@ const updateLiveClass = async (req, res) => {
         const validation = validateRecurringDays(req.body.recurringDays);
         updateData.recurringDays = validation.parsed;
       }
+      if (req.body.recurrenceEndDate !== undefined) {
+        const dateValidation = validateRecurrenceEndDate(req.body.recurrenceEndDate);
+        updateData.recurrenceEndDate = dateValidation.parsed;
+      }
 
       if (req.file) {
         updateData.thumbnail = req.file.path;
@@ -810,11 +858,33 @@ const updateLiveClass = async (req, res) => {
         updateData.endsAt = newEndTime ? `${checkDate} ${newEndTime}` : undefined;
       }
 
+      // Cleanup existing pending reminder occurrences/jobs
+      await prisma.sessionOccurrence.deleteMany({
+        where: { sessionId: rawId }
+      });
+
+      await prisma.whatsAppReminder.deleteMany({
+        where: { sessionId: rawId }
+      });
+
+      await prisma.booking.updateMany({
+        where: { sessionId: rawId },
+        data: {
+          whatsappReminderSentAt: null,
+          whatsappReminderStatus: null,
+          whatsappReminderMessageId: null,
+          whatsappReminderError: null
+        }
+      });
+
       const updatedSession = await prisma.liveSession.update({
         where: { id: rawId },
         data: updateData,
         include: { trainer: true },
       });
+
+      // Automatically generate SessionOccurrence records based on the updated settings
+      await generateOccurrences(updatedSession);
 
       const responseData = {
         id: updatedSession.id,
@@ -830,9 +900,11 @@ const updateLiveClass = async (req, res) => {
         isRecurring: updatedSession.isRecurring,
         recurrenceType: updatedSession.recurrenceType,
         recurringDays: serializeRecurringDays(updatedSession.recurringDays),
+        recurrenceEndDate: updatedSession.recurrenceEndDate || null,
       };
 
       return res.status(200).json({
+
         success: true,
         message: "Live session updated successfully!",
         data: responseData,
@@ -1033,6 +1105,10 @@ const getLiveClasses = async (req, res) => {
         status: "Scheduled",
         sectionType: c.sectionType,
         source: c.source,
+        isRecurring: c.isRecurring,
+        recurrenceType: c.recurrenceType,
+        recurringDays: serializeRecurringDays(c.recurringDays),
+        recurrenceEndDate: c.recurrenceEndDate || null,
       };
     });
 

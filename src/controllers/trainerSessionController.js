@@ -199,6 +199,23 @@ const validateRecurringDays = (recurringDays) => {
   return { isValid: true, parsed: parsed.map(Number) };
 };
 
+// Helper: validate recurrenceEndDate format (YYYY-MM-DD)
+const validateRecurrenceEndDate = (recurrenceEndDate) => {
+  if (recurrenceEndDate === undefined || recurrenceEndDate === null || recurrenceEndDate === "") {
+    return { isValid: true, parsed: null };
+  }
+  const dateStr = String(recurrenceEndDate).trim();
+  const match = dateStr.match(/^\d{4}-\d{2}-\d{2}$/);
+  if (!match) {
+    return { isValid: false, message: "recurrenceEndDate must be in YYYY-MM-DD format." };
+  }
+  const parsedDate = new Date(dateStr);
+  if (isNaN(parsedDate.getTime())) {
+    return { isValid: false, message: "recurrenceEndDate is not a valid calendar date." };
+  }
+  return { isValid: true, parsed: dateStr };
+};
+
 // Helper: build response shape for session
 const formatSession = (session, categoryMap = new Map(), req = null) => {
   const now = new Date();
@@ -266,6 +283,7 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
     whatsappButtonUrl: session.whatsappButtonUrl,
     trainerInstructions: session.trainerInstructions,
     recurringDays: serializeRecurringDays(session.recurringDays),
+    recurrenceEndDate: session.recurrenceEndDate || null,
   };
 };
 
@@ -365,6 +383,14 @@ const createSession = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: validation.message,
+      });
+    }
+
+    const dateValidation = validateRecurrenceEndDate(req.body.recurrenceEndDate);
+    if (!dateValidation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: dateValidation.message,
       });
     }
 
@@ -501,6 +527,7 @@ const createSession = async (req, res) => {
         whatsappButtonUrl: req.body.whatsappButtonUrl || null,
         trainerInstructions: req.body.trainerInstructions || null,
         recurringDays: parsedRecurringDays,
+        recurrenceEndDate: dateValidation.parsed,
       },
       include: { trainer: true },
     });
@@ -613,6 +640,16 @@ const updateTrainerSession = async (req, res) => {
       }
     }
 
+    if (req.body.recurrenceEndDate !== undefined) {
+      const dateValidation = validateRecurrenceEndDate(req.body.recurrenceEndDate);
+      if (!dateValidation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: dateValidation.message,
+        });
+      }
+    }
+
     const { sessionId } = req.params;
 
     const existing = await prisma.liveSession.findUnique({
@@ -677,6 +714,10 @@ const updateTrainerSession = async (req, res) => {
     if (req.body.recurringDays !== undefined) {
       const validation = validateRecurringDays(req.body.recurringDays);
       updateData.recurringDays = validation.parsed;
+    }
+    if (req.body.recurrenceEndDate !== undefined) {
+      const dateValidation = validateRecurrenceEndDate(req.body.recurrenceEndDate);
+      updateData.recurrenceEndDate = dateValidation.parsed;
     }
 
     if (req.file) {

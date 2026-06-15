@@ -150,6 +150,7 @@ model LiveSession {
   whatsappButtonUrl    String?
   trainerInstructions  String?
   recurringDays        Json?
+  recurrenceEndDate    String?
 }
 
 model SessionCard {

@@ -36,6 +36,13 @@ const generateOccurrences = async (session, daysToGenerate = 30) => {
     for (let i = 0; i < numDays; i++) {
       const currentIterDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
       const dateStr = getKolkataDateString(currentIterDate);
+
+      // Check if currentIterDate is past recurrenceEndDate
+      if (session.isRecurring && session.recurrenceEndDate) {
+        if (dateStr > session.recurrenceEndDate) {
+          break; // Stop generating occurrences past the end date
+        }
+      }
       
       // Specific recurrence days limit (e.g., [1, 2, 3, 4] for Mon-Thu)
       const getKolkataWeekday = (date) => {
