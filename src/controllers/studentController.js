@@ -399,6 +399,16 @@ const getAllLiveClasses = async (req, res) => {
     const activeCourseIds = new Set(activeCourseBookings.map(b => b.courseId).filter(Boolean));
 
     const sessions = await prisma.liveSession.findMany({
+      where: {
+        NOT: {
+          OR: [
+            { sectionType: "TIT" },
+            { sessionType: "TIT" },
+            { source: "admin_tit_classes" },
+            { createdByRole: "admin" }
+          ]
+        }
+      },
       include: {
         trainer: true,
         cards: { where: { studentId } },
@@ -868,10 +878,14 @@ const getStudentSessions = async (req, res) => {
           ]
         },
         {
-          OR: [
-            { sectionType: { not: "TIT" } },
-            { sectionType: null }
-          ]
+          NOT: {
+            OR: [
+              { sectionType: "TIT" },
+              { sessionType: "TIT" },
+              { source: "admin_tit_classes" },
+              { createdByRole: "admin" }
+            ]
+          }
         }
       ]
     };

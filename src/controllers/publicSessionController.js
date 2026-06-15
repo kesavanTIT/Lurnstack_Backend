@@ -162,6 +162,14 @@ const getPublicSessions = async (req, res) => {
     const sessions = await prisma.liveSession.findMany({
       where: {
         status: "active",
+        NOT: {
+          OR: [
+            { sectionType: "TIT" },
+            { sessionType: "TIT" },
+            { source: "admin_tit_classes" },
+            { createdByRole: "admin" }
+          ]
+        }
       },
       include: {
         trainer: true,
