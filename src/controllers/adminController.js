@@ -25,6 +25,50 @@ const parseClassId = (rawId) => {
   return Number.isInteger(id) && id > 0 ? id : null;
 };
 
+// Helper: serialize recurringDays to an array of integers between 0 and 6
+const serializeRecurringDays = (recurringDays) => {
+  if (recurringDays === undefined || recurringDays === null) return [];
+  let arr = [];
+  if (Array.isArray(recurringDays)) {
+    arr = recurringDays;
+  } else if (typeof recurringDays === "string") {
+    try {
+      arr = JSON.parse(recurringDays);
+    } catch (e) {
+      arr = recurringDays.split(",").map(x => x.trim());
+    }
+  }
+  if (Array.isArray(arr)) {
+    return arr.map(Number).filter(n => !Number.isNaN(n) && Number.isInteger(n) && n >= 0 && n <= 6);
+  }
+  return [];
+};
+
+// Helper: validate recurringDays format and values
+const validateRecurringDays = (recurringDays) => {
+  if (recurringDays === undefined || recurringDays === null) {
+    return { isValid: true, parsed: null };
+  }
+  let parsed = recurringDays;
+  if (typeof recurringDays === "string") {
+    try {
+      parsed = JSON.parse(recurringDays);
+    } catch (e) {
+      return { isValid: false, message: "recurringDays must be a valid JSON array of integers ranging between 0 (Sunday) and 6 (Saturday)." };
+    }
+  }
+  if (!Array.isArray(parsed)) {
+    return { isValid: false, message: "recurringDays must be a valid JSON array of integers ranging between 0 (Sunday) and 6 (Saturday)." };
+  }
+  for (const day of parsed) {
+    const num = Number(day);
+    if (!Number.isInteger(num) || num < 0 || num > 6) {
+      return { isValid: false, message: "Each value in recurringDays must be an integer ranging between 0 (Sunday) and 6 (Saturday)." };
+    }
+  }
+  return { isValid: true, parsed: parsed.map(Number) };
+};
+
 // @desc    Get admin dashboard student/trainer counts
 // @route   GET /api/admin/dashboard/summary
 // @access  Private/Admin
@@ -488,18 +532,14 @@ const createLiveClass = async (req, res) => {
       const isRecurring = req.body.isRecurring === true || req.body.isRecurring === "true" || req.body.isRecurring === "1" || req.body.isRecurring === 1;
       const recurrenceType = isRecurring ? req.body.recurrenceType : null;
 
-      let parsedRecurringDays = null;
-      if (req.body.recurringDays) {
-        if (typeof req.body.recurringDays === "string") {
-          try {
-            parsedRecurringDays = JSON.parse(req.body.recurringDays);
-          } catch (e) {
-            parsedRecurringDays = req.body.recurringDays;
-          }
-        } else {
-          parsedRecurringDays = req.body.recurringDays;
-        }
+      const validation = validateRecurringDays(req.body.recurringDays);
+      if (!validation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: validation.message,
+        });
       }
+      const parsedRecurringDays = validation.parsed;
 
       // 3. Create LiveSession
       const newSession = await prisma.liveSession.create({
@@ -563,6 +603,7 @@ const createLiveClass = async (req, res) => {
           thumbnail: thumbnailResponse,
           isRecurring: newSession.isRecurring,
           recurrenceType: newSession.recurrenceType,
+          recurringDays: serializeRecurringDays(newSession.recurringDays),
           publishState: newSession.publishState,
           pricingState: newSession.pricingState,
           requiresAdminReview: newSession.requiresAdminReview,
@@ -723,19 +764,14 @@ const updateLiveClass = async (req, res) => {
         updateData.trainerInstructions = req.body.trainerInstructions || null;
       }
       if (req.body.recurringDays !== undefined) {
-        let parsed = null;
-        if (req.body.recurringDays) {
-          if (typeof req.body.recurringDays === "string") {
-            try {
-              parsed = JSON.parse(req.body.recurringDays);
-            } catch (e) {
-              parsed = req.body.recurringDays;
-            }
-          } else {
-            parsed = req.body.recurringDays;
-          }
+        const validation = validateRecurringDays(req.body.recurringDays);
+        if (!validation.isValid) {
+          return res.status(400).json({
+            success: false,
+            message: validation.message,
+          });
         }
-        updateData.recurringDays = parsed;
+        updateData.recurringDays = validation.parsed;
       }
 
       if (req.file) {
@@ -786,6 +822,9 @@ const updateLiveClass = async (req, res) => {
         duration: `${updatedSession.durationMinutes || 60} mins`,
         meetLink: updatedSession.meetingLink || "",
         thumbnail: updatedSession.thumbnail ? `${req.protocol}://${req.get("host")}/${updatedSession.thumbnail.replace(/\\/g, "/")}` : null,
+        isRecurring: updatedSession.isRecurring,
+        recurrenceType: updatedSession.recurrenceType,
+        recurringDays: serializeRecurringDays(updatedSession.recurringDays),
       };
 
       return res.status(200).json({

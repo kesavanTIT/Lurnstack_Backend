@@ -61,6 +61,25 @@ const getSessionOccurrences = (session, now = new Date()) => {
   return { scheduledAt, endsAt };
 };
 
+// Helper: serialize recurringDays to an array of integers between 0 and 6
+const serializeRecurringDays = (recurringDays) => {
+  if (recurringDays === undefined || recurringDays === null) return [];
+  let arr = [];
+  if (Array.isArray(recurringDays)) {
+    arr = recurringDays;
+  } else if (typeof recurringDays === "string") {
+    try {
+      arr = JSON.parse(recurringDays);
+    } catch (e) {
+      arr = recurringDays.split(",").map(x => x.trim());
+    }
+  }
+  if (Array.isArray(arr)) {
+    return arr.map(Number).filter(n => !Number.isNaN(n) && Number.isInteger(n) && n >= 0 && n <= 6);
+  }
+  return [];
+};
+
 const formatPublicSession = (session, categoryMap = new Map(), req = null) => {
   const now = new Date();
   const { scheduledAt, endsAt } = getSessionOccurrences(session, now);
@@ -121,6 +140,9 @@ const formatPublicSession = (session, categoryMap = new Map(), req = null) => {
     paymentRequired,
     status: session.status === "active" ? "published" : session.status,
     hasCourseAccess: false,
+    isRecurring: session.isRecurring,
+    recurrenceType: session.recurrenceType,
+    recurringDays: serializeRecurringDays(session.recurringDays),
   };
 };
 

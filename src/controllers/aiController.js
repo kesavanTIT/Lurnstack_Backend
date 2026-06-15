@@ -151,6 +151,25 @@ const calculateSessionTodayStatus = (session, now = new Date()) => {
   }
 }
 
+// Helper: serialize recurringDays to an array of integers between 0 and 6
+const serializeRecurringDays = (recurringDays) => {
+  if (recurringDays === undefined || recurringDays === null) return [];
+  let arr = [];
+  if (Array.isArray(recurringDays)) {
+    arr = recurringDays;
+  } else if (typeof recurringDays === "string") {
+    try {
+      arr = JSON.parse(recurringDays);
+    } catch (e) {
+      arr = recurringDays.split(",").map(x => x.trim());
+    }
+  }
+  if (Array.isArray(arr)) {
+    return arr.map(Number).filter(n => !Number.isNaN(n) && Number.isInteger(n) && n >= 0 && n <= 6);
+  }
+  return [];
+};
+
 // Helper: build simplified response shape for student session in AI Context
 const formatSession = (session, categoryMap = new Map(), studentId = null, activeCourseIds = new Set()) => {
   const now = new Date();
@@ -225,6 +244,9 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, activ
     endTime: session.endTime,
     timezone: session.timezone,
     meetingLink: session.meetingLink,
+    isRecurring: session.isRecurring,
+    recurrenceType: session.recurrenceType,
+    recurringDays: serializeRecurringDays(session.recurringDays),
     status: sessionStatus,
     todayStatus,
     isAddedToCard,
