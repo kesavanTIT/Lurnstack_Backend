@@ -513,7 +513,8 @@ const getAllLiveClasses = async (req, res) => {
         meetUrl: session.meetingLink || "",
         status: sessionStatus,
         isPaid,
-        paymentRequired
+        paymentRequired,
+        recurrenceEndDate: session.recurrenceEndDate || null
       };
 
       return {
@@ -542,6 +543,7 @@ const getAllLiveClasses = async (req, res) => {
         title: session.title,
         subtitle: session.subtitle,
         timezone: session.timezone,
+        recurrenceEndDate: session.recurrenceEndDate || null,
         todayStatus: todayStatus,
         cancellationReason: null,
         isAddedToCard: session.cards.length > 0,
@@ -742,7 +744,8 @@ const getLiveClassById = async (req, res) => {
       meetUrl: session.meetingLink || "",
       status: sessionStatus,
       isPaid,
-      paymentRequired
+      paymentRequired,
+      recurrenceEndDate: session.recurrenceEndDate || null
     };
 
     return res.status(200).json({
@@ -773,6 +776,7 @@ const getLiveClassById = async (req, res) => {
         title: session.title,
         subtitle: session.subtitle,
         timezone: session.timezone,
+        recurrenceEndDate: session.recurrenceEndDate || null,
         todayStatus: todayStatus,
         cancellationReason: null,
         isAddedToCard: session.cards.length > 0,
