@@ -400,13 +400,11 @@ const getAllLiveClasses = async (req, res) => {
 
     const sessions = await prisma.liveSession.findMany({
       where: {
-        NOT: {
-          OR: [
-            { sectionType: "TIT" },
-            { sessionType: "TIT" },
-            { source: "admin_tit_classes" }
-          ]
-        }
+        AND: [
+          { OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }] },
+          { OR: [{ sessionType: { not: "TIT" } }, { sessionType: null }] },
+          { OR: [{ source: { not: "admin_tit_classes" } }, { source: null }] }
+        ]
       },
       include: {
         trainer: true,
@@ -877,13 +875,11 @@ const getStudentSessions = async (req, res) => {
           ]
         },
         {
-          NOT: {
-            OR: [
-              { sectionType: "TIT" },
-              { sessionType: "TIT" },
-              { source: "admin_tit_classes" }
-            ]
-          }
+          AND: [
+            { OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }] },
+            { OR: [{ sessionType: { not: "TIT" } }, { sessionType: null }] },
+            { OR: [{ source: { not: "admin_tit_classes" } }, { source: null }] }
+          ]
         }
       ]
     };
