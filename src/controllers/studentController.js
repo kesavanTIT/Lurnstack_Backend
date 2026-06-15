@@ -404,8 +404,7 @@ const getAllLiveClasses = async (req, res) => {
           OR: [
             { sectionType: "TIT" },
             { sessionType: "TIT" },
-            { source: "admin_tit_classes" },
-            { createdByRole: "admin" }
+            { source: "admin_tit_classes" }
           ]
         }
       },
@@ -882,8 +881,7 @@ const getStudentSessions = async (req, res) => {
             OR: [
               { sectionType: "TIT" },
               { sessionType: "TIT" },
-              { source: "admin_tit_classes" },
-              { createdByRole: "admin" }
+              { source: "admin_tit_classes" }
             ]
           }
         }
