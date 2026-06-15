@@ -27,6 +27,7 @@ const { sendSessionReminderEmail } = require("../services/emailService");
 cron.schedule("* * * * *", async () => {
   try {
     const now = new Date();
+    now.setSeconds(0, 0); // truncate to start of minute to avoid millisecond drift
 
     // Window: occurrences starting between now+10min and now+11min (UTC)
     const windowStart = new Date(now.getTime() + 10 * 60 * 1000); // +10 min

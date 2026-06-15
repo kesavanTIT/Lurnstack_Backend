@@ -21,6 +21,7 @@ const { sendWhatsAppReminder } = require("../services/whatsappService");
 const runWhatsappReminderJob = async () => {
   try {
     const now = new Date();
+    now.setSeconds(0, 0); // truncate to avoid millisecond drift
     const minutesBefore = parseInt(process.env.WHATSAPP_REMINDER_MINUTES_BEFORE || "5", 10);
     const sendToAllFree = process.env.SEND_FREE_SESSION_REMINDERS_TO_ALL === "true";
     const reminderType = `session_reminder_${minutesBefore}min`;
@@ -93,6 +94,7 @@ const runWhatsappReminderJob = async () => {
         }
 
         if (Array.isArray(daysArray) && daysArray.length > 0) {
+          daysArray = daysArray.map(Number); // Bulletproof against string numbers
           const weekdayStr = occurrence.startsAt.toLocaleDateString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" });
           const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
           const weekday = weekdays.indexOf(weekdayStr);

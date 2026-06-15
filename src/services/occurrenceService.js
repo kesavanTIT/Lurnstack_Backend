@@ -67,6 +67,7 @@ const generateOccurrences = async (session, daysToGenerate = 30) => {
           }
         }
         if (Array.isArray(daysArray) && daysArray.length > 0) {
+          daysArray = daysArray.map(Number); // Bulletproof against string numbers
           if (!daysArray.includes(currentIterWeekday)) {
             continue; // skip days that don't match
           }
