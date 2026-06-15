@@ -38,6 +38,14 @@ const generateOccurrences = async (session, daysToGenerate = 30) => {
       const dateStr = getKolkataDateString(currentIterDate);
       
       // Specific recurrence days limit (e.g., [1, 2, 3, 4] for Mon-Thu)
+      const getKolkataWeekday = (date) => {
+        const weekdayStr = date.toLocaleDateString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" });
+        const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        return weekdays.indexOf(weekdayStr);
+      };
+
+      const currentIterWeekday = getKolkataWeekday(currentIterDate);
+
       if (session.isRecurring && session.recurringDays) {
         let daysArray = [];
         if (Array.isArray(session.recurringDays)) {
@@ -52,14 +60,14 @@ const generateOccurrences = async (session, daysToGenerate = 30) => {
           }
         }
         if (Array.isArray(daysArray) && daysArray.length > 0) {
-          if (!daysArray.includes(currentIterDate.getDay())) {
+          if (!daysArray.includes(currentIterWeekday)) {
             continue; // skip days that don't match
           }
         }
       } else if (session.isRecurring && session.recurrenceType === "weekly") {
         // Fallback: basic weekly recurrence on creation day of the week
-        const createDayOfWeek = new Date(session.createdAt).getDay();
-        if (currentIterDate.getDay() !== createDayOfWeek) {
+        const createDayOfWeek = getKolkataWeekday(new Date(session.createdAt));
+        if (currentIterWeekday !== createDayOfWeek) {
           continue; // skip days that don't match the creation day of week
         }
       }

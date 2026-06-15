@@ -15,7 +15,41 @@ const getKolkataDateTime = (dateStr, timeStr) => {
   return new Date(`${dateStr}T${timeStr}:00+05:30`);
 };
 
+const matchesRecurringDays = (session, date) => {
+  if (!session.isRecurring) return true;
+  
+  let daysArray = [];
+  if (session.recurringDays) {
+    if (Array.isArray(session.recurringDays)) {
+      daysArray = session.recurringDays;
+    } else {
+      try {
+        daysArray = typeof session.recurringDays === "string"
+          ? JSON.parse(session.recurringDays)
+          : session.recurringDays;
+      } catch (e) {}
+    }
+  }
+
+  const weekdayStr = date.toLocaleDateString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" });
+  const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const weekday = weekdays.indexOf(weekdayStr);
+
+  if (Array.isArray(daysArray) && daysArray.length > 0) {
+    return daysArray.includes(weekday);
+  } else if (session.recurrenceType === "weekly") {
+    const createDayStr = new Date(session.createdAt).toLocaleDateString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" });
+    const createDayOfWeekKolkata = weekdays.indexOf(createDayStr);
+    return weekday === createDayOfWeekKolkata;
+  }
+  return true;
+};
+
 const getSessionOccurrences = (session, now = new Date()) => {
+  if (!matchesRecurringDays(session, now)) {
+    return { scheduledAt: null, endsAt: null };
+  }
+
   const todayStr = getKolkataDateString(now);
   const createdDateStr = getKolkataDateString(new Date(session.createdAt));
 
@@ -115,9 +149,17 @@ const getPublicSessions = async (req, res) => {
       formatPublicSession(session, categoryMap, req)
     );
 
+    const activeFormatted = formatted.filter(cls => {
+      // For recurring sessions, only show them if they scheduled to occur today
+      if (cls.scheduledAt === null) {
+        return false;
+      }
+      return true;
+    });
+
     return res.status(200).json({
       success: true,
-      data: formatted,
+      data: activeFormatted,
     });
   } catch (error) {
     console.error("getPublicSessions Error:", error);

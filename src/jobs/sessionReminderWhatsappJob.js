@@ -77,6 +77,42 @@ const runWhatsappReminderJob = async () => {
         continue;
       }
 
+      // New Backend Feature: Weekday Filtering for WhatsApp Reminders
+      if (session.isRecurring) {
+        let daysArray = [];
+        if (session.recurringDays) {
+          if (Array.isArray(session.recurringDays)) {
+            daysArray = session.recurringDays;
+          } else {
+            try {
+              daysArray = typeof session.recurringDays === "string"
+                ? JSON.parse(session.recurringDays)
+                : session.recurringDays;
+            } catch (e) {}
+          }
+        }
+
+        if (Array.isArray(daysArray) && daysArray.length > 0) {
+          const weekdayStr = occurrence.startsAt.toLocaleDateString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" });
+          const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+          const weekday = weekdays.indexOf(weekdayStr);
+          if (!daysArray.includes(weekday)) {
+            console.log(`[WHATSAPP-JOB]   → Skipping session "${session.title}" because today's weekday (${weekdayStr}: ${weekday}) is not in recurringDays (${JSON.stringify(daysArray)}).`);
+            continue;
+          }
+        } else if (session.recurrenceType === "weekly") {
+          const weekdayStr = occurrence.startsAt.toLocaleDateString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" });
+          const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+          const weekday = weekdays.indexOf(weekdayStr);
+          const createDayStr = new Date(session.createdAt).toLocaleDateString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" });
+          const createDayOfWeekKolkata = weekdays.indexOf(createDayStr);
+          if (weekday !== createDayOfWeekKolkata) {
+            console.log(`[WHATSAPP-JOB]   → Skipping session "${session.title}" because today's weekday (${weekdayStr}: ${weekday}) does not match creation day of week (${createDayStr}: ${createDayOfWeekKolkata}).`);
+            continue;
+          }
+        }
+      }
+
       // Respect the enableWhatsApp control setting
       if (session.enableWhatsApp === false) {
         console.log(`[WHATSAPP-JOB]   → Skipping session "${session.title}". WhatsApp reminders are disabled.`);
