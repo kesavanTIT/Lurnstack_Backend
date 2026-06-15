@@ -360,6 +360,14 @@ const getTrainerCourses = async (req, res) => {
 // ─────────────────────────────────────────────
 const createSession = async (req, res) => {
   try {
+    const validation = validateRecurringDays(req.body.recurringDays);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.message,
+      });
+    }
+
     const trainerId = Number.parseInt(req.user.id, 10);
 
     if (!Number.isInteger(trainerId) || trainerId <= 0) {
@@ -465,13 +473,6 @@ const createSession = async (req, res) => {
       enableWhatsAppValue = req.body.enableWhatsApp === true || req.body.enableWhatsApp === "true";
     }
 
-    const validation = validateRecurringDays(req.body.recurringDays);
-    if (!validation.isValid) {
-      return res.status(400).json({
-        success: false,
-        message: validation.message,
-      });
-    }
     const parsedRecurringDays = validation.parsed;
 
     const session = await prisma.liveSession.create({
@@ -602,6 +603,16 @@ const getSingleTrainerSession = async (req, res) => {
 // ─────────────────────────────────────────────
 const updateTrainerSession = async (req, res) => {
   try {
+    if (req.body.recurringDays !== undefined) {
+      const validation = validateRecurringDays(req.body.recurringDays);
+      if (!validation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: validation.message,
+        });
+      }
+    }
+
     const { sessionId } = req.params;
 
     const existing = await prisma.liveSession.findUnique({
@@ -665,12 +676,6 @@ const updateTrainerSession = async (req, res) => {
     }
     if (req.body.recurringDays !== undefined) {
       const validation = validateRecurringDays(req.body.recurringDays);
-      if (!validation.isValid) {
-        return res.status(400).json({
-          success: false,
-          message: validation.message,
-        });
-      }
       updateData.recurringDays = validation.parsed;
     }
 

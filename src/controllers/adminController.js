@@ -445,6 +445,14 @@ const normalizeTimeToHHMM = (timeStr) => {
 // @access  Private/Admin
 const createLiveClass = async (req, res) => {
   try {
+    const validation = validateRecurringDays(req.body.recurringDays);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.message,
+      });
+    }
+
     const {
       courseId,
       courseName,
@@ -532,13 +540,6 @@ const createLiveClass = async (req, res) => {
       const isRecurring = req.body.isRecurring === true || req.body.isRecurring === "true" || req.body.isRecurring === "1" || req.body.isRecurring === 1;
       const recurrenceType = isRecurring ? req.body.recurrenceType : null;
 
-      const validation = validateRecurringDays(req.body.recurringDays);
-      if (!validation.isValid) {
-        return res.status(400).json({
-          success: false,
-          message: validation.message,
-        });
-      }
       const parsedRecurringDays = validation.parsed;
 
       // 3. Create LiveSession
@@ -656,6 +657,16 @@ const createLiveClass = async (req, res) => {
 // @access  Private/Admin
 const updateLiveClass = async (req, res) => {
   try {
+    if (req.body.recurringDays !== undefined) {
+      const validation = validateRecurringDays(req.body.recurringDays);
+      if (!validation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: validation.message,
+        });
+      }
+    }
+
     const rawId = req.params.classId;
     const classIdInt = Number.parseInt(rawId, 10);
     const isNumericId = !Number.isNaN(classIdInt) && String(classIdInt) === String(rawId);
@@ -765,12 +776,6 @@ const updateLiveClass = async (req, res) => {
       }
       if (req.body.recurringDays !== undefined) {
         const validation = validateRecurringDays(req.body.recurringDays);
-        if (!validation.isValid) {
-          return res.status(400).json({
-            success: false,
-            message: validation.message,
-          });
-        }
         updateData.recurringDays = validation.parsed;
       }
 
