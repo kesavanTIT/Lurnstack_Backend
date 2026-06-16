@@ -63,6 +63,31 @@ const generateCertificate = async (req, res) => {
         .json({ success: false, message: "courseId is required in body." });
     }
 
+    if (courseId.startsWith("mock-")) {
+      const studentName = customStudentName || "Demo Student";
+      const startDate = customStartDate ? new Date(customStartDate) : new Date("2026-05-05T10:00:00Z");
+      const endDate = customEndDate ? new Date(customEndDate) : new Date("2026-05-20T10:00:00Z");
+      const courseTitle = "React Development Masterclass (Demo)";
+      
+      const signedUrl = await certificateService.generateMockCertificatePDF(
+        studentName, courseTitle, startDate, endDate
+      );
+
+      return res.status(201).json({
+        success: true,
+        certificateId: `LS-DEMO-${Date.now()}`,
+        pdfUrl: signedUrl,
+        message: "Demo Certificate generated successfully.",
+        data: {
+          certificateId: `demo-cert-${Date.now()}`,
+          certificateType: "FREE",
+          paymentStatus: "PAID",
+          issuedAt: new Date().toISOString(),
+          downloadUrl: signedUrl,
+        },
+      });
+    }
+
     // ── Idempotency: return existing if found ──────────────────
     const existing = await prisma.certificate.findUnique({
       where: { userId_courseId: { userId, courseId } },

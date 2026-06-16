@@ -504,6 +504,124 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
 };
 
 // ─────────────────────────────────────────────────────────────────
+// generateMockCertificatePDF — create PDF without DB restrictions
+// ─────────────────────────────────────────────────────────────────
+const generateMockCertificatePDF = async (studentName, courseTitle, startDate, endDate) => {
+  const fs = require("fs");
+  const path = require("path");
+  
+  // Format dates e.g., "05 May 2026"
+  const formatDate = (dateObj) => {
+    return dateObj.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).replace(/ /g, " ");
+  };
+
+  const formattedStartDate = startDate ? formatDate(startDate) : "01 Jan 2026";
+  const formattedEndDate = endDate ? formatDate(endDate) : "15 Jan 2026";
+  
+  // Calculate duration in days
+  const diffTime = Math.abs((endDate || new Date()) - (startDate || new Date()));
+  const durationDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+  const issuedDate = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }).replace(/\//g, ".");
+  const credentialId = `LS-DEMO-${Date.now().toString().slice(-6)}`;
+
+  const doc = new PDFDocument({
+    size: "A4", layout: "landscape", margins: { top: 0, bottom: 0, left: 0, right: 0 },
+  });
+
+  const chunks = [];
+  doc.on("data", (chunk) => chunks.push(chunk));
+
+  const pdfReady = new Promise((resolve, reject) => {
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+  });
+
+  const pageW = doc.page.width;
+  const pageH = doc.page.height;
+
+  // 1. White Background
+  doc.fillColor("#ffffff").rect(0, 0, pageW, pageH).fill();
+  
+  // 2. Gray Borders
+  const m = 30; // outer margin
+  doc.rect(m, m, pageW - 2 * m, pageH - 2 * m).lineWidth(2).strokeColor("#e2e8f0").stroke();
+  doc.rect(m + 6, m + 6, pageW - 2 * m - 12, pageH - 2 * m - 12).lineWidth(1).strokeColor("#cbd5e1").stroke();
+  
+  // Watermark fallback
+  doc.font("Times-Italic").fontSize(400).fillColor("#cbd5e1").fillOpacity(0.08).text("t", (pageW - 400) / 2 + 100, (pageH - 400) / 2, { align: 'center', width: 400 });
+  doc.fillOpacity(1); // reset
+
+  // 3. Top-Left Dark Blue Corner Frame
+  const blueColor = "#111827"; 
+  doc.fillColor(blueColor);
+  doc.rect(20, 20, 280, 26).fill(); // Top bar
+  doc.rect(20, 20, 26, 280).fill(); // Left bar
+  
+  // 4. Bottom-Right Green Accents
+  doc.fillColor("#84cc16").polygon([pageW - 20, pageH - 20], [pageW - 20, pageH - 350], [pageW - 350, pageH - 20]).fill();
+  doc.fillColor("#65a30d").polygon([pageW - 20, pageH - 20], [pageW - 20, pageH - 250], [pageW - 250, pageH - 20]).fill();
+  
+  // 5. Logo fallback
+  doc.circle(110, 100, 30).fillColor("#84cc16").fill();
+  doc.font("Times-Italic").fontSize(45).fillColor("#ffffff").text("t", 80, 75, { width: 60, align: 'center' });
+  doc.font("Helvetica-Bold").fontSize(34).fillColor("#111827").text("LURNSTACK", 160, 75);
+  doc.font("Helvetica-Bold").fontSize(11).fillColor("#64748b").text("TAMIL INFO TECHNOLOGY", 160, 112, { characterSpacing: 1 });
+
+  const bottomY = 480; 
+
+  // Credential ID
+  doc.font("Helvetica-Bold").fontSize(10).fillColor("#64748b").text("CREDENTIAL ID", pageW - 220, 75, { width: 150, align: "right", characterSpacing: 1.5 });
+  doc.font("Helvetica-Bold").fontSize(14).fillColor("#ffffff").rect(pageW - 220, 95, 150, 30).fillAndStroke("#111827", "#111827");
+  doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(14).text(credentialId, pageW - 220, 103, { width: 150, align: "center", characterSpacing: 1 });
+
+  // CERTIFICATE OF COMPLETION
+  doc.font("Helvetica-Bold").fontSize(12).fillColor("#94a3b8").text("CERTIFICATE OF COMPLETION", 0, 170, { align: "center", characterSpacing: 4 });
+
+  // Student Name
+  doc.font("Helvetica-Bold").fontSize(48).fillColor("#0f172a").text((studentName || "Student").toUpperCase(), 0, 205, { align: "center" });
+
+  // Descriptions
+  const descText = `This is to certify that ${studentName} has successfully completed the ${courseTitle} course offered by Lurnstack (Tamil Info Technology Pvt. Ltd.). The course was conducted for a duration of ${durationDays} days, from ${formattedStartDate} to ${formattedEndDate}.`;
+  const descText2 = `During the period, they gained comprehensive knowledge in ${courseTitle} concepts, including fundamentals, application development, data processing, and problem-solving, demonstrating strong technical aptitude and dedication. We congratulate the learner on this achievement and wish them continued success in their future endeavors.`;
+
+  doc.font("Times-Roman").fontSize(15).fillColor("#334155").text(descText, 100, 275, { align: "center", lineGap: 6, width: pageW - 200 });
+  doc.font("Helvetica").fontSize(11).fillColor("#64748b").text(descText2, 100, 335, { align: "center", lineGap: 5, width: pageW - 200 });
+
+  // Issue Date
+  doc.font("Helvetica-Bold").fontSize(15).fillColor("#111827").text(issuedDate, 80, bottomY - 30, { width: 180, align: "center" });
+  doc.moveTo(80, bottomY).lineTo(260, bottomY).lineWidth(1).strokeColor("#94a3b8").stroke();
+  doc.font("Helvetica-Bold").fontSize(10).fillColor("#64748b").text("DATE OF ISSUE", 80, bottomY + 10, { width: 180, align: "center", characterSpacing: 1.5 });
+
+  // QR
+  try {
+    const qrBuffer = await QRCode.toBuffer(`https://lurnstack.com/verify/${credentialId}`, { margin: 1, color: { dark: '#111827', light: '#ffffff' } });
+    const qrSize = 80;
+    const qrX = (pageW / 2) - (qrSize / 2);
+    const qrY = bottomY - 60;
+    doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize });
+    doc.rect(qrX + (qrSize/2) - 8, qrY + (qrSize/2) - 8, 16, 16).fillColor("#ffffff").fill();
+    doc.circle(qrX + (qrSize/2), qrY + (qrSize/2), 6).fillColor("#84cc16").fill();
+    doc.font("Times-Italic").fontSize(9).fillColor("#ffffff").text("t", qrX + (qrSize/2) - 5, qrY + (qrSize/2) - 4, {width: 10, align: "center"});
+  } catch (err) {}
+
+  // Signature
+  doc.font("Times-Italic").fontSize(44).fillColor("#111827").text("Priya. P", pageW - 260, bottomY - 50, { width: 180, align: "center" });
+  doc.moveTo(pageW - 260, bottomY).lineTo(pageW - 80, bottomY).lineWidth(1).strokeColor("#94a3b8").stroke();
+  doc.font("Helvetica-Bold").fontSize(10).fillColor("#64748b").text("AUTHORIZED SIGNATURE", pageW - 260, bottomY + 10, { width: 180, align: "center", characterSpacing: 1.5 });
+
+  doc.end();
+  const pdfBuffer = await pdfReady;
+
+  const blobName = `mock_cert_${Date.now()}.pdf`;
+  const uploadDir = path.join(process.cwd(), "uploads", "certificates");
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+  fs.writeFileSync(path.join(uploadDir, blobName), pdfBuffer);
+
+  return getSignedDownloadUrl(blobName, true);
+};
+
+// ─────────────────────────────────────────────────────────────────
 // getSignedDownloadUrl — generate a fresh SAS-signed URL
 // ─────────────────────────────────────────────────────────────────
 const getSignedDownloadUrl = (blobName, isLocal = false) => {
@@ -557,13 +675,13 @@ const trackPurchase = async (certificateId, paymentRef) => {
 };
 
 module.exports = {
-  getSettings,
-  isCourseCompleted,
-  calculateAttendance,
   checkEligibility,
+  calculateAttendance,
+  generateCertificateId,
   generateCertificatePDF,
+  generateMockCertificatePDF,
   getSignedDownloadUrl,
   trackDownload,
   trackPurchase,
-  generateCertificateId,
+  getSettings,
 };
