@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Certificate of Completion</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Dancing+Script:wght@700&family=Merriweather:ital,wght@1,900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #f0f0f0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .certificate-wrapper {
+      position: relative;
+      width: 1123px;
+      height: 794px; /* A4 Landscape at 96 DPI */
+      background-color: white;
+      box-sizing: border-box;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+
+    /* Borders */
+    .border-outer {
+      position: absolute;
+      top: 30px; left: 30px; right: 30px; bottom: 30px;
+      border: 2px solid #e2e8f0;
+    }
+    .border-inner {
+      position: absolute;
+      top: 36px; left: 36px; right: 36px; bottom: 36px;
+      border: 1px solid #cbd5e1;
+    }
+
+    /* Decorative Corners */
+    .top-left-corner-h {
+      position: absolute;
+      top: 20px; left: 20px;
+      width: 280px; height: 26px;
+      background-color: #111827;
+      z-index: 5;
+    }
+    .top-left-corner-v {
+      position: absolute;
+      top: 20px; left: 20px;
+      width: 26px; height: 280px;
+      background-color: #111827;
+      z-index: 5;
+    }
+
+    .bottom-right-poly-1 {
+      position: absolute;
+      bottom: 20px; right: 20px;
+      width: 320px; height: 450px;
+      background-color: #84cc16; /* Lighter green */
+      clip-path: polygon(100% 0, 100% 100%, 0 100%);
+      z-index: 1;
+    }
+
+    .bottom-right-poly-2 {
+      position: absolute;
+      bottom: 20px; right: 20px;
+      width: 450px; height: 320px;
+      background-color: #65a30d; /* Darker green */
+      clip-path: polygon(100% 0, 100% 100%, 0 100%);
+      z-index: 2;
+    }
+
+    /* Watermark */
+    .watermark {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 550px;
+      color: rgba(100, 116, 139, 0.03);
+      z-index: 0;
+      font-family: 'Merriweather', serif;
+      font-weight: 900;
+      font-style: italic;
+      line-height: 1;
+      user-select: none;
+    }
+
+    /* Content Area */
+    .content-wrapper {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 10;
+      padding: 80px 100px;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+    }
+
+    /* Header: Logo and Credential ID */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 60px;
+      margin-top: 10px;
+    }
+
+    /* Logo Styling */
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-left: 20px;
+    }
+    .logo-icon {
+      width: 60px; height: 60px;
+      background: #84cc16; /* Lurnstack Green */
+      border-radius: 50%;
+      color: white;
+      font-size: 45px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Merriweather', serif;
+      font-weight: 900;
+      font-style: italic;
+      line-height: 1;
+      padding-top: 5px;
+      box-sizing: border-box;
+      position: relative;
+    }
+    .logo-icon::after {
+      content: '';
+      position: absolute;
+      bottom: 5px; right: 5px;
+      width: 18px; height: 18px;
+      background-color: #bef264;
+      border-radius: 50%;
+      border: 3px solid white;
+    }
+    .brand-name {
+      font-size: 34px;
+      font-weight: 900;
+      color: #111827;
+      letter-spacing: 0.5px;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .brand-sub {
+      font-size: 11px;
+      color: #64748b;
+      letter-spacing: 1px;
+      font-weight: 600;
+    }
+
+    /* Credential Box */
+    .credential-box {
+      text-align: right;
+      margin-right: 20px;
+      margin-top: 5px;
+    }
+    .credential-label {
+      font-size: 10px;
+      color: #64748b;
+      letter-spacing: 1.5px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .credential-value {
+      background-color: #111827;
+      color: white;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 8px 16px;
+      letter-spacing: 1px;
+      border-radius: 4px;
+    }
+
+    /* Main Titles */
+    .certificate-title {
+      text-align: center;
+      font-size: 14px;
+      color: #94a3b8;
+      letter-spacing: 4px;
+      font-weight: 700;
+      margin-top: 40px;
+      margin-bottom: 20px;
+    }
+
+    .student-name {
+      text-align: center;
+      font-size: 56px;
+      color: #0f172a;
+      font-weight: 900;
+      letter-spacing: -1px;
+      margin-bottom: 40px;
+      text-transform: uppercase;
+    }
+
+    /* Body Text */
+    .paragraph-1 {
+      text-align: center;
+      font-size: 16px;
+      color: #334155;
+      line-height: 1.6;
+      max-width: 850px;
+      margin: 0 auto 20px auto;
+      font-family: 'Merriweather', serif;
+      font-weight: 400;
+    }
+    
+    .paragraph-2 {
+      text-align: center;
+      font-size: 13px;
+      color: #64748b;
+      line-height: 1.6;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    /* Bottom Section */
+    .bottom-section {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-top: auto;
+      padding: 0 40px 10px 40px;
+    }
+
+    /* Date and Signature Blocks */
+    .block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 180px;
+    }
+    
+    .date-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 8px;
+    }
+    
+    .signature-value {
+      font-family: 'Dancing Script', cursive;
+      font-size: 34px;
+      color: #111827;
+      margin-bottom: -5px;
+    }
+
+    .line {
+      width: 100%;
+      height: 1px;
+      background-color: #94a3b8;
+      margin-bottom: 8px;
+    }
+
+    .label {
+      font-size: 10px;
+      color: #64748b;
+      letter-spacing: 1.5px;
+      font-weight: 600;
+    }
+
+    /* QR Code Placeholder */
+    .qr-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .qr-box {
+      width: 100px;
+      height: 100px;
+      background-color: white;
+      border: 1px solid #e2e8f0;
+      padding: 5px;
+      box-sizing: border-box;
+      position: relative;
+    }
+    /* Simple CSS pattern to mock a QR code visually */
+    .qr-box::before {
+      content: '';
+      position: absolute;
+      top: 5px; left: 5px; right: 5px; bottom: 5px;
+      background-image: 
+        linear-gradient(45deg, #111827 25%, transparent 25%, transparent 75%, #111827 75%, #111827),
+        linear-gradient(45deg, #111827 25%, transparent 25%, transparent 75%, #111827 75%, #111827);
+      background-size: 10px 10px;
+      background-position: 0 0, 5px 5px;
+      opacity: 0.8;
+    }
+    .qr-box::after {
+      content: 't';
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 24px; height: 24px;
+      background: #84cc16;
+      border-radius: 50%;
+      color: white;
+      font-family: 'Merriweather', serif;
+      font-style: italic;
+      font-weight: 900;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid white;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="certificate-wrapper" id="certificate">
+    <!-- Background Elements -->
+    <div class="watermark">t</div>
+    <div class="top-left-corner-h"></div>
+    <div class="top-left-corner-v"></div>
+    <div class="bottom-right-poly-1"></div>
+    <div class="bottom-right-poly-2"></div>
+    <div class="border-outer"></div>
+    <div class="border-inner"></div>
+
+    <!-- Content -->
+    <div class="content-wrapper">
+      
+      <!-- Header -->
+      <div class="header">
+        <div class="logo-container">
+          <div class="logo-icon">t</div>
+          <div>
+            <div class="brand-name">LURNSTACK</div>
+            <div class="brand-sub">TAMIL INFO TECHNOLOGY</div>
+          </div>
+        </div>
+        <div class="credential-box">
+          <div class="credential-label">CREDENTIAL ID</div>
+          <div class="credential-value">LS-PY-260505</div>
+        </div>
+      </div>
+
+      <!-- Main Titles -->
+      <div class="certificate-title">CERTIFICATE OF COMPLETION</div>
+      <div class="student-name">HORA JENCY. S</div>
+
+      <!-- Paragraphs -->
+      <div class="paragraph-1">
+        This is to certify that HORA JENCY S has successfully completed the Python Programming course offered by Lurnstack (Tamil Info Technology Pvt. Ltd.). The course was conducted for a duration of 15 days, from 05 May 2026 to 15 May 2026.
+      </div>
+      
+      <div class="paragraph-2">
+        During the period, they gained comprehensive knowledge in React Frontend Development concepts, including fundamentals, application development, data processing, and problem-solving, demonstrating strong technical aptitude and dedication. We congratulate the learner on this achievement and wish them continued success in their future endeavors.
+      </div>
+
+      <!-- Bottom Area -->
+      <div class="bottom-section">
+        
+        <!-- Issue Date -->
+        <div class="block">
+          <div class="date-value">15.05.2026</div>
+          <div class="line"></div>
+          <div class="label">DATE OF ISSUE</div>
+        </div>
+
+        <!-- QR Code Placeholder -->
+        <div class="qr-container">
+          <div class="qr-box"></div>
+        </div>
+
+        <!-- Signature -->
+        <div class="block">
+          <img src="uploads/signature.png" alt="Signature" style="height: 60px; margin-bottom: -10px; z-index: 10;">
+          <div class="line"></div>
+          <div class="label">AUTHORIZED SIGNATURE</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
