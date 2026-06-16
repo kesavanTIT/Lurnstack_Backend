@@ -693,3 +693,109 @@ model CertificateLog {
   metadata      Json?               // paymentRef, userAgent, etc.
   createdAt     DateTime            @default(now())
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Attendance Feature — ClassSession + AttendanceRecord
+// ─────────────────────────────────────────────────────────────────
+
+enum AttendanceStatus {
+  present
+  missed
+}
+
+model ClassSession {
+  id                String             @id @default(cuid())
+  subject           String
+  scheduledAt       DateTime
+  durationMinutes   Int                @default(60)
+  attendanceRecords AttendanceRecord[]
+  createdAt         DateTime           @default(now())
+}
+
+model AttendanceRecord {
+  id        String           @id @default(cuid())
+  studentId String
+  sessionId String
+  status    AttendanceStatus
+  markedAt  DateTime         @default(now())
+  session   ClassSession     @relation(fields: [sessionId], references: [id])
+
+  @@unique([studentId, sessionId])
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Trainer Attendance Module
+// ─────────────────────────────────────────────────────────────────
+
+model Trainer {
+  id        String           @id @default(cuid())
+  userId    String           @unique
+  name      String
+  email     String           @unique
+  sessions  TrainerSession[]
+  createdAt DateTime         @default(now())
+}
+
+model TrainerSession {
+  id          String                   @id @default(cuid())
+  name        String
+  batch       String
+  trainerId   String
+  trainer     Trainer                  @relation(fields: [trainerId], references: [id])
+  occurrences TrainerSessionOccurrence[]
+  enrollments TrainerEnrollment[]
+  createdAt   DateTime                 @default(now())
+}
+
+model TrainerSessionOccurrence {
+  id          String                @id @default(cuid())
+  sessionId   String
+  session     TrainerSession        @relation(fields: [sessionId], references: [id])
+  date        DateTime
+  startTime   DateTime
+  endTime     DateTime
+  attendances TrainerAttendance[]
+  createdAt   DateTime              @default(now())
+}
+
+model TrainerStudent {
+  id          String              @id @default(cuid())
+  name        String
+  email       String              @unique
+  enrollments TrainerEnrollment[]
+  attendances TrainerAttendance[]
+  createdAt   DateTime            @default(now())
+}
+
+model TrainerEnrollment {
+  id        String         @id @default(cuid())
+  studentId String
+  sessionId String
+  student   TrainerStudent @relation(fields: [studentId], references: [id])
+  session   TrainerSession @relation(fields: [sessionId], references: [id])
+  createdAt DateTime       @default(now())
+
+  @@unique([studentId, sessionId])
+}
+
+enum TrainerAttendanceStatus {
+  present
+  absent
+}
+
+model TrainerAttendance {
+  id           String                   @id @default(cuid())
+  studentId    String
+  occurrenceId String
+  joinTime     DateTime?
+  leaveTime    DateTime?
+  durationMins Int                      @default(0)
+  joinCount    Int                      @default(1)
+  status       TrainerAttendanceStatus
+  date         DateTime
+  student      TrainerStudent           @relation(fields: [studentId], references: [id])
+  occurrence   TrainerSessionOccurrence @relation(fields: [occurrenceId], references: [id])
+  createdAt    DateTime                 @default(now())
+
+  @@unique([studentId, occurrenceId])
+}
