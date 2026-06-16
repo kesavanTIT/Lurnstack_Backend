@@ -19,6 +19,10 @@ router.get("/verify/:certificateId", verifyCertificate);
 // @desc    Download locally stored mock certificate (Public so browser can open it directly)
 router.get("/download/local/:blobName", require("../controllers/certificateController").downloadLocalCertificate);
 
+// @route   GET /api/certificates/seed-test-data
+// @desc    Seed database with test data (Public for testing)
+router.get("/seed-test-data", require("../controllers/certificateController").seedTestData);
+
 // All certificate routes require authentication
 router.use(protect);
 

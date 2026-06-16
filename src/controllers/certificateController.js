@@ -946,7 +946,95 @@ const downloadLocalCertificate = (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────
+// 16. GET /api/certificates/seed-test-data
+// @desc    Seed mock data for certificates directly via API
+// ─────────────────────────────────────────────────────────────────
+const seedTestData = async (req, res) => {
+  try {
+    const bcrypt = require("bcryptjs");
+    
+    // 1. Ensure Global Certificate Settings
+    let settings = await prisma.certificateSettings.findFirst();
+    if (!settings) {
+      settings = await prisma.certificateSettings.create({
+        data: { freeThreshold: 75, certificatePricePaise: 29900 },
+      });
+    } else {
+      settings = await prisma.certificateSettings.update({
+        where: { id: settings.id },
+        data: { freeThreshold: 75, certificatePricePaise: 29900 },
+      });
+    }
+
+    // 2. Find or Create a Trainer
+    const trainerEmail = "trainer_cert@lurnstack.com";
+    let trainer = await prisma.user.findUnique({ where: { email: trainerEmail } });
+    if (!trainer) {
+      const password = await bcrypt.hash("password123", 10);
+      trainer = await prisma.user.create({
+        data: { fullName: "Expert Trainer", email: trainerEmail, password, role: "TRAINER" },
+      });
+    }
+
+    // 3. Find or Create a Test Student
+    const studentEmail = "student_cert@lurnstack.com";
+    let student = await prisma.user.findUnique({ where: { email: studentEmail } });
+    if (!student) {
+      const password = await bcrypt.hash("password123", 10);
+      student = await prisma.user.create({
+        data: { fullName: "HORA JENCY. S", email: studentEmail, password, role: "STUDENT" },
+      });
+    }
+
+    // 4. Create Mock Courses (LiveSessions)
+    const courses = [{ courseId: "C-PY-260505", title: "Python Programming", expectedPct: 100 }];
+    const logs = [];
+
+    for (const c of courses) {
+      let session = await prisma.liveSession.findFirst({ where: { courseId: c.courseId } });
+      if (!session) {
+        session = await prisma.liveSession.create({
+          data: { courseId: c.courseId, courseTitle: c.title, title: c.title, trainerId: trainer.id, status: "active", publishState: "PUBLISHED" },
+        });
+        logs.push(`Created Course: ${c.title}`);
+      }
+
+      const totalSessions = 15;
+      const attendedCount = Math.floor((c.expectedPct / 100) * totalSessions);
+      const existingOccurrences = await prisma.sessionOccurrence.count({ where: { sessionId: session.id } });
+      
+      if (existingOccurrences === 0) {
+        const startDate = new Date("2026-05-05T10:00:00Z");
+        for (let i = 0; i < totalSessions; i++) {
+          const occDate = new Date(startDate);
+          occDate.setDate(startDate.getDate() + i);
+
+          const occurrence = await prisma.sessionOccurrence.create({
+            data: { sessionId: session.id, courseId: session.courseId, trainerId: trainer.id, occurrenceDate: occDate, startsAt: occDate, endsAt: new Date(occDate.getTime() + 60 * 60000), status: "completed" },
+          });
+
+          await prisma.studentAttendance.create({
+            data: {
+              courseId: session.courseId, sessionId: session.id, occurrenceId: occurrence.id, occurrenceDate: occurrence.occurrenceDate, studentId: student.id, trainerId: trainer.id, status: i < attendedCount ? "present" : "absent", joinCount: i < attendedCount ? 1 : 0,
+            },
+          });
+        }
+        logs.push(`Created ${totalSessions} Occurrences for ${c.title}.`);
+      } else {
+        logs.push(`Occurrences already exist for ${c.title}.`);
+      }
+    }
+
+    return res.status(200).json({ success: true, message: "Seeding complete!", logs, credentials: { email: studentEmail, password: "password123" } });
+  } catch (error) {
+    console.error("Seed Test Data Error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
+  seedTestData,
   getEligibility,
   generateCertificate,
   downloadCertificate,
