@@ -39,6 +39,7 @@ model User {
   campaignClicks            OfferCampaignClick[]
   payoutAccount             TrainerPayoutAccount?
   payoutRequests            TrainerPayoutRequest[] @relation(name: "TrainerPayoutRequestRelation")
+  certificates              Certificate[]          @relation(name: "UserCertificateRelation")
 }
 
 enum Role {
@@ -629,3 +630,66 @@ model TrainerPayoutAuditLog {
   createdAt DateTime @default(now())
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Certificate System
+// ─────────────────────────────────────────────────────────────────
+
+enum CertificateType {
+  FREE
+  PAID
+}
+
+enum CertPaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum CertificateLogEvent {
+  DOWNLOAD
+  PURCHASE
+}
+
+model Certificate {
+  id              String            @id @default(uuid())
+  userId          Int
+  user            User              @relation(name: "UserCertificateRelation", fields: [userId], references: [id], onDelete: Cascade)
+  courseId        String
+  certificateId   String?           @unique
+  studentName     String?
+  courseName      String?
+  collegeName     String?
+  issueDate       DateTime?
+  completionDate  DateTime?
+  verificationUrl String?
+  qrCodeUrl       String?
+  attendancePct   Float
+  certificateType CertificateType
+  paymentStatus   CertPaymentStatus @default(PENDING)
+  certificateUrl  String?           // Azure Blob path (unsigned base path)
+  razorpayOrderId String?           @unique
+  issuedAt        DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  logs            CertificateLog[]
+
+  @@unique([userId, courseId])
+}
+
+model CertificateSettings {
+  id                     String   @id @default(uuid())
+  freeThreshold          Float    @default(75)    // percentage (e.g. 75 = 75%)
+  certificatePricePaise  Int      @default(50000)  // ₹500 in paise
+  updatedAt              DateTime @updatedAt
+  createdAt              DateTime @default(now())
+}
+
+model CertificateLog {
+  id            String              @id @default(uuid())
+  certificateId String
+  certificate   Certificate         @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+  event         CertificateLogEvent
+  ipAddress     String?
+  metadata      Json?               // paymentRef, userAgent, etc.
+  createdAt     DateTime            @default(now())
+}
