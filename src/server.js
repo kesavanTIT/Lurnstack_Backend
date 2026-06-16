@@ -13,6 +13,11 @@ const sessionRoutes = require("./routes/sessionRoutes");
 const offerCampaignRoutes = require("./routes/offerCampaignRoutes");
 const aiRoutes = require("./routes/aiRoutes");
 const certificateRoutes = require("./routes/certificateRoutes");
+const trainerAttendanceRoutes = require("./routes/trainerAttendance.routes");
+const attendanceRoutes = require("./routes/attendance.routes");
+
+// ── Background Jobs ──────────────────────────
+require("./jobs/attendanceJob");
 
 // ── App Setup ────────────────────────────────
 const app = express();
@@ -33,6 +38,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "https://localhost:3000",
   "http://localhost:3001",
+  "http://localhost:3002",
   "http://localhost:5173"
 ];
 
@@ -98,6 +104,10 @@ app.use("/api/sessions", sessionRoutes);
 app.use("/api", offerCampaignRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/certificates", certificateRoutes);
+
+// Attendance / Trainer Modules
+app.use("/api/v1", trainerAttendanceRoutes);
+app.use("/api/v1", attendanceRoutes);
 
 // ── 404 Handler ──────────────────────────────
 app.use((req, res) => {
