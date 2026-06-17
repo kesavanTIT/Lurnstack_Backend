@@ -36,4 +36,12 @@ router.post("/trainer/attendance/mark", protect, trainerAttendanceController.mar
  */
 router.get("/trainer/attendance/summary", protect, trainerAttendanceController.getAttendanceSummary);
 
+/**
+ * @route   POST /api/v1/trainer/sessions/:sessionId/occurrences/:occurrenceId/extend
+ * @desc    Extend the end time of a session occurrence
+ * @body    { additionalMinutes }
+ * @access  Protected (JWT)
+ */
+router.post("/trainer/sessions/:sessionId/occurrences/:occurrenceId/extend", protect, trainerAttendanceController.extendSessionOccurrence);
+
 module.exports = router;

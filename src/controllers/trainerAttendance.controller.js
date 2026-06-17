@@ -206,9 +206,63 @@ const getAttendanceSummary = async (req, res, next) => {
   }
 };
 
+const extendSessionOccurrence = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { sessionId, occurrenceId } = req.params;
+    const { additionalMinutes } = req.body;
+
+    if (!additionalMinutes || isNaN(additionalMinutes) || additionalMinutes <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid additionalMinutes must be provided.",
+      });
+    }
+
+    const trainer = await trainerAttendanceService.findTrainerByUserId(userId);
+    if (!trainer) {
+      return res.status(403).json({
+        success: false,
+        message: "No trainer profile found for this account.",
+      });
+    }
+
+    const sessionOwned = await trainerAttendanceService.verifySessionOwnership(
+      sessionId,
+      trainer.id
+    );
+    if (!sessionOwned) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. This session does not belong to you.",
+      });
+    }
+
+    const updatedOccurrence = await trainerAttendanceService.extendSessionOccurrence(
+      occurrenceId,
+      additionalMinutes
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Session extended by ${additionalMinutes} minutes.`,
+      data: updatedOccurrence,
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
+    next(error);
+  }
+};
+
 module.exports = {
   getSessions,
   getAttendance,
   markAttendance,
   getAttendanceSummary,
+  extendSessionOccurrence,
 };

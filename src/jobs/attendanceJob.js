@@ -67,11 +67,39 @@ cron.schedule('*/5 * * * *', async () => {
         });
       }
 
-      // Mark all existing attendances for this occurrence as finalized
-      await prisma.studentAttendance.updateMany({
-        where: { occurrenceId: occurrence.id },
-        data: { finalizedAt: now }
+      // ENFORCE 30% RULE FOR STUDENTS WHO JOINED
+      const sessionDurationMins = (occurrence.startsAt && occurrence.endsAt)
+        ? Math.max(1, Math.round((new Date(occurrence.endsAt) - new Date(occurrence.startsAt)) / 60000))
+        : 60;
+      const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.30);
+
+      // Fetch actual duration from main Attendance model
+      const actualAttendances = await prisma.attendance.findMany({
+        where: {
+          sessionId: occurrence.sessionId,
+          occurrenceDate: occurrence.occurrenceDate,
+        }
       });
+
+      const actualAttMap = new Map(actualAttendances.map(a => [a.studentId, a.totalDurationSeconds]));
+
+      for (const sa of existingAttendances) {
+        const totalSecs = actualAttMap.get(sa.studentId) || 0;
+        let newStatus = sa.status;
+        
+        // If they didn't meet the 30% threshold, mark them as absent (even if they clicked join)
+        if (totalSecs < requiredSeconds) {
+          newStatus = "absent";
+        }
+
+        await prisma.studentAttendance.update({
+          where: { id: sa.id },
+          data: {
+            status: newStatus,
+            finalizedAt: now
+          }
+        });
+      }
 
       // 5. Mark occurrence as completed and Save finalizedAt
       await prisma.sessionOccurrence.update({
