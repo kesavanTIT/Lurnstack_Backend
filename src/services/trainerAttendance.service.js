@@ -4,163 +4,120 @@ const prisma = require("../config/db");
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-// We use dynamic thresholds based on session duration instead of a hardcoded value.
 const STUDENT_THRESHOLD_PCT = 0.30;
 const TRAINER_THRESHOLD_PCT = 0.85;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Formats a Date to "hh:mm AM/PM" string.
- * Times in DB represent actual display times stored as UTC —
- * no timezone conversion applied.
- * @param {Date|null} date
- * @returns {string|null}
- */
 const formatTime = (date) => {
   if (!date) return null;
-  return new Date(date).toLocaleTimeString("en-US", {
+  return new Date(date).toLocaleTimeString("en-IN", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
-    timeZone: "UTC",
+    timeZone: "Asia/Kolkata",
   });
 };
 
-/**
- * Formats a Date to "DD MMM YYYY" string.
- * @param {Date} date
- * @returns {string}
- */
 const formatDate = (date) => {
+  if (!date) return null;
   return new Date(date).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: "Asia/Kolkata",
   });
 };
 
 // ─── Service Functions ────────────────────────────────────────────────────────
 
-/**
- * Finds a Trainer record by the User.id from the JWT token.
- * @param {number} userId - The User.id from JWT payload (integer).
- * @returns {Promise<Object|null>} The Trainer record or null.
- */
 const findTrainerByUserId = async (userId) => {
-  const trainer = await prisma.trainer.findUnique({
-    where: { userId: String(userId) },
-    select: { id: true, name: true, email: true },
+  // Now returning User instead of Trainer
+  const user = await prisma.user.findUnique({
+    where: { id: parseInt(userId) },
+    select: { id: true, fullName: true, email: true },
   });
-  return trainer;
+  if (user) {
+    user.name = user.fullName;
+  }
+  return user;
 };
 
-/**
- * Gets all sessions assigned to a trainer.
- * Returns id, name, batch, and a computed displayLabel.
- * @param {string} trainerId - The Trainer.id (cuid).
- * @returns {Promise<Array>} Array of session objects.
- */
 const getTrainerSessions = async (trainerId) => {
-  const sessions = await prisma.trainerSession.findMany({
-    where: { trainerId },
-    select: { id: true, name: true, batch: true },
+  const sessions = await prisma.liveSession.findMany({
+    where: { trainerId: parseInt(trainerId) },
+    select: { id: true, title: true, courseTitle: true, isRecurring: true },
     orderBy: { createdAt: "asc" },
   });
 
   return sessions.map((s) => ({
     id: s.id,
-    name: s.name,
-    batch: s.batch,
-    displayLabel: `${s.name} — ${s.batch}`,
+    name: s.courseTitle || s.title,
+    batch: s.title || "Live Class",
+    displayLabel: `${s.courseTitle || s.title} — ${s.title || "Live Class"}`,
   }));
 };
 
-/**
- * Verifies that a session belongs to the given trainer.
- * @param {string} sessionId - The TrainerSession.id.
- * @param {string} trainerId - The Trainer.id.
- * @returns {Promise<Object|null>} The session if owned, null otherwise.
- */
 const verifySessionOwnership = async (sessionId, trainerId) => {
-  const session = await prisma.trainerSession.findFirst({
-    where: { id: sessionId, trainerId },
-    select: { id: true, name: true, batch: true },
+  const session = await prisma.liveSession.findFirst({
+    where: { id: sessionId, trainerId: parseInt(trainerId) },
+    select: { id: true, title: true, courseTitle: true },
   });
   return session;
 };
 
-/**
- * Retrieves attendance data for a specific session on a specific date.
- *
- * Logic:
- *   1. Find the SessionOccurrence for the given session + date
- *   2. Fetch all enrolled students for the session
- *   3. For each student, find their attendance record (if any)
- *   4. Apply business rules: durationMins >= 10 → present, else absent
- *   5. Compute summary stats
- *   6. Optionally filter by status
- *
- * @param {string} sessionId - The TrainerSession.id.
- * @param {string} dateStr - Date string in YYYY-MM-DD format.
- * @param {string|undefined} statusFilter - Optional: 'present' or 'absent'.
- * @returns {Promise<Object>} Full attendance data with session info, summary, and students.
- */
 const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
-  // Parse date range for the given day (UTC midnight to midnight)
   const dateStart = new Date(`${dateStr}T00:00:00.000Z`);
   const dateEnd = new Date(`${dateStr}T23:59:59.999Z`);
 
-  // Fetch session, occurrence, enrollments in parallel
-  const [session, occurrence, enrollments] = await Promise.all([
-    prisma.trainerSession.findUnique({
+  const [session, occurrence, bookings] = await Promise.all([
+    prisma.liveSession.findUnique({
       where: { id: sessionId },
-      select: { id: true, name: true, batch: true },
+      select: { id: true, title: true, courseTitle: true, trainerId: true },
     }),
-    prisma.trainerSessionOccurrence.findFirst({
+    prisma.sessionOccurrence.findFirst({
       where: {
         sessionId,
-        date: { gte: dateStart, lte: dateEnd },
+        occurrenceDate: { gte: dateStart, lte: dateEnd },
       },
       select: {
         id: true,
-        date: true,
-        startTime: true,
-        endTime: true,
+        occurrenceDate: true,
+        startsAt: true,
+        endsAt: true,
       },
     }),
-    prisma.trainerEnrollment.findMany({
+    prisma.sessionBooking.findMany({
       where: { sessionId },
       select: {
         student: {
-          select: { id: true, name: true },
+          select: { id: true, fullName: true, email: true, role: true },
         },
       },
     }),
   ]);
 
-  // No occurrence for this date
   if (!occurrence) {
     return {
       emptyState: true,
       message: "No session scheduled for this date",
       session: session
-        ? { name: session.name, batch: session.batch, date: dateStr, time: null }
+        ? { name: session.courseTitle || session.title, batch: session.title, date: dateStr, time: null }
         : null,
       summary: { totalStudents: 0, present: 0, absent: 0, attendancePercentage: 0 },
       students: [],
     };
   }
 
-  // No students enrolled
-  if (!enrollments.length) {
+  const enrollments = bookings;
+  
+  if (!enrollments.length && (!session || session.trainerId === undefined)) {
     return {
       session: {
-        name: session.name,
-        batch: session.batch,
-        date: formatDate(occurrence.date),
-        time: `${formatTime(occurrence.startTime)} – ${formatTime(occurrence.endTime)}`,
+        name: session ? (session.courseTitle || session.title) : "Session",
+        batch: session ? session.title : "Live Class",
+        date: formatDate(occurrence.occurrenceDate),
+        time: `${formatTime(occurrence.startsAt)} – ${formatTime(occurrence.endsAt)}`,
       },
       summary: { totalStudents: 0, present: 0, absent: 0, attendancePercentage: 0 },
       students: [],
@@ -168,53 +125,7 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
     };
   }
 
-  // Fetch attendance records for this occurrence
-  const studentIds = enrollments.map((e) => e.student.id);
-  const attendanceRecords = await prisma.trainerAttendance.findMany({
-    where: {
-      occurrenceId: occurrence.id,
-      studentId: { in: studentIds },
-    },
-    select: {
-      studentId: true,
-      joinTime: true,
-      leaveTime: true,
-      durationMins: true,
-      status: true,
-      joinCount: true,
-    },
-  });
-
-  // Index attendance by studentId for O(1) lookup
-  const attendanceMap = new Map();
-  for (const rec of attendanceRecords) {
-    attendanceMap.set(rec.studentId, rec);
-  }
-
-  // Cross-reference the main Attendance model (keyed by LiveSession id = occurrence.id)
-  // which stores totalDurationSeconds as an accurate sum of all individual join/leave
-  // segments (maintained by heartbeat and leaveSession). This handles multi-join correctly
-  // whereas TrainerAttendance only stores one joinTime/leaveTime pair.
-  //
-  // Lookup chain: TrainerStudent.email → User.id → Attendance.studentId + sessionId
-  const trainerStudentIds = enrollments.map((e) => e.student.id);
-  const trainerStudentRecords = await prisma.trainerStudent.findMany({
-    where: { id: { in: trainerStudentIds } },
-    select: { id: true, email: true },
-  });
-  const trainerStudentEmailMap = new Map(trainerStudentRecords.map((ts) => [ts.id, ts.email]));
-
-  const allEmails = Array.from(trainerStudentEmailMap.values()).filter(Boolean);
-  const allUserRecords = allEmails.length > 0 
-    ? await prisma.user.findMany({
-        where: { email: { in: allEmails } },
-        select: { id: true, email: true, role: true }
-      })
-    : [];
-  const userRoleMap = new Map(allUserRecords.map((u) => [u.email, u.role]));
-
-  // occurrence.id equals the LiveSession.id (set during join)
-  const liveSessionId = occurrence.id;
+  const liveSessionId = sessionId; // Main Attendance uses LiveSession id
   const mainAttendanceRecords = await prisma.attendance.findMany({
     where: {
       sessionId: liveSessionId,
@@ -225,136 +136,123 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
     },
   });
 
-  // email → Attendance record
-  const mainAttendanceByEmail = new Map();
+  const mainAttendanceByStudentId = new Map();
   for (const att of mainAttendanceRecords) {
-    const userRecord = allUserRecords.find((u) => u.id === att.studentId);
-    if (userRecord) mainAttendanceByEmail.set(userRecord.email, att);
+    mainAttendanceByStudentId.set(att.studentId, att);
   }
 
-  // Calculate dynamic thresholds
-  const sessionDurationMins = (occurrence && occurrence.startTime && occurrence.endTime)
-    ? Math.max(1, Math.round((new Date(occurrence.endTime) - new Date(occurrence.startTime)) / 60000))
-    : 60; // Fallback to 60 minutes if times are missing
+  const sessionDurationMins = (occurrence.startsAt && occurrence.endsAt)
+    ? Math.max(1, Math.round((new Date(occurrence.endsAt) - new Date(occurrence.startsAt)) / 60000))
+    : 60;
   
   const studentRequiredMins = Math.ceil(sessionDurationMins * STUDENT_THRESHOLD_PCT);
   const trainerRequiredMins = Math.ceil(sessionDurationMins * TRAINER_THRESHOLD_PCT);
 
-  const now = new Date();
-
-  // Build student list with attendance info
   let presentCount = 0;
-  const allStudents = enrollments.map((e) => {
-    const att = attendanceMap.get(e.student.id);
+  const allStudents = [];
+  
+  // Also include the trainer in the attendance list if they joined
+  if (session && session.trainerId) {
+     const trainerUser = await prisma.user.findUnique({
+       where: { id: session.trainerId },
+       select: { id: true, fullName: true, email: true, role: true }
+     });
+     if (trainerUser) {
+        enrollments.push({ student: trainerUser });
+     }
+  }
+
+  for (const e of enrollments) {
+    const student = e.student;
+    const role = student.role || "STUDENT";
+    const isTrainer = role === "TRAINER" || role === "ADMIN";
+
     let status = "absent";
     let joinTime = null;
     let leaveTime = null;
     let durationMins = 0;
     let sessionHistory = [];
+    let joinCount = 0;
 
-    const studentEmail = trainerStudentEmailMap.get(e.student.id);
-    const role = studentEmail ? userRoleMap.get(studentEmail) : "STUDENT";
-    const isTrainer = role === "TRAINER" || role === "ADMIN";
+    const mainAtt = mainAttendanceByStudentId.get(student.id);
 
-    if (att) {
-      joinTime = att.joinTime;
-      leaveTime = att.leaveTime;
+    if (mainAtt) {
+      if (mainAtt.events && mainAtt.events.length > 0) {
+        joinCount = mainAtt.events.length;
+        joinTime = mainAtt.events[0].joinedAt;
+        const lastEvent = mainAtt.events[mainAtt.events.length - 1];
+        leaveTime = lastEvent.leftAt || null;
 
-      // Prefer totalDurationSeconds from the main Attendance model (sum of all segments).
-      const mainAtt = studentEmail ? mainAttendanceByEmail.get(studentEmail) : null;
-
-      if (mainAtt) {
-        if (mainAtt.events && mainAtt.events.length > 0) {
-          sessionHistory = mainAtt.events.map(ev => {
-            let calcLeftAt = ev.leftAt;
-            if (!calcLeftAt) {
-               let calcEnd = new Date();
-               if (occurrence && occurrence.endTime && calcEnd > new Date(occurrence.endTime)) {
-                 calcEnd = new Date(occurrence.endTime);
-               }
-               calcLeftAt = calcEnd;
-            }
-            return {
-              joinedAt: ev.joinedAt ? new Date(ev.joinedAt).toISOString() : null,
-              leftAt: calcLeftAt ? new Date(calcLeftAt).toISOString() : null
-            };
-          });
-        }
-
-        let totalSeconds = mainAtt.totalDurationSeconds || 0;
-        // Recompute if totalSeconds is 0 but we have history
-        if (totalSeconds === 0 && sessionHistory.length > 0) {
-          for (const sh of sessionHistory) {
-            if (sh.joinedAt && sh.leftAt) {
-              totalSeconds += Math.max(0, Math.floor((new Date(sh.leftAt) - new Date(sh.joinedAt)) / 1000));
-            }
+        sessionHistory = mainAtt.events.map(ev => {
+          let calcLeftAt = ev.leftAt;
+          if (!calcLeftAt) {
+             let calcEnd = new Date();
+             if (occurrence.endsAt && calcEnd > new Date(occurrence.endsAt)) {
+               calcEnd = new Date(occurrence.endsAt);
+             }
+             calcLeftAt = calcEnd;
           }
-        }
-        durationMins = Math.round(totalSeconds / 60);
-      } else {
-        // No main Attendance record: fall back to stored TrainerAttendance
-        durationMins = att.durationMins || 0;
-        let calcLeftAt = leaveTime;
-        if (!calcLeftAt && joinTime) {
-          let calcEnd = new Date();
-          if (occurrence && occurrence.endTime && calcEnd > new Date(occurrence.endTime)) {
-            calcEnd = new Date(occurrence.endTime);
-          }
-          calcLeftAt = calcEnd;
-          if (durationMins === 0) {
-             durationMins = Math.max(0, Math.round((calcEnd - new Date(joinTime)) / 60000));
-          }
-        }
-        if (joinTime) {
-          sessionHistory.push({
-            joinedAt: new Date(joinTime).toISOString(),
+          return {
+            joinedAt: ev.joinedAt ? new Date(ev.joinedAt).toISOString() : null,
             leftAt: calcLeftAt ? new Date(calcLeftAt).toISOString() : null
-          });
+          };
+        });
+      }
+
+      let totalSeconds = mainAtt.totalDurationSeconds || 0;
+      if (totalSeconds === 0 && sessionHistory.length > 0) {
+        for (const sh of sessionHistory) {
+          if (sh.joinedAt && sh.leftAt) {
+            totalSeconds += Math.max(0, Math.floor((new Date(sh.leftAt) - new Date(sh.joinedAt)) / 1000));
+          }
         }
       }
+      durationMins = Math.round(totalSeconds / 60);
 
       const requiredMins = isTrainer ? trainerRequiredMins : studentRequiredMins;
       status = durationMins >= requiredMins ? "present" : "absent";
     }
 
-    if (status === "present") presentCount++;
+    // Ensure trainer isn't counted in the student "present" count
+    if (status === "present" && !isTrainer) {
+      presentCount++;
+    }
 
-    return {
-      id: e.student.id,
-      name: e.student.name,
-      role: role ? role.toLowerCase() : "student",
-      isTrainer,
-      status,
-      joinTime: formatTime(joinTime),
-      leaveTime: formatTime(leaveTime),
-      durationMins,
-      duration: durationMins > 0 ? `${durationMins} mins` : "-",
-      totalDurationSeconds: durationMins * 60,
-      joinCount: att ? (att.joinCount || 1) : 0,
-      joins: att ? (att.joinCount || 1) : 0,
-      lastJoinedAt: joinTime ? new Date(joinTime).toISOString() : null,
-      sessionHistory
-    };
-  });
+    // Only add if not already added
+    if (!allStudents.some(s => s.id === student.id)) {
+      allStudents.push({
+        id: student.id,
+        name: student.fullName,
+        role: role.toLowerCase(),
+        isTrainer,
+        status,
+        joinTime: formatTime(joinTime),
+        leaveTime: formatTime(leaveTime),
+        durationMins,
+        duration: durationMins > 0 ? `${durationMins} mins` : "-",
+        totalDurationSeconds: durationMins * 60,
+        joinCount,
+        joins: joinCount,
+        lastJoinedAt: joinTime ? new Date(joinTime).toISOString() : null,
+        sessionHistory
+      });
+    }
+  }
 
-  const totalStudents = allStudents.length;
+  const studentOnlyRecords = allStudents.filter(s => !s.isTrainer);
+  const totalStudents = studentOnlyRecords.length;
   const absentCount = totalStudents - presentCount;
-  const attendancePercentage =
-    totalStudents === 0
-      ? 0
-      : parseFloat(((presentCount / totalStudents) * 100).toFixed(2));
+  const attendancePercentage = totalStudents === 0 ? 0 : parseFloat(((presentCount / totalStudents) * 100).toFixed(2));
 
-  // Apply status filter if provided (summary is always based on full list)
-  const filteredStudents = statusFilter
-    ? allStudents.filter((s) => s.status === statusFilter)
-    : allStudents;
+  const filteredStudents = statusFilter ? allStudents.filter((s) => s.status === statusFilter || s.isTrainer) : allStudents;
 
   return {
     session: {
-      name: session.name,
-      batch: session.batch,
-      date: formatDate(occurrence.date),
-      time: `${formatTime(occurrence.startTime)} – ${formatTime(occurrence.endTime)}`,
+      id: occurrence.id,
+      name: session.courseTitle || session.title,
+      batch: session.title,
+      date: formatDate(occurrence.occurrenceDate),
+      time: `${formatTime(occurrence.startsAt)} – ${formatTime(occurrence.endsAt)}`,
     },
     summary: {
       totalStudents,
@@ -366,93 +264,23 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
   };
 };
 
-/**
- * Marks or updates attendance for a student in a specific occurrence.
- *
- * Business rules:
- *   - durationMins = (leaveTime - joinTime) / 60000
- *   - status = durationMins >= 10 ? 'present' : 'absent'
- *   - If joinTime is null → status = 'absent', durationMins = 0
- *   - Uses upsert: creates if not exists, updates if exists
- *
- * @param {Object} params
- * @param {string} params.occurrenceId - The TrainerSessionOccurrence.id.
- * @param {string} params.studentId - The TrainerStudent.id.
- * @param {string|null} params.joinTime - ISO datetime string or null.
- * @param {string|null} params.leaveTime - ISO datetime string or null.
- * @returns {Promise<Object>} The created/updated attendance record.
- */
 const markAttendance = async ({ occurrenceId, studentId, joinTime, leaveTime }) => {
-  // Look up the occurrence to get the date, start and end times
-  const occurrence = await prisma.trainerSessionOccurrence.findUnique({
-    where: { id: occurrenceId },
-    select: { id: true, date: true, startTime: true, endTime: true },
-  });
-
-  if (!occurrence) {
-    throw Object.assign(new Error("Session occurrence not found"), { statusCode: 404 });
-  }
-
-  let durationMins = 0;
-  let status = "absent";
-
-  if (joinTime && leaveTime) {
-    const joinDate = new Date(joinTime);
-    const leaveDate = new Date(leaveTime);
-    durationMins = Math.round((leaveDate - joinDate) / 60000);
-    const sessionDurationMins = (occurrence.startTime && occurrence.endTime)
-      ? Math.max(1, Math.round((new Date(occurrence.endTime) - new Date(occurrence.startTime)) / 60000))
-      : 60;
-    const requiredMins = Math.ceil(sessionDurationMins * STUDENT_THRESHOLD_PCT); // Default to student threshold for manual marking
-    
-    status = durationMins >= requiredMins ? "present" : "absent";
-  }
-
-  const record = await prisma.trainerAttendance.upsert({
-    where: {
-      studentId_occurrenceId: { studentId, occurrenceId },
-    },
-    update: {
-      joinTime: joinTime ? new Date(joinTime) : null,
-      leaveTime: leaveTime ? new Date(leaveTime) : null,
-      durationMins,
-      status,
-      joinCount: { increment: 1 }
-    },
-    create: {
-      studentId,
-      occurrenceId,
-      joinTime: joinTime ? new Date(joinTime) : null,
-      leaveTime: leaveTime ? new Date(leaveTime) : null,
-      durationMins,
-      status,
-      date: occurrence.date,
-      joinCount: 1
-    },
-  });
-
-  return record;
+  throw new Error("Manual marking not supported for Live Sessions.");
 };
 
-/**
- * Gets only the summary cards (no student list) for a session on a date.
- * @param {string} sessionId
- * @param {string} dateStr - YYYY-MM-DD
- * @returns {Promise<Object>} Summary object.
- */
 const getAttendanceSummary = async (sessionId, dateStr) => {
   const dateStart = new Date(`${dateStr}T00:00:00.000Z`);
   const dateEnd = new Date(`${dateStr}T23:59:59.999Z`);
 
   const [occurrence, enrollmentCount] = await Promise.all([
-    prisma.trainerSessionOccurrence.findFirst({
+    prisma.sessionOccurrence.findFirst({
       where: {
         sessionId,
-        date: { gte: dateStart, lte: dateEnd },
+        occurrenceDate: { gte: dateStart, lte: dateEnd },
       },
-      select: { id: true, startTime: true, endTime: true },
+      select: { id: true, startsAt: true, endsAt: true },
     }),
-    prisma.trainerEnrollment.count({ where: { sessionId } }),
+    prisma.sessionBooking.count({ where: { sessionId } }),
   ]);
 
   if (!occurrence || enrollmentCount === 0) {
@@ -464,81 +292,37 @@ const getAttendanceSummary = async (sessionId, dateStr) => {
     };
   }
 
-  const attendances = await prisma.trainerAttendance.findMany({
-    where: { occurrenceId: occurrence.id },
-    select: { studentId: true, joinTime: true, leaveTime: true, durationMins: true }
-  });
-
-  // No longer needed, already fetched in occurrence variable
-
-  // Cross-reference the main Attendance model via student email for accurate
-  // totalDurationSeconds (sum of all join segments, not a single span).
-  const trainerStudentIds = attendances.map((a) => a.studentId);
-  const trainerStudents = trainerStudentIds.length > 0
-    ? await prisma.trainerStudent.findMany({
-        where: { id: { in: trainerStudentIds } },
-        select: { id: true, email: true },
-      })
-    : [];
-  const tsEmailMap = new Map(trainerStudents.map((ts) => [ts.id, ts.email]));
-  const liveSessionId = occurrence.id;
   const mainAttendances = await prisma.attendance.findMany({
     where: {
-      sessionId: liveSessionId,
+      sessionId,
       occurrenceDate: { gte: dateStart, lte: dateEnd },
     },
-    include: { events: { where: { leftAt: null } } },
+    include: { events: true },
   });
-  const mainUserIds = mainAttendances.map((a) => a.studentId);
-  const mainUsers = mainUserIds.length > 0
-    ? await prisma.user.findMany({
-        where: { id: { in: mainUserIds } },
-        select: { id: true, email: true },
-      })
-    : [];
-  const mainAttByEmail = new Map();
-  for (const att of mainAttendances) {
-    const u = mainUsers.find((u) => u.id === att.studentId);
-    if (u) mainAttByEmail.set(u.email, att);
-  }
 
-  const sessionDurationMins = (occurrence.startTime && occurrence.endTime)
-    ? Math.max(1, Math.round((new Date(occurrence.endTime) - new Date(occurrence.startTime)) / 60000))
+  const sessionDurationMins = (occurrence.startsAt && occurrence.endsAt)
+    ? Math.max(1, Math.round((new Date(occurrence.endsAt) - new Date(occurrence.startsAt)) / 60000))
     : 60;
   const studentRequiredMins = Math.ceil(sessionDurationMins * STUDENT_THRESHOLD_PCT);
 
   let presentCount = 0;
-  for (const att of attendances) {
-    const studentEmail = tsEmailMap.get(att.studentId);
-    const mainAtt = studentEmail ? mainAttByEmail.get(studentEmail) : null;
-    let dMins = 0;
-
-    if (mainAtt) {
-      // Use the accurate cumulative sum from the main system.
-      let totalSeconds = mainAtt.totalDurationSeconds || 0;
-      if (totalSeconds === 0 && mainAtt.events && mainAtt.events.length > 0) {
-        for (const event of mainAtt.events) {
-          if (event.joinedAt) {
-            let calcEnd = new Date();
-            if (occurrence && occurrence.endTime && calcEnd > new Date(occurrence.endTime)) {
-              calcEnd = new Date(occurrence.endTime);
-            }
-            totalSeconds += Math.max(0, Math.floor((calcEnd - new Date(event.joinedAt)) / 1000));
+  for (const mainAtt of mainAttendances) {
+    // Only count students, not trainers (simplification for summary)
+    
+    let totalSeconds = mainAtt.totalDurationSeconds || 0;
+    if (totalSeconds === 0 && mainAtt.events && mainAtt.events.length > 0) {
+      for (const event of mainAtt.events) {
+        if (event.joinedAt) {
+          let calcEnd = new Date();
+          if (occurrence.endsAt && calcEnd > new Date(occurrence.endsAt)) {
+            calcEnd = new Date(occurrence.endsAt);
           }
+          let calcLeftAt = event.leftAt || calcEnd;
+          totalSeconds += Math.max(0, Math.floor((new Date(calcLeftAt) - new Date(event.joinedAt)) / 1000));
         }
-      }
-      dMins = Math.round(totalSeconds / 60);
-    } else {
-      // Fallback: use stored durationMins from TrainerAttendance.
-      dMins = att.durationMins || 0;
-      if (att.joinTime && !att.leaveTime && dMins === 0) {
-        let calcEnd = new Date();
-        if (occurrence && occurrence.endTime && calcEnd > new Date(occurrence.endTime)) {
-          calcEnd = new Date(occurrence.endTime);
-        }
-        dMins = Math.max(0, Math.round((calcEnd - new Date(att.joinTime)) / 60000));
       }
     }
+    let dMins = Math.round(totalSeconds / 60);
 
     if (dMins >= studentRequiredMins) {
       presentCount++;
@@ -546,10 +330,7 @@ const getAttendanceSummary = async (sessionId, dateStr) => {
   }
 
   const absentCount = enrollmentCount - presentCount;
-  const attendancePercentage =
-    enrollmentCount === 0
-      ? 0
-      : parseFloat(((presentCount / enrollmentCount) * 100).toFixed(2));
+  const attendancePercentage = enrollmentCount === 0 ? 0 : parseFloat(((presentCount / enrollmentCount) * 100).toFixed(2));
 
   return {
     totalStudents: enrollmentCount,
@@ -559,14 +340,8 @@ const getAttendanceSummary = async (sessionId, dateStr) => {
   };
 };
 
-/**
- * Extends the end time of a session occurrence by a given number of minutes.
- * @param {string} occurrenceId 
- * @param {number} additionalMinutes 
- * @returns {Promise<Object>} Updated occurrence record
- */
 const extendSessionOccurrence = async (occurrenceId, additionalMinutes) => {
-  const occurrence = await prisma.trainerSessionOccurrence.findUnique({
+  const occurrence = await prisma.sessionOccurrence.findUnique({
     where: { id: occurrenceId },
   });
 
@@ -574,11 +349,11 @@ const extendSessionOccurrence = async (occurrenceId, additionalMinutes) => {
     throw Object.assign(new Error("Session occurrence not found"), { statusCode: 404 });
   }
 
-  const newEndTime = new Date(occurrence.endTime.getTime() + additionalMinutes * 60000);
+  const newEndTime = new Date(occurrence.endsAt.getTime() + additionalMinutes * 60000);
 
-  const updated = await prisma.trainerSessionOccurrence.update({
+  const updated = await prisma.sessionOccurrence.update({
     where: { id: occurrenceId },
-    data: { endTime: newEndTime },
+    data: { endsAt: newEndTime },
   });
 
   return updated;
