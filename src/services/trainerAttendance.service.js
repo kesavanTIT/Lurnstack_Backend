@@ -180,8 +180,14 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
       if (mainAtt.events && mainAtt.events.length > 0) {
         joinCount = mainAtt.events.length;
         joinTime = mainAtt.events[0].joinedAt;
-        const lastEvent = mainAtt.events[mainAtt.events.length - 1];
-        leaveTime = lastEvent.leftAt || null;
+        let lastKnownLeftAt = null;
+        for (let i = mainAtt.events.length - 1; i >= 0; i--) {
+          if (mainAtt.events[i].leftAt) {
+            lastKnownLeftAt = mainAtt.events[i].leftAt;
+            break;
+          }
+        }
+        leaveTime = lastKnownLeftAt;
 
         sessionHistory = mainAtt.events.map(ev => {
           let calcLeftAt = ev.leftAt;
@@ -229,7 +235,7 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
         joinTime: formatTime(joinTime),
         leaveTime: formatTime(leaveTime),
         durationMins,
-        duration: durationMins > 0 ? `${durationMins} mins` : "-",
+        duration: `${durationMins} mins`,
         totalDurationSeconds: durationMins * 60,
         joinCount,
         joins: joinCount,

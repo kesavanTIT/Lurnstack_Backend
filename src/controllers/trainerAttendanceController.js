@@ -55,7 +55,10 @@ const getSessionAttendance = async (req, res) => {
 
     const attendances = await prisma.attendance.findMany({
       where: { sessionId },
-      include: { student: { select: { id: true, fullName: true, email: true } } },
+      include: { 
+        student: { select: { id: true, fullName: true, email: true } },
+        events: { orderBy: { joinedAt: "asc" } }
+      },
       orderBy: { joinedAt: "desc" }
     });
 
@@ -70,16 +73,40 @@ const getSessionAttendance = async (req, res) => {
     const attendedCount = presentCount;
     const attendancePercentage = totalStudents > 0 ? parseFloat(((presentCount / totalStudents) * 100).toFixed(2)) : 0;
 
-    const formattedStudents = attendances.map(a => ({
-      attendanceId: a.id,
-      studentId: a.studentId,
-      fullName: a.student?.fullName || "Unknown",
-      email: a.student?.email || "N/A",
-      status: a.status,
-      firstJoinedAt: a.joinedAt,
-      lastJoinedAt: a.joinedAt,
-      joinCount: 1
-    }));
+    const formattedStudents = attendances.map(a => {
+      let joinCount = 1;
+      let lastJoinedAt = a.joinedAt;
+      let lastLeftAt = null;
+      let durationSeconds = a.totalDurationSeconds || 0;
+      
+      if (a.events && a.events.length > 0) {
+        joinCount = a.events.length;
+        const lastEvent = a.events[a.events.length - 1];
+        lastJoinedAt = lastEvent.joinedAt;
+        lastLeftAt = lastEvent.leftAt;
+        
+        if (durationSeconds === 0) {
+           for (const ev of a.events) {
+             if (ev.joinedAt && ev.leftAt) {
+               durationSeconds += Math.max(0, Math.floor((new Date(ev.leftAt) - new Date(ev.joinedAt))/1000));
+             }
+           }
+        }
+      }
+
+      return {
+        attendanceId: a.id,
+        studentId: a.studentId,
+        fullName: a.student?.fullName || "Unknown",
+        email: a.student?.email || "N/A",
+        status: a.status,
+        firstJoinedAt: a.joinedAt,
+        lastJoinedAt,
+        leftAt: lastLeftAt,
+        joinCount,
+        durationSeconds
+      };
+    });
 
     return res.status(200).json({
       success: true,

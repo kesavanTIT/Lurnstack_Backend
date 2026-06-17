@@ -1570,8 +1570,17 @@ const heartbeatSession = async (req, res) => {
     
     const totalSeconds = allEvents.reduce((sum, e) => sum + e.durationSeconds, 0);
 
+    const occurrence = await prisma.sessionOccurrence.findFirst({
+       where: { sessionId, occurrenceDate: targetDate }
+    });
+    let requiredSeconds = 600;
+    if (occurrence && occurrence.startsAt && occurrence.endsAt) {
+       const sessionDurationSec = Math.max(60, Math.floor((occurrence.endsAt.getTime() - occurrence.startsAt.getTime()) / 1000));
+       requiredSeconds = Math.ceil(sessionDurationSec * 0.30);
+    }
+
     let newStatus = attendance.status;
-    if (totalSeconds >= 600) {
+    if (totalSeconds >= requiredSeconds) {
       const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
       let graceEndTime = new Date(attendance.occurrenceDate);
       if (session && session.startTime) {
@@ -1679,8 +1688,17 @@ const leaveSession = async (req, res) => {
     });
     const totalSeconds = allEvents.reduce((sum, e) => sum + e.durationSeconds, 0);
 
+    const occurrence = await prisma.sessionOccurrence.findFirst({
+       where: { sessionId, occurrenceDate: targetDate }
+    });
+    let requiredSeconds = 600;
+    if (occurrence && occurrence.startsAt && occurrence.endsAt) {
+       const sessionDurationSec = Math.max(60, Math.floor((occurrence.endsAt.getTime() - occurrence.startsAt.getTime()) / 1000));
+       requiredSeconds = Math.ceil(sessionDurationSec * 0.30);
+    }
+
     let newStatus = attendance.status;
-    if (totalSeconds >= 600) {
+    if (totalSeconds >= requiredSeconds) {
       const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
       let graceEndTime = new Date(attendance.occurrenceDate);
       if (session && session.startTime) {
@@ -2146,7 +2164,36 @@ const getCourseAttendance = async (req, res) => {
       orderBy: { occurrenceDate: "desc" }
     });
 
-    return res.status(200).json({ success: true, data: attendance });
+    const occList = await prisma.sessionOccurrence.findMany({
+      where: {
+        sessionId: { in: [...new Set(attendance.map(a => a.sessionId))] },
+        occurrenceDate: { in: [...new Set(attendance.map(a => a.occurrenceDate))] }
+      }
+    });
+
+    const formattedData = attendance.map(a => {
+      const occ = occList.find(o => o.sessionId === a.sessionId && new Date(o.occurrenceDate).getTime() === new Date(a.occurrenceDate).getTime());
+      return {
+        id: a.id,
+        sessionId: a.sessionId,
+        studentId: a.studentId,
+        occurrenceDate: a.occurrenceDate,
+        startsAt: occ?.startsAt || a.occurrenceDate,
+        endsAt: occ?.endsAt || a.occurrenceDate,
+        firstJoinedAt: a.firstJoinedAt,
+        lastJoinedAt: a.lastJoinedAt,
+        joinCount: a.joinCount,
+        totalDurationSeconds: a.totalDurationSeconds,
+        sessionDurationMinutes: occ && occ.startsAt && occ.endsAt ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000)) : 60,
+        attendedMinutes: a.totalDurationSeconds ? Math.round(a.totalDurationSeconds / 60) : 0,
+        status: a.status,
+        sessionTitle: a.session?.title || "Unknown Session",
+        courseId: a.session?.courseId || null,
+        courseTitle: a.session?.courseTitle || null
+      };
+    });
+
+    return res.status(200).json({ success: true, data: formattedData });
   } catch (error) {
     console.error("Get Course Attendance Error:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch attendance." });
@@ -2182,20 +2229,34 @@ const getStudentAttendance = async (req, res) => {
       orderBy: { occurrenceDate: "desc" }
     });
 
-    const formattedData = attendance.map(a => ({
-      id: a.id,
-      sessionId: a.sessionId,
-      studentId: a.studentId,
-      occurrenceDate: a.occurrenceDate,
-      firstJoinedAt: a.firstJoinedAt,
-      lastJoinedAt: a.lastJoinedAt,
-      joinCount: a.joinCount,
-      totalDurationSeconds: a.totalDurationSeconds,
-      status: a.status,
-      sessionTitle: a.session?.title || "Unknown Session",
-      courseId: a.session?.courseId || null,
-      courseTitle: a.session?.courseTitle || null
-    }));
+    const occList = await prisma.sessionOccurrence.findMany({
+      where: {
+        sessionId: { in: [...new Set(attendance.map(a => a.sessionId))] },
+        occurrenceDate: { in: [...new Set(attendance.map(a => a.occurrenceDate))] }
+      }
+    });
+
+    const formattedData = attendance.map(a => {
+      const occ = occList.find(o => o.sessionId === a.sessionId && new Date(o.occurrenceDate).getTime() === new Date(a.occurrenceDate).getTime());
+      return {
+        id: a.id,
+        sessionId: a.sessionId,
+        studentId: a.studentId,
+        occurrenceDate: a.occurrenceDate,
+        startsAt: occ?.startsAt || a.occurrenceDate,
+        endsAt: occ?.endsAt || a.occurrenceDate,
+        firstJoinedAt: a.firstJoinedAt,
+        lastJoinedAt: a.lastJoinedAt,
+        joinCount: a.joinCount,
+        totalDurationSeconds: a.totalDurationSeconds,
+        sessionDurationMinutes: occ && occ.startsAt && occ.endsAt ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000)) : 60,
+        attendedMinutes: a.totalDurationSeconds ? Math.round(a.totalDurationSeconds / 60) : 0,
+        status: a.status,
+        sessionTitle: a.session?.title || "Unknown Session",
+        courseId: a.session?.courseId || null,
+        courseTitle: a.session?.courseTitle || null
+      };
+    });
 
     return res.status(200).json({ success: true, data: formattedData });
   } catch (error) {
