@@ -879,6 +879,44 @@ const approveAdminTrainerPayoutRequest = async (req, res) => {
       });
     }
 
+    // === ENFORCE 85% TRAINER ATTENDANCE RULE ===
+    const requestEarnings = await prisma.trainerEarning.findMany({
+      where: { payoutRequestId: requestId },
+      select: { sessionId: true }
+    });
+    const sessionIds = [...new Set(requestEarnings.map(e => e.sessionId).filter(Boolean))];
+
+    if (sessionIds.length > 0) {
+      const occurrences = await prisma.sessionOccurrence.findMany({
+        where: { sessionId: { in: sessionIds }, status: "completed" },
+        select: { id: true, sessionId: true, occurrenceDate: true, startsAt: true, endsAt: true }
+      });
+
+      for (const occ of occurrences) {
+        const sessionDurationMins = (occ.startsAt && occ.endsAt)
+          ? Math.max(1, Math.round((new Date(occ.endsAt) - new Date(occ.startsAt)) / 60000))
+          : 60;
+        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.85);
+
+        const trainerAtt = await prisma.attendance.findFirst({
+          where: {
+            sessionId: occ.sessionId,
+            occurrenceDate: occ.occurrenceDate,
+            studentId: request.trainerId
+          }
+        });
+
+        const totalSecs = trainerAtt?.totalDurationSeconds || 0;
+
+        if (totalSecs < requiredSeconds) {
+          return res.status(400).json({
+            success: false,
+            message: `Payout cannot be approved. Trainer failed to meet the 85% attendance requirement for a session on ${occ.occurrenceDate.toISOString().split('T')[0]}. Required: ${requiredSeconds}s, Attended: ${totalSecs}s.`
+          });
+        }
+      }
+    }
+
     const adminId = parseInt(req.user.id, 10);
     const adminUser = await prisma.user.findUnique({ where: { id: adminId } });
     const adminName = adminUser ? adminUser.fullName : "Admin";

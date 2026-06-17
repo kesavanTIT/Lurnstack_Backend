@@ -4,7 +4,9 @@ const prisma = require("../config/db");
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DURATION_THRESHOLD_MINS = 10;
+// We use dynamic thresholds based on session duration instead of a hardcoded value.
+const STUDENT_THRESHOLD_PCT = 0.30;
+const TRAINER_THRESHOLD_PCT = 0.85;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -230,6 +232,14 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
     if (userRecord) mainAttendanceByEmail.set(userRecord.email, att);
   }
 
+  // Calculate dynamic thresholds
+  const sessionDurationMins = (occurrence && occurrence.startTime && occurrence.endTime)
+    ? Math.max(1, Math.round((new Date(occurrence.endTime) - new Date(occurrence.startTime)) / 60000))
+    : 60; // Fallback to 60 minutes if times are missing
+  
+  const studentRequiredMins = Math.ceil(sessionDurationMins * STUDENT_THRESHOLD_PCT);
+  const trainerRequiredMins = Math.ceil(sessionDurationMins * TRAINER_THRESHOLD_PCT);
+
   const now = new Date();
 
   // Build student list with attendance info
@@ -303,7 +313,8 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
         }
       }
 
-      status = durationMins >= DURATION_THRESHOLD_MINS ? "present" : "absent";
+      const requiredMins = isTrainer ? trainerRequiredMins : studentRequiredMins;
+      status = durationMins >= requiredMins ? "present" : "absent";
     }
 
     if (status === "present") presentCount++;
@@ -372,10 +383,10 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
  * @returns {Promise<Object>} The created/updated attendance record.
  */
 const markAttendance = async ({ occurrenceId, studentId, joinTime, leaveTime }) => {
-  // Look up the occurrence to get the date
+  // Look up the occurrence to get the date, start and end times
   const occurrence = await prisma.trainerSessionOccurrence.findUnique({
     where: { id: occurrenceId },
-    select: { id: true, date: true },
+    select: { id: true, date: true, startTime: true, endTime: true },
   });
 
   if (!occurrence) {
@@ -389,7 +400,12 @@ const markAttendance = async ({ occurrenceId, studentId, joinTime, leaveTime }) 
     const joinDate = new Date(joinTime);
     const leaveDate = new Date(leaveTime);
     durationMins = Math.round((leaveDate - joinDate) / 60000);
-    status = durationMins >= DURATION_THRESHOLD_MINS ? "present" : "absent";
+    const sessionDurationMins = (occurrence.startTime && occurrence.endTime)
+      ? Math.max(1, Math.round((new Date(occurrence.endTime) - new Date(occurrence.startTime)) / 60000))
+      : 60;
+    const requiredMins = Math.ceil(sessionDurationMins * STUDENT_THRESHOLD_PCT); // Default to student threshold for manual marking
+    
+    status = durationMins >= requiredMins ? "present" : "absent";
   }
 
   const record = await prisma.trainerAttendance.upsert({
@@ -434,7 +450,7 @@ const getAttendanceSummary = async (sessionId, dateStr) => {
         sessionId,
         date: { gte: dateStart, lte: dateEnd },
       },
-      select: { id: true },
+      select: { id: true, startTime: true, endTime: true },
     }),
     prisma.trainerEnrollment.count({ where: { sessionId } }),
   ]);
@@ -453,10 +469,7 @@ const getAttendanceSummary = async (sessionId, dateStr) => {
     select: { studentId: true, joinTime: true, leaveTime: true, durationMins: true }
   });
 
-  const occurrenceData = await prisma.trainerSessionOccurrence.findUnique({
-    where: { id: occurrence.id },
-    select: { endTime: true }
-  });
+  // No longer needed, already fetched in occurrence variable
 
   // Cross-reference the main Attendance model via student email for accurate
   // totalDurationSeconds (sum of all join segments, not a single span).
@@ -489,6 +502,11 @@ const getAttendanceSummary = async (sessionId, dateStr) => {
     if (u) mainAttByEmail.set(u.email, att);
   }
 
+  const sessionDurationMins = (occurrence.startTime && occurrence.endTime)
+    ? Math.max(1, Math.round((new Date(occurrence.endTime) - new Date(occurrence.startTime)) / 60000))
+    : 60;
+  const studentRequiredMins = Math.ceil(sessionDurationMins * STUDENT_THRESHOLD_PCT);
+
   let presentCount = 0;
   for (const att of attendances) {
     const studentEmail = tsEmailMap.get(att.studentId);
@@ -502,8 +520,8 @@ const getAttendanceSummary = async (sessionId, dateStr) => {
         for (const event of mainAtt.events) {
           if (event.joinedAt) {
             let calcEnd = new Date();
-            if (occurrenceData && occurrenceData.endTime && calcEnd > new Date(occurrenceData.endTime)) {
-              calcEnd = new Date(occurrenceData.endTime);
+            if (occurrence && occurrence.endTime && calcEnd > new Date(occurrence.endTime)) {
+              calcEnd = new Date(occurrence.endTime);
             }
             totalSeconds += Math.max(0, Math.floor((calcEnd - new Date(event.joinedAt)) / 1000));
           }
@@ -515,14 +533,14 @@ const getAttendanceSummary = async (sessionId, dateStr) => {
       dMins = att.durationMins || 0;
       if (att.joinTime && !att.leaveTime && dMins === 0) {
         let calcEnd = new Date();
-        if (occurrenceData && occurrenceData.endTime && calcEnd > new Date(occurrenceData.endTime)) {
-          calcEnd = new Date(occurrenceData.endTime);
+        if (occurrence && occurrence.endTime && calcEnd > new Date(occurrence.endTime)) {
+          calcEnd = new Date(occurrence.endTime);
         }
         dMins = Math.max(0, Math.round((calcEnd - new Date(att.joinTime)) / 60000));
       }
     }
 
-    if (dMins >= DURATION_THRESHOLD_MINS) {
+    if (dMins >= studentRequiredMins) {
       presentCount++;
     }
   }
@@ -541,6 +559,31 @@ const getAttendanceSummary = async (sessionId, dateStr) => {
   };
 };
 
+/**
+ * Extends the end time of a session occurrence by a given number of minutes.
+ * @param {string} occurrenceId 
+ * @param {number} additionalMinutes 
+ * @returns {Promise<Object>} Updated occurrence record
+ */
+const extendSessionOccurrence = async (occurrenceId, additionalMinutes) => {
+  const occurrence = await prisma.trainerSessionOccurrence.findUnique({
+    where: { id: occurrenceId },
+  });
+
+  if (!occurrence) {
+    throw Object.assign(new Error("Session occurrence not found"), { statusCode: 404 });
+  }
+
+  const newEndTime = new Date(occurrence.endTime.getTime() + additionalMinutes * 60000);
+
+  const updated = await prisma.trainerSessionOccurrence.update({
+    where: { id: occurrenceId },
+    data: { endTime: newEndTime },
+  });
+
+  return updated;
+};
+
 module.exports = {
   findTrainerByUserId,
   getTrainerSessions,
@@ -548,4 +591,5 @@ module.exports = {
   getAttendanceData,
   markAttendance,
   getAttendanceSummary,
+  extendSessionOccurrence,
 };
