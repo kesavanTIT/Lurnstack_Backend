@@ -202,6 +202,15 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
   });
   const trainerStudentEmailMap = new Map(trainerStudentRecords.map((ts) => [ts.id, ts.email]));
 
+  const allEmails = Array.from(trainerStudentEmailMap.values()).filter(Boolean);
+  const allUserRecords = allEmails.length > 0 
+    ? await prisma.user.findMany({
+        where: { email: { in: allEmails } },
+        select: { id: true, email: true, role: true }
+      })
+    : [];
+  const userRoleMap = new Map(allUserRecords.map((u) => [u.email, u.role]));
+
   // occurrence.id equals the LiveSession.id (set during join)
   const liveSessionId = occurrence.id;
   const mainAttendanceRecords = await prisma.attendance.findMany({
@@ -210,23 +219,14 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
       occurrenceDate: { gte: dateStart, lte: dateEnd },
     },
     include: {
-      events: { where: { leftAt: null } },
+      events: { orderBy: { joinedAt: "asc" } },
     },
   });
 
-  // Map mainAttendance by userId for lookup; also pull User emails to bridge the gap
-  const userIds = mainAttendanceRecords.map((a) => a.studentId);
-  const userRecords = userIds.length > 0
-    ? await prisma.user.findMany({
-        where: { id: { in: userIds } },
-        select: { id: true, email: true },
-      })
-    : [];
-  const userEmailMap = new Map(userRecords.map((u) => [u.email, u.id]));
   // email → Attendance record
   const mainAttendanceByEmail = new Map();
   for (const att of mainAttendanceRecords) {
-    const userRecord = userRecords.find((u) => u.id === att.studentId);
+    const userRecord = allUserRecords.find((u) => u.id === att.studentId);
     if (userRecord) mainAttendanceByEmail.set(userRecord.email, att);
   }
 
@@ -240,41 +240,66 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
     let joinTime = null;
     let leaveTime = null;
     let durationMins = 0;
+    let sessionHistory = [];
+
+    const studentEmail = trainerStudentEmailMap.get(e.student.id);
+    const role = studentEmail ? userRoleMap.get(studentEmail) : "STUDENT";
+    const isTrainer = role === "TRAINER" || role === "ADMIN";
 
     if (att) {
       joinTime = att.joinTime;
       leaveTime = att.leaveTime;
 
       // Prefer totalDurationSeconds from the main Attendance model (sum of all segments).
-      const studentEmail = trainerStudentEmailMap.get(e.student.id);
       const mainAtt = studentEmail ? mainAttendanceByEmail.get(studentEmail) : null;
 
       if (mainAtt) {
+        if (mainAtt.events && mainAtt.events.length > 0) {
+          sessionHistory = mainAtt.events.map(ev => {
+            let calcLeftAt = ev.leftAt;
+            if (!calcLeftAt) {
+               let calcEnd = new Date();
+               if (occurrence && occurrence.endTime && calcEnd > new Date(occurrence.endTime)) {
+                 calcEnd = new Date(occurrence.endTime);
+               }
+               calcLeftAt = calcEnd;
+            }
+            return {
+              joinedAt: ev.joinedAt ? new Date(ev.joinedAt).toISOString() : null,
+              leftAt: calcLeftAt ? new Date(calcLeftAt).toISOString() : null
+            };
+          });
+        }
+
         let totalSeconds = mainAtt.totalDurationSeconds || 0;
-        // If no heartbeat was ever sent (totalSeconds=0) but there are open events,
-        // compute live seconds as a fallback.
-        if (totalSeconds === 0 && mainAtt.events && mainAtt.events.length > 0) {
-          for (const event of mainAtt.events) {
-            if (event.joinedAt) {
-              let calcEnd = new Date();
-              if (occurrence && occurrence.endTime && calcEnd > new Date(occurrence.endTime)) {
-                calcEnd = new Date(occurrence.endTime);
-              }
-              totalSeconds += Math.max(0, Math.floor((calcEnd - new Date(event.joinedAt)) / 1000));
+        // Recompute if totalSeconds is 0 but we have history
+        if (totalSeconds === 0 && sessionHistory.length > 0) {
+          for (const sh of sessionHistory) {
+            if (sh.joinedAt && sh.leftAt) {
+              totalSeconds += Math.max(0, Math.floor((new Date(sh.leftAt) - new Date(sh.joinedAt)) / 1000));
             }
           }
         }
         durationMins = Math.round(totalSeconds / 60);
       } else {
-        // No main Attendance record: fall back to stored TrainerAttendance.durationMins.
-        // For still-live sessions (no leaveTime), compute from joinTime as best effort.
+        // No main Attendance record: fall back to stored TrainerAttendance
         durationMins = att.durationMins || 0;
-        if (joinTime && !leaveTime && durationMins === 0) {
+        let calcLeftAt = leaveTime;
+        if (!calcLeftAt && joinTime) {
           let calcEnd = new Date();
           if (occurrence && occurrence.endTime && calcEnd > new Date(occurrence.endTime)) {
             calcEnd = new Date(occurrence.endTime);
           }
-          durationMins = Math.max(0, Math.round((calcEnd - new Date(joinTime)) / 60000));
+          calcLeftAt = calcEnd;
+          if (durationMins === 0) {
+             durationMins = Math.max(0, Math.round((calcEnd - new Date(joinTime)) / 60000));
+          }
+        }
+        if (joinTime) {
+          sessionHistory.push({
+            joinedAt: new Date(joinTime).toISOString(),
+            leftAt: calcLeftAt ? new Date(calcLeftAt).toISOString() : null
+          });
         }
       }
 
@@ -286,6 +311,8 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
     return {
       id: e.student.id,
       name: e.student.name,
+      role: role ? role.toLowerCase() : "student",
+      isTrainer,
       status,
       joinTime: formatTime(joinTime),
       leaveTime: formatTime(leaveTime),
@@ -294,7 +321,8 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
       totalDurationSeconds: durationMins * 60,
       joinCount: att ? (att.joinCount || 1) : 0,
       joins: att ? (att.joinCount || 1) : 0,
-      lastJoinedAt: joinTime ? new Date(joinTime).toISOString() : null
+      lastJoinedAt: joinTime ? new Date(joinTime).toISOString() : null,
+      sessionHistory
     };
   });
 
