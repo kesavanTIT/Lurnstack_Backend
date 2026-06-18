@@ -32,22 +32,26 @@ const getAttendanceOverview = async (req, res) => {
   try {
     const totalTrainers = await prisma.user.count({ where: { role: 'TRAINER' } });
     const totalStudents = await prisma.user.count({ where: { role: 'STUDENT' } });
-    const totalSessions = await prisma.liveSession.count({ where: { sectionType: { not: 'TIT' } } });
+    const totalSessions = await prisma.liveSession.count({ where: { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] } });
     const completedSessions = await prisma.liveSession.count({
       where: {
-        sectionType: { not: 'TIT' },
-        OR: [
-          { status: 'completed' },
-          { endedAt: { not: null } }
+        OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }],
+        AND: [
+          {
+            OR: [
+              { status: 'completed' },
+              { endedAt: { not: null } }
+            ]
+          }
         ]
       }
     });
     
-    const allCourses = await prisma.liveSession.findMany({ where: { sectionType: { not: 'TIT' } }, distinct: ['courseId'], select: { courseId: true } });
+    const allCourses = await prisma.liveSession.findMany({ where: { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] }, distinct: ['courseId'], select: { courseId: true } });
     const totalCourses = allCourses.filter(c => c.courseId).length;
 
     const attendances = await prisma.attendance.findMany({
-      where: { session: { sectionType: { not: 'TIT' } } },
+      where: { session: { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] } },
       include: {
         session: {
           include: {
@@ -58,7 +62,7 @@ const getAttendanceOverview = async (req, res) => {
     });
 
     const allSessionsFull = await prisma.liveSession.findMany({
-      where: { sectionType: { not: 'TIT' } },
+      where: { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] },
       include: {
         trainer: { select: { id: true, fullName: true } }
       }
@@ -159,14 +163,13 @@ const getAttendanceOverview = async (req, res) => {
       };
     });
 
-    if (attendances.length === 0 && bookings.length === 0) {
+    if (attendances.length === 0 && bookings.length === 0 && coursesArray.length === 0) {
       coursesArray = [];
-    } else {
-      coursesArray = coursesArray.filter(c => (c.presentCount + c.lateCount + c.absentCount) > 0);
     }
 
+
     const allOccurrences = await prisma.sessionOccurrence.findMany({
-      where: { session: { sectionType: { not: 'TIT' } } }
+      where: { session: { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] } }
     });
     let trainerPresentCount = 0;
     let trainerAbsentCount = 0;
@@ -229,7 +232,7 @@ const getTrainerAttendanceAdmin = async (req, res) => {
     const occurrences = await prisma.sessionOccurrence.findMany({
       where: {
         ...filter,
-        session: { sectionType: { not: 'TIT' } }
+        session: { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] }
       },
       include: {
         session: true,
@@ -278,7 +281,7 @@ const getTrainerAttendanceAdmin = async (req, res) => {
 const getAllCoursesAttendance = async (req, res) => {
   try {
     const filter = buildGlobalFilters(req.query);
-    filter.session = { sectionType: { not: 'TIT' } };
+    filter.session = { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] };
     
     const attendances = await prisma.attendance.findMany({
       where: filter,
@@ -317,15 +320,11 @@ const getAllCoursesAttendance = async (req, res) => {
 const getCourseAttendanceSummaryAdmin = async (req, res) => {
   try {
     const { courseId } = req.params;
-    const filter = buildGlobalFilters(req.query);
 
-    const attendances = await prisma.attendance.findMany({
+    const occurrences = await prisma.sessionOccurrence.findMany({
       where: {
-        ...filter,
-        session: { 
-          courseId,
-          sectionType: { not: 'TIT' }
-        }
+        courseId,
+        session: { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] }
       },
       include: {
         session: { include: { trainer: { select: { id: true, fullName: true, email: true } } } }
@@ -333,28 +332,46 @@ const getCourseAttendanceSummaryAdmin = async (req, res) => {
       orderBy: { occurrenceDate: "desc" }
     });
 
-    const summaryMap = {};
-    attendances.forEach(a => {
-      const key = `${a.sessionId}-${a.occurrenceDate}`;
-      if (!summaryMap[key]) {
-        summaryMap[key] = {
-          occurrenceId: key,
-          sessionId: a.sessionId,
-          trainer: a.session?.trainer,
-          date: a.occurrenceDate,
-          status: "completed",
-          presentCount: 0,
-          lateCount: 0,
-          absentCount: 0
-        };
+    const attendances = await prisma.attendance.findMany({
+      where: {
+        session: { 
+          courseId,
+          OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }]
+        }
       }
-      
-      if (a.status === "present") summaryMap[key].presentCount++;
-      else if (a.status === "late") summaryMap[key].lateCount++;
-      else if (a.status === "absent") summaryMap[key].absentCount++;
     });
 
-    return res.status(200).json({ success: true, data: Object.values(summaryMap) });
+    const attendanceGroup = {};
+    attendances.forEach(a => {
+      const dateKey = new Date(a.occurrenceDate).toISOString().split('T')[0];
+      const key = `${a.sessionId}-${dateKey}`;
+      if (!attendanceGroup[key]) {
+        attendanceGroup[key] = { presentCount: 0, lateCount: 0, absentCount: 0 };
+      }
+      if (a.status === "present" || a.status === "joined") attendanceGroup[key].presentCount++;
+      else if (a.status === "late") attendanceGroup[key].lateCount++;
+      else if (a.status === "absent") attendanceGroup[key].absentCount++;
+    });
+
+    const summaryMap = occurrences.map(occ => {
+      const dateKey = new Date(occ.occurrenceDate).toISOString().split('T')[0];
+      const key = `${occ.sessionId}-${dateKey}`;
+      const stats = attendanceGroup[key] || { presentCount: 0, lateCount: 0, absentCount: 0 };
+      
+      return {
+        occurrenceId: occ.id,
+        sessionId: occ.sessionId,
+        sessionTitle: occ.session?.title || occ.session?.courseTitle || "Unknown Session",
+        trainer: occ.session?.trainer,
+        date: occ.occurrenceDate,
+        status: occ.status,
+        presentCount: stats.presentCount,
+        lateCount: stats.lateCount,
+        absentCount: stats.absentCount
+      };
+    });
+
+    return res.status(200).json({ success: true, data: summaryMap });
   } catch (error) {
     console.error("Admin Course Attendance Summary Error:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch course attendance summary." });
@@ -522,7 +539,7 @@ const updateAttendanceRecord = async (req, res) => {
 const getAllAttendanceRecords = async (req, res) => {
   try {
     const filter = buildGlobalFilters(req.query);
-    filter.session = { sectionType: { not: 'TIT' } };
+    filter.session = { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] };
     
     const attendances = await prisma.attendance.findMany({
       where: filter,
