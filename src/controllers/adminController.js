@@ -838,6 +838,12 @@ const updateLiveClass = async (req, res) => {
         });
         if (matchedTrainer) {
           updateData.trainerId = matchedTrainer.id;
+        } else if (resolvedInstructor.trim() !== "") {
+          updateData.trainer = {
+            update: {
+              fullName: resolvedInstructor.trim()
+            }
+          };
         }
       }
 
