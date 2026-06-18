@@ -464,7 +464,8 @@ const normalizeTimeToHHMM = (timeStr) => {
 // @access  Private/Admin
 const createLiveClass = async (req, res) => {
   try {
-    const validation = validateRecurringDays(req.body.recurringDays);
+    const recDays = req.body.recurringDays !== undefined ? req.body.recurringDays : req.body.recurring_days;
+    const validation = validateRecurringDays(recDays);
     if (!validation.isValid) {
       return res.status(400).json({
         success: false,
@@ -483,14 +484,18 @@ const createLiveClass = async (req, res) => {
 
     const {
       courseId,
+      course_id,
       courseName,
       title,
       classTitle,
       instructor,
+      trainerName,
       description,
       date,
       startTime,
       endTime,
+      endsAt,
+      end_time,
       time,
       duration,
       meetingLink,
@@ -499,9 +504,13 @@ const createLiveClass = async (req, res) => {
       source,
     } = req.body;
 
+    const resolvedInstructor = instructor || trainerName;
+    const resolvedCourseId = courseId || course_id || null;
+    const resolvedEndTimeInput = endTime || endsAt || end_time;
+
     const thumbnail = req.file ? req.file.path : null;
 
-    if (!courseName || (!classTitle && !title) || !instructor || !date || (!time && !startTime) || !duration || (!meetLink && !meetingLink)) {
+    if (!courseName || (!classTitle && !title) || !resolvedInstructor || !date || (!time && !startTime) || !duration || (!meetLink && !meetingLink)) {
       return res.status(400).json({
         success: false,
         message: "Please provide all required fields.",
@@ -516,11 +525,11 @@ const createLiveClass = async (req, res) => {
     if (isTIT) {
       // 1. Resolve trainerId from instructor name
       let trainerId = null;
-      if (instructor) {
+      if (resolvedInstructor) {
         const matchedTrainer = await prisma.user.findFirst({
           where: {
             role: "TRAINER",
-            fullName: { contains: instructor, mode: "insensitive" }
+            fullName: { contains: resolvedInstructor, mode: "insensitive" }
           }
         });
         if (matchedTrainer) {
@@ -551,17 +560,17 @@ const createLiveClass = async (req, res) => {
       const scheduledDate = date; // e.g. "2026-06-11"
       const scheduledAtStr = `${scheduledDate} ${formattedTime}`;
       const calculatedEndTime = addMinutesToTime(formattedTime, durationMinutes);
-      const resolvedEndTime = endTime || calculatedEndTime;
-      const endsAt = resolvedEndTime ? `${scheduledDate} ${resolvedEndTime}` : null;
+      const finalEndTime = resolvedEndTimeInput || calculatedEndTime;
+      const endsAtStr = finalEndTime ? `${scheduledDate} ${finalEndTime}` : null;
 
       // Try to find a matching category by courseName if courseId is not explicitly passed
-      let resolvedCourseId = courseId || null;
-      if (!resolvedCourseId && courseName) {
+      let finalCourseId = resolvedCourseId;
+      if (!finalCourseId && courseName) {
         const existingCategory = await prisma.category.findFirst({
           where: { name: { equals: courseName, mode: 'insensitive' } }
         });
         if (existingCategory) {
-          resolvedCourseId = existingCategory.id;
+          finalCourseId = existingCategory.id;
         }
       }
 
@@ -573,7 +582,7 @@ const createLiveClass = async (req, res) => {
       // 3. Create LiveSession
       const newSession = await prisma.liveSession.create({
         data: {
-          courseId: resolvedCourseId,
+          courseId: finalCourseId,
           courseTitle: courseName,
           category: courseName,
           trainerId,
@@ -581,7 +590,7 @@ const createLiveClass = async (req, res) => {
           classTitle: classTitle || title,
           description: description || null,
           startTime: formattedTime,
-          endTime: resolvedEndTime || null,
+          endTime: finalEndTime || null,
           timezone: "Asia/Kolkata",
           meetingLink: meetingLink || meetLink,
           isRecurring,
@@ -598,7 +607,7 @@ const createLiveClass = async (req, res) => {
           requiresAdminReview: true,
           scheduledDate,
           scheduledAt: scheduledAtStr,
-          endsAt,
+          endsAt: endsAtStr,
           durationMinutes,
           enableWhatsApp: false, // Force false for TIT classes
           trainerInstructions: req.body.trainerInstructions || null,
@@ -624,7 +633,7 @@ const createLiveClass = async (req, res) => {
           courseName: newSession.courseTitle || "",
           title: newSession.title || "",
           classTitle: newSession.classTitle || "",
-          instructor: instructor || "",
+          instructor: resolvedInstructor || "",
           description: newSession.description || "",
           date: newSession.scheduledDate || scheduledDate || "",
           startTime: newSession.startTime || "",
@@ -690,8 +699,9 @@ const createLiveClass = async (req, res) => {
 // @access  Private/Admin
 const updateLiveClass = async (req, res) => {
   try {
-    if (req.body.recurringDays !== undefined) {
-      const validation = validateRecurringDays(req.body.recurringDays);
+    const recDaysUpdate = req.body.recurringDays !== undefined ? req.body.recurringDays : req.body.recurring_days;
+    if (recDaysUpdate !== undefined) {
+      const validation = validateRecurringDays(recDaysUpdate);
       if (!validation.isValid) {
         return res.status(400).json({
           success: false,
@@ -716,17 +726,30 @@ const updateLiveClass = async (req, res) => {
     const isNumericId = !Number.isNaN(classIdInt) && String(classIdInt) === String(rawId);
 
     const {
+      courseId,
+      course_id,
       courseName,
+      title,
       classTitle,
       instructor,
+      trainerName,
       description,
       date,
       time,
+      startTime,
       duration,
+      endTime,
+      endsAt,
+      end_time,
       meetLink,
+      meetingLink,
       sectionType,
       source,
     } = req.body;
+
+    const resolvedInstructor = instructor || trainerName;
+    const resolvedCourseId = courseId || course_id;
+    const resolvedEndTimeInput = endTime || endsAt || end_time;
 
     if (isNumericId) {
       const existingClass = await prisma.liveClass.findUnique({
@@ -749,8 +772,8 @@ const updateLiveClass = async (req, res) => {
         where: { id: classIdInt },
         data: {
           courseName: courseName || existingClass.courseName,
-          classTitle: classTitle || existingClass.classTitle,
-          instructor: instructor || existingClass.instructor,
+          classTitle: classTitle || title || existingClass.classTitle,
+          instructor: resolvedInstructor || existingClass.instructor,
           description: description !== undefined ? description : existingClass.description,
           date: newDate,
           time: newTime,
@@ -789,18 +812,33 @@ const updateLiveClass = async (req, res) => {
       const durationMinutes = parseDurationMinutes(duration || existingSession.durationMinutes || "60");
 
       const updateData = {};
-      if (classTitle !== undefined) {
-        updateData.title = classTitle;
-        updateData.classTitle = classTitle; // legacy column
+      if (classTitle !== undefined || title !== undefined) {
+        updateData.title = classTitle || title;
+        updateData.classTitle = classTitle || title; // legacy column
       }
       if (description !== undefined) {
         updateData.description = description;
       }
-      if (meetLink !== undefined) {
-        updateData.meetingLink = meetLink;
+      if (meetLink !== undefined || meetingLink !== undefined) {
+        updateData.meetingLink = meetLink || meetingLink;
       }
       if (courseName !== undefined) {
         updateData.courseTitle = courseName; // legacy column
+      }
+      if (resolvedCourseId !== undefined) {
+        updateData.courseId = resolvedCourseId;
+      }
+
+      if (resolvedInstructor !== undefined) {
+        const matchedTrainer = await prisma.user.findFirst({
+          where: {
+            role: "TRAINER",
+            fullName: { contains: resolvedInstructor, mode: "insensitive" }
+          }
+        });
+        if (matchedTrainer) {
+          updateData.trainerId = matchedTrainer.id;
+        }
       }
 
       if (req.body.enableWhatsApp !== undefined) {
@@ -818,8 +856,8 @@ const updateLiveClass = async (req, res) => {
       if (req.body.trainerInstructions !== undefined) {
         updateData.trainerInstructions = req.body.trainerInstructions || null;
       }
-      if (req.body.recurringDays !== undefined) {
-        const validation = validateRecurringDays(req.body.recurringDays);
+      if (recDaysUpdate !== undefined) {
+        const validation = validateRecurringDays(recDaysUpdate);
         updateData.recurringDays = validation.parsed;
       }
       if (req.body.recurrenceEndDate !== undefined) {
@@ -848,7 +886,7 @@ const updateLiveClass = async (req, res) => {
         updateData.startTime = formattedTime;
         updateData.durationMinutes = durationMinutes;
         
-        const newEndTime = addMinutesToTime(formattedTime, durationMinutes);
+        const newEndTime = resolvedEndTimeInput || addMinutesToTime(formattedTime, durationMinutes);
         if (newEndTime) {
           updateData.endTime = newEndTime;
         }
