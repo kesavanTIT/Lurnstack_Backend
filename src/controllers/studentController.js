@@ -2395,7 +2395,7 @@ const getStudentTITClasses = async (req, res) => {
         isFree,
         publishState: cls.publishState,
         pricingState: cls.pricingState,
-        status: cls.status,
+        status: cls.status === "active" ? "" : cls.status,
         isRecurring: cls.isRecurring,
         recurringDays: cls.recurringDays,
         recurrenceEndDate: cls.recurrenceEndDate
