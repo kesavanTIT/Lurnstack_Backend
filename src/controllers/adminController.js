@@ -1131,12 +1131,14 @@ const getLiveClasses = async (req, res) => {
       }
       return {
         id: c.id,
+        courseId: c.courseId,
         courseName: c.courseTitle || c.category || "Live Session",
         classTitle: c.title || c.classTitle || "",
         instructor: c.trainer?.fullName || "Trainer",
         description: c.description || "",
         date: c.scheduledDate || "",
         time: c.startTime || "",
+        endTime: c.endTime || c.endsAt || "",
         duration: c.durationMinutes ? `${c.durationMinutes} mins` : "",
         meetLink: c.meetingLink || "",
         thumbnail: thumbnail,
@@ -1163,6 +1165,83 @@ const getLiveClasses = async (req, res) => {
   }
 };
 
+// @desc    Get a single admin-created live class by ID
+// @route   GET /api/admin/live-classes/:classId
+// @access  Private/Admin
+const getLiveClass = async (req, res) => {
+  try {
+    const { classId } = req.params;
+    
+    const c = await prisma.liveSession.findUnique({
+      where: { id: classId },
+      include: {
+        trainer: { select: { fullName: true } }
+      }
+    });
+
+    if (!c) {
+      const classIdInt = Number.parseInt(classId, 10);
+      if (!Number.isNaN(classIdInt) && String(classIdInt) === String(classId)) {
+        const legacyClass = await prisma.liveClass.findUnique({
+          where: { id: classIdInt },
+        });
+        if (legacyClass) {
+          let thumbnail = legacyClass.thumbnail;
+          if (thumbnail && !thumbnail.startsWith("http")) {
+            thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+          }
+          return res.status(200).json({
+            success: true,
+            data: {
+              ...legacyClass,
+              courseId: legacyClass.courseName,
+              duration: legacyClass.duration || (legacyClass.durationMinutes ? `${legacyClass.durationMinutes} mins` : ""),
+              thumbnail,
+            }
+          });
+        }
+      }
+      return res.status(404).json({ success: false, message: "Class not found." });
+    }
+
+    let thumbnail = c.thumbnail;
+    if (thumbnail && !thumbnail.startsWith("http")) {
+      thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: c.id,
+        courseId: c.courseId,
+        courseName: c.courseTitle || c.category || "Live Session",
+        classTitle: c.title || c.classTitle || "",
+        instructor: c.trainer?.fullName || "Trainer",
+        description: c.description || "",
+        date: c.scheduledDate || "",
+        time: c.startTime || "",
+        endTime: c.endTime || c.endsAt || "",
+        duration: c.durationMinutes ? `${c.durationMinutes} mins` : "",
+        meetLink: c.meetingLink || "",
+        thumbnail: thumbnail,
+        status: "Scheduled",
+        sectionType: c.sectionType,
+        source: c.source,
+        isRecurring: c.isRecurring,
+        recurrenceType: c.recurrenceType,
+        recurringDays: serializeRecurringDays(c.recurringDays),
+        recurrenceEndDate: c.recurrenceEndDate || null,
+      },
+    });
+  } catch (error) {
+    console.error("Get Live Class Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to fetch live class.",
+    });
+  }
+};
+
 module.exports = {
   getDashboardSummary,
   getStudents,
@@ -1177,6 +1256,7 @@ module.exports = {
   testSessionReminderWhatsapp,
   testWhatsappReminderManual,
   getLiveClasses,
+  getLiveClass,
 };
 
 

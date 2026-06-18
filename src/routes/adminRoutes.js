@@ -14,6 +14,7 @@ const {
   testSessionReminderWhatsapp,
   testWhatsappReminderManual,
   getLiveClasses,
+  getLiveClass,
 } = require("../controllers/adminController");
 const {
   registerAdmin,
@@ -89,6 +90,7 @@ router.patch("/trainers/:id/status", toggleTrainerStatus);
 
 // Live Class Management
 router.get("/get-live-classes", getLiveClasses);
+router.get("/live-classes/:classId", getLiveClass);
 router.post("/create-live-class", upload.single("thumbnail"), createLiveClass);
 router.put("/update-live-class/:classId", upload.single("thumbnail"), updateLiveClass);
 router.delete("/delete-live-class/:classId", deleteLiveClass);
