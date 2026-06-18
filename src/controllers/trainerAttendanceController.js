@@ -160,7 +160,13 @@ const getStudentAttendanceInCourse = async (req, res) => {
     const trainerId = parseInt(req.user.id);
 
     const attendances = await prisma.studentAttendance.findMany({
-      where: { courseId, trainerId },
+      where: { 
+        trainerId,
+        OR: [
+          { courseId: courseId },
+          { sessionId: courseId }
+        ]
+      },
       include: { student: { select: { id: true, fullName: true, email: true } } },
       orderBy: { occurrenceDate: "desc" }
     });
@@ -186,7 +192,13 @@ const getAttendanceEligibility = async (req, res) => {
 
     // Calculate percentage of present/late vs total occurrences per student
     const attendances = await prisma.studentAttendance.findMany({
-      where: { courseId, trainerId },
+      where: { 
+        trainerId,
+        OR: [
+          { courseId: courseId },
+          { sessionId: courseId }
+        ]
+      },
       include: { student: { select: { id: true, fullName: true, email: true } } }
     });
 
