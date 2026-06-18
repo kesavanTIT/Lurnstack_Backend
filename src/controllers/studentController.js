@@ -2173,6 +2173,29 @@ const getCourseAttendance = async (req, res) => {
 
     const formattedData = attendance.map(a => {
       const occ = occList.find(o => o.sessionId === a.sessionId && new Date(o.occurrenceDate).getTime() === new Date(a.occurrenceDate).getTime());
+      
+      let finalStatus = a.status === 'joined' ? 'present' : a.status;
+
+      if (finalStatus === 'absent' && a.joinCount > 0) {
+        let totalSecs = a.totalDurationSeconds || 0;
+        if (totalSecs === 0 && a.firstJoinedAt) {
+          const start = new Date(a.firstJoinedAt).getTime();
+          const end = occ?.endsAt ? new Date(occ.endsAt).getTime() : start + 3600000;
+          if (end > start) {
+            totalSecs = Math.round((end - start) / 1000);
+          }
+        }
+
+        const sessionDurationMins = (occ?.startsAt && occ?.endsAt)
+          ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000))
+          : 60;
+        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.30);
+
+        if (totalSecs >= requiredSeconds) {
+          finalStatus = 'present';
+        }
+      }
+
       return {
         id: a.id,
         sessionId: a.sessionId,
@@ -2186,7 +2209,7 @@ const getCourseAttendance = async (req, res) => {
         totalDurationSeconds: a.totalDurationSeconds,
         sessionDurationMinutes: occ && occ.startsAt && occ.endsAt ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000)) : 60,
         attendedMinutes: a.totalDurationSeconds ? Math.round(a.totalDurationSeconds / 60) : 0,
-        status: a.status,
+        status: finalStatus,
         sessionTitle: a.session?.title || "Unknown Session",
         courseId: a.session?.courseId || null,
         courseTitle: a.session?.courseTitle || null
@@ -2211,7 +2234,45 @@ const getSessionAttendance = async (req, res) => {
       orderBy: { occurrenceDate: "desc" }
     });
 
-    return res.status(200).json({ success: true, data: attendance });
+    const occList = await prisma.sessionOccurrence.findMany({
+      where: {
+        sessionId: { in: [...new Set(attendance.map(a => a.sessionId))] },
+        occurrenceDate: { in: [...new Set(attendance.map(a => a.occurrenceDate))] }
+      }
+    });
+
+    const formattedData = attendance.map(a => {
+      const occ = occList.find(o => o.sessionId === a.sessionId && new Date(o.occurrenceDate).getTime() === new Date(a.occurrenceDate).getTime());
+      
+      let finalStatus = a.status === 'joined' ? 'present' : a.status;
+
+      if (finalStatus === 'absent' && a.joinCount > 0) {
+        let totalSecs = a.totalDurationSeconds || 0;
+        if (totalSecs === 0 && a.firstJoinedAt) {
+          const start = new Date(a.firstJoinedAt).getTime();
+          const end = occ?.endsAt ? new Date(occ.endsAt).getTime() : start + 3600000;
+          if (end > start) {
+            totalSecs = Math.round((end - start) / 1000);
+          }
+        }
+
+        const sessionDurationMins = (occ?.startsAt && occ?.endsAt)
+          ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000))
+          : 60;
+        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.30);
+
+        if (totalSecs >= requiredSeconds) {
+          finalStatus = 'present';
+        }
+      }
+
+      return {
+        ...a,
+        status: finalStatus
+      };
+    });
+
+    return res.status(200).json({ success: true, data: formattedData });
   } catch (error) {
     console.error("Get Session Attendance Error:", error);
     return res.status(500).json({ success: false, message: "Failed to fetch session attendance." });
@@ -2238,6 +2299,29 @@ const getStudentAttendance = async (req, res) => {
 
     const formattedData = attendance.map(a => {
       const occ = occList.find(o => o.sessionId === a.sessionId && new Date(o.occurrenceDate).getTime() === new Date(a.occurrenceDate).getTime());
+      
+      let finalStatus = a.status === 'joined' ? 'present' : a.status;
+
+      if (finalStatus === 'absent' && a.joinCount > 0) {
+        let totalSecs = a.totalDurationSeconds || 0;
+        if (totalSecs === 0 && a.firstJoinedAt) {
+          const start = new Date(a.firstJoinedAt).getTime();
+          const end = occ?.endsAt ? new Date(occ.endsAt).getTime() : start + 3600000;
+          if (end > start) {
+            totalSecs = Math.round((end - start) / 1000);
+          }
+        }
+
+        const sessionDurationMins = (occ?.startsAt && occ?.endsAt)
+          ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000))
+          : 60;
+        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.30);
+
+        if (totalSecs >= requiredSeconds) {
+          finalStatus = 'present';
+        }
+      }
+
       return {
         id: a.id,
         sessionId: a.sessionId,
@@ -2251,7 +2335,7 @@ const getStudentAttendance = async (req, res) => {
         totalDurationSeconds: a.totalDurationSeconds,
         sessionDurationMinutes: occ && occ.startsAt && occ.endsAt ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000)) : 60,
         attendedMinutes: a.totalDurationSeconds ? Math.round(a.totalDurationSeconds / 60) : 0,
-        status: a.status,
+        status: finalStatus,
         sessionTitle: a.session?.title || "Unknown Session",
         courseId: a.session?.courseId || null,
         courseTitle: a.session?.courseTitle || null
