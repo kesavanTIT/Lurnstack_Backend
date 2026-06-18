@@ -168,10 +168,15 @@ const getStudentAttendanceInCourse = async (req, res) => {
         ]
       },
       include: { 
-        student: { select: { id: true, fullName: true, email: true } },
-        occurrence: { select: { startsAt: true, endsAt: true } }
+        student: { select: { id: true, fullName: true, email: true } }
       },
       orderBy: { occurrenceDate: "desc" }
+    });
+
+    // Safely fetch occurrences
+    const occurrenceIds = attendances.map(a => a.occurrenceId).filter(Boolean);
+    const occurrences = await prisma.sessionOccurrence.findMany({
+      where: { id: { in: occurrenceIds } }
     });
 
     // Fetch real durations to recalculate status dynamically
@@ -191,17 +196,19 @@ const getStudentAttendanceInCourse = async (req, res) => {
       if (finalStatus === 'absent' && a.joinCount > 0) {
         const actualAtt = actualAttendances.find(att => att.studentId === a.studentId && att.occurrenceDate?.getTime() === a.occurrenceDate?.getTime());
         if (actualAtt) {
+          const occ = occurrences.find(o => o.id === a.occurrenceId);
+          
           let totalSecs = actualAtt.totalDurationSeconds || 0;
           if (totalSecs === 0 && actualAtt.joinedAt) {
             const start = new Date(actualAtt.joinedAt).getTime();
-            const end = a.occurrence?.endsAt ? new Date(a.occurrence.endsAt).getTime() : start + 3600000;
+            const end = occ?.endsAt ? new Date(occ.endsAt).getTime() : start + 3600000;
             if (end > start) {
               totalSecs = Math.round((end - start) / 1000);
             }
           }
 
-          const sessionDurationMins = (a.occurrence?.startsAt && a.occurrence?.endsAt)
-            ? Math.max(1, Math.round((new Date(a.occurrence.endsAt) - new Date(a.occurrence.startsAt)) / 60000))
+          const sessionDurationMins = (occ?.startsAt && occ?.endsAt)
+            ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000))
             : 60;
           const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.30);
 
