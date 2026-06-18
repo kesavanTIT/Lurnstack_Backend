@@ -2380,9 +2380,12 @@ const getStudentTITClasses = async (req, res) => {
         instructor: cls.trainer?.fullName || "Trainer",
         description: cls.description || "",
         date: cls.scheduledDate || "",
+        scheduledAt: cls.scheduledAt,
+        endsAt: cls.endsAt,
         startTime: cls.startTime || "",
         endTime: cls.endTime || "",
         time: cls.startTime || "",
+        durationMinutes: cls.durationMinutes,
         duration: cls.durationMinutes ? `${cls.durationMinutes} mins` : "",
         meetingLink: cls.meetingLink || "",
         meetLink: cls.meetingLink || "",
@@ -2391,7 +2394,11 @@ const getStudentTITClasses = async (req, res) => {
         currency: "INR",
         isFree,
         publishState: cls.publishState,
-        pricingState: cls.pricingState
+        pricingState: cls.pricingState,
+        status: cls.status,
+        isRecurring: cls.isRecurring,
+        recurringDays: cls.recurringDays,
+        recurrenceEndDate: cls.recurrenceEndDate
       };
     });
 

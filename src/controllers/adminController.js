@@ -537,22 +537,10 @@ const createLiveClass = async (req, res) => {
         }
       }
       if (!trainerId) {
-        const anyTrainer = await prisma.user.findFirst({
-          where: { role: "TRAINER", isActive: true }
+        return res.status(400).json({
+          success: false,
+          message: `Trainer '${resolvedInstructor}' not found. Please ensure the trainer exists.`
         });
-        if (anyTrainer) {
-          trainerId = anyTrainer.id;
-        } else {
-          const anyUser = await prisma.user.findFirst();
-          if (anyUser) {
-            trainerId = anyUser.id;
-          } else {
-            return res.status(400).json({
-              success: false,
-              message: "No trainer or user found in system to assign to this session."
-            });
-          }
-        }
       }
 
       // 2. Parse and normalize time and date
@@ -611,6 +599,8 @@ const createLiveClass = async (req, res) => {
           durationMinutes,
           enableWhatsApp: false, // Force false for TIT classes
           trainerInstructions: req.body.trainerInstructions || null,
+          isRecurring: req.body.isRecurring === true || req.body.isRecurring === "true",
+          recurrenceType: req.body.recurrenceType || null,
           recurringDays: parsedRecurringDays,
           recurrenceEndDate: dateValidation.parsed,
         },
@@ -839,11 +829,10 @@ const updateLiveClass = async (req, res) => {
         if (matchedTrainer) {
           updateData.trainerId = matchedTrainer.id;
         } else if (resolvedInstructor.trim() !== "") {
-          updateData.trainer = {
-            update: {
-              fullName: resolvedInstructor.trim()
-            }
-          };
+          return res.status(400).json({
+            success: false,
+            message: `Trainer '${resolvedInstructor}' not found. Please ensure the trainer exists.`
+          });
         }
       }
 
