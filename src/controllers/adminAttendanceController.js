@@ -2,15 +2,22 @@ const prisma = require("../config/db");
 
 // Helper for parsing global attendance filtersSSSSSSSsssssssssssssss
 const buildGlobalFilters = (query) => {
-  const { trainerId, courseId, studentId, status, startDate, endDate } = query;
+  const { trainerId, courseId, studentId, sessionId, status, startDate, endDate, date } = query;
   const filter = {};
 
   if (trainerId) filter.trainerId = parseInt(trainerId);
   if (courseId) filter.courseId = courseId;
   if (studentId) filter.studentId = parseInt(studentId);
+  if (sessionId) filter.sessionId = sessionId;
   if (status) filter.status = status;
 
-  if (startDate || endDate) {
+  if (date) {
+    const startOfDay = new Date(date);
+    startOfDay.setUTCHours(0,0,0,0);
+    const endOfDay = new Date(date);
+    endOfDay.setUTCHours(23,59,59,999);
+    filter.occurrenceDate = { gte: startOfDay, lte: endOfDay };
+  } else if (startDate || endDate) {
     filter.occurrenceDate = {};
     if (startDate) filter.occurrenceDate.gte = new Date(startDate);
     if (endDate) filter.occurrenceDate.lte = new Date(endDate);
@@ -25,9 +32,10 @@ const getAttendanceOverview = async (req, res) => {
   try {
     const totalTrainers = await prisma.user.count({ where: { role: 'TRAINER' } });
     const totalStudents = await prisma.user.count({ where: { role: 'STUDENT' } });
-    const totalSessions = await prisma.liveSession.count();
+    const totalSessions = await prisma.liveSession.count({ where: { sectionType: { not: 'TIT' } } });
     const completedSessions = await prisma.liveSession.count({
       where: {
+        sectionType: { not: 'TIT' },
         OR: [
           { status: 'completed' },
           { endedAt: { not: null } }
@@ -35,10 +43,11 @@ const getAttendanceOverview = async (req, res) => {
       }
     });
     
-    const allCourses = await prisma.liveSession.findMany({ distinct: ['courseId'], select: { courseId: true } });
+    const allCourses = await prisma.liveSession.findMany({ where: { sectionType: { not: 'TIT' } }, distinct: ['courseId'], select: { courseId: true } });
     const totalCourses = allCourses.filter(c => c.courseId).length;
 
     const attendances = await prisma.attendance.findMany({
+      where: { session: { sectionType: { not: 'TIT' } } },
       include: {
         session: {
           include: {
@@ -49,6 +58,7 @@ const getAttendanceOverview = async (req, res) => {
     });
 
     const allSessionsFull = await prisma.liveSession.findMany({
+      where: { sectionType: { not: 'TIT' } },
       include: {
         trainer: { select: { id: true, fullName: true } }
       }
@@ -155,6 +165,27 @@ const getAttendanceOverview = async (req, res) => {
       coursesArray = coursesArray.filter(c => (c.presentCount + c.lateCount + c.absentCount) > 0);
     }
 
+    const allOccurrences = await prisma.sessionOccurrence.findMany({
+      where: { session: { sectionType: { not: 'TIT' } } }
+    });
+    let trainerPresentCount = 0;
+    let trainerAbsentCount = 0;
+    const now = new Date();
+    
+    allOccurrences.forEach(occ => {
+      const endsAt = occ.endsAt ? new Date(occ.endsAt) : null;
+      if (occ.status === "completed" || occ.status === "live" || occ.finalizedAt) {
+        trainerPresentCount++;
+      } else if (endsAt && now > endsAt) {
+        trainerAbsentCount++;
+      }
+    });
+
+    const trainerTotal = trainerPresentCount + trainerAbsentCount;
+    const trainerAttendancePercentage = trainerTotal > 0 
+      ? parseFloat(((trainerPresentCount / trainerTotal) * 100).toFixed(2)) 
+      : 0;
+
     return res.status(200).json({
       success: true,
       data: {
@@ -168,6 +199,9 @@ const getAttendanceOverview = async (req, res) => {
         absentCount,
         attendedCount,
         averageAttendancePercentage,
+        trainerPresentCount,
+        trainerAbsentCount,
+        trainerAttendancePercentage,
         courses: coursesArray
       }
     });
@@ -182,24 +216,55 @@ const getAttendanceOverview = async (req, res) => {
 const getTrainerAttendanceAdmin = async (req, res) => {
   try {
     const { trainerId } = req.params;
-    const filter = buildGlobalFilters(req.query);
+    const { courseId, startDate, endDate } = req.query;
     
-    const attendances = await prisma.attendance.findMany({
+    const filter = { trainerId: parseInt(trainerId) };
+    if (courseId) filter.courseId = courseId;
+    if (startDate || endDate) {
+      filter.occurrenceDate = {};
+      if (startDate) filter.occurrenceDate.gte = new Date(startDate);
+      if (endDate) filter.occurrenceDate.lte = new Date(endDate);
+    }
+    
+    const occurrences = await prisma.sessionOccurrence.findMany({
       where: {
         ...filter,
-        session: { trainerId: parseInt(trainerId) }
+        session: { sectionType: { not: 'TIT' } }
       },
-      include: { 
-        student: { select: { id: true, fullName: true, email: true } }, 
-        session: true 
+      include: {
+        session: true,
+        trainer: { select: { id: true, fullName: true, email: true } }
       },
       orderBy: { occurrenceDate: "desc" }
     });
 
-    const formattedData = attendances.map(a => ({
-      ...a,
-      status: a.status
-    }));
+    const formattedData = occurrences.map(occ => {
+      let inferredStatus = "pending";
+      const now = new Date();
+      const endsAt = occ.endsAt ? new Date(occ.endsAt) : null;
+      
+      if (occ.status === "completed" || occ.status === "live" || occ.finalizedAt) {
+        inferredStatus = "present";
+      } else if (endsAt && now > endsAt) {
+        inferredStatus = "absent";
+      }
+
+      const firstJoinedAt = (occ.status === "completed" || occ.status === "live") ? occ.startsAt : null;
+      
+      return {
+        id: occ.id,
+        sessionId: occ.sessionId,
+        courseId: occ.courseId,
+        sessionTitle: occ.session?.title || occ.session?.courseTitle || "Unknown Session",
+        date: occ.occurrenceDate, // map occurrenceDate to date for UI compatibility
+        startsAt: occ.startsAt,
+        endsAt: occ.endsAt,
+        status: inferredStatus,
+        trainer: occ.trainer,
+        firstJoinedAt: firstJoinedAt,
+        durationMinutes: occ.startsAt && occ.endsAt ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000)) : 0,
+      };
+    });
 
     return res.status(200).json({ success: true, data: formattedData });
   } catch (error) {
@@ -213,6 +278,7 @@ const getTrainerAttendanceAdmin = async (req, res) => {
 const getAllCoursesAttendance = async (req, res) => {
   try {
     const filter = buildGlobalFilters(req.query);
+    filter.session = { sectionType: { not: 'TIT' } };
     
     const attendances = await prisma.attendance.findMany({
       where: filter,
@@ -256,7 +322,10 @@ const getCourseAttendanceSummaryAdmin = async (req, res) => {
     const attendances = await prisma.attendance.findMany({
       where: {
         ...filter,
-        session: { courseId }
+        session: { 
+          courseId,
+          sectionType: { not: 'TIT' }
+        }
       },
       include: {
         session: { include: { trainer: { select: { id: true, fullName: true, email: true } } } }
@@ -338,6 +407,7 @@ const getSessionAttendanceAdmin = async (req, res) => {
         fullName: a.student?.fullName || "Unknown",
         email: a.student?.email || "N/A",
         status: status,
+        occurrenceDate: a.occurrenceDate,
         firstJoinedAt: a.firstJoinedAt,
         lastJoinedAt: a.lastJoinedAt,
         joinCount: a.joinCount,
@@ -369,6 +439,13 @@ const getSessionAttendanceAdmin = async (req, res) => {
     const attendedCount = presentCount + lateCount;
     const attendancePercentage = totalStudents > 0 ? parseFloat(((attendedCount / totalStudents) * 100).toFixed(2)) : 0;
 
+    const trainerAttendance = {
+      trainerId: session?.trainerId || null,
+      trainerName: session?.trainer?.fullName || "Unassigned",
+      status: isSessionEnded ? "present" : (session?.status === 'live' ? "present" : "pending"),
+      durationMinutes: session?.durationMinutes || 60,
+    };
+
     const responseData = {
       sessionId: sessionId,
       sessionTitle: session?.title || session?.courseTitle || "Unknown Session",
@@ -382,6 +459,7 @@ const getSessionAttendanceAdmin = async (req, res) => {
       absentCount,
       attendedCount,
       attendancePercentage,
+      trainerAttendance,
       students: studentsArray
     };
 
@@ -444,6 +522,7 @@ const updateAttendanceRecord = async (req, res) => {
 const getAllAttendanceRecords = async (req, res) => {
   try {
     const filter = buildGlobalFilters(req.query);
+    filter.session = { sectionType: { not: 'TIT' } };
     
     const attendances = await prisma.attendance.findMany({
       where: filter,
@@ -458,6 +537,8 @@ const getAllAttendanceRecords = async (req, res) => {
       let durationMinutes = Math.round(a.totalDurationSeconds / 60);
       return {
         id: a.id,
+        sessionId: a.sessionId,
+        courseId: a.session?.courseId,
         date: a.occurrenceDate,
         courseName: a.session?.courseTitle || "Standalone Session",
         sessionTitle: a.session?.title || "Unknown Session",
@@ -479,6 +560,167 @@ const getAllAttendanceRecords = async (req, res) => {
   }
 };
 
+// @desc    Get session occurrences
+// @route   GET /api/admin/sessions/:sessionId/occurrences
+const getSessionOccurrencesAdmin = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const occurrences = await prisma.sessionOccurrence.findMany({
+      where: { sessionId },
+      include: {
+        trainer: { select: { id: true, fullName: true, email: true } },
+        session: { select: { title: true, courseTitle: true } }
+      },
+      orderBy: { occurrenceDate: "desc" }
+    });
+    
+    return res.status(200).json({ success: true, data: occurrences });
+  } catch (error) {
+    console.error("Admin Get Session Occurrences Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch occurrences." });
+  }
+};
+
+// @desc    Get day-wise session attendance
+// @route   GET /api/admin/sessions/:sessionId/attendance/:date
+const getDayWiseSessionAttendance = async (req, res) => {
+  try {
+    const { sessionId, date } = req.params;
+    const targetDate = new Date(date);
+    
+    if (isNaN(targetDate.getTime())) {
+      return res.status(400).json({ success: false, message: "Invalid date format. Use YYYY-MM-DD" });
+    }
+
+    const session = await prisma.liveSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        trainer: { select: { id: true, fullName: true } }
+      }
+    });
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: "Session not found" });
+    }
+
+    const startOfDay = new Date(targetDate);
+    startOfDay.setUTCHours(0,0,0,0);
+    const endOfDay = new Date(targetDate);
+    endOfDay.setUTCHours(23,59,59,999);
+
+    const occurrence = await prisma.sessionOccurrence.findFirst({
+      where: {
+        sessionId,
+        occurrenceDate: {
+          gte: startOfDay,
+          lte: endOfDay
+        }
+      }
+    });
+
+    const attendances = await prisma.attendance.findMany({
+      where: { 
+        sessionId,
+        occurrenceDate: {
+          gte: startOfDay,
+          lte: endOfDay
+        }
+      },
+      include: {
+        student: { select: { id: true, fullName: true, email: true } }
+      }
+    });
+
+    const bookings = await prisma.sessionBooking.findMany({
+      where: { sessionId },
+      include: {
+        student: { select: { id: true, fullName: true, email: true } }
+      }
+    });
+
+    const isSessionEnded = occurrence?.status === 'completed' || (occurrence?.endsAt && new Date() > new Date(occurrence.endsAt));
+
+    let presentCount = 0, lateCount = 0, absentCount = 0;
+    
+    const attendanceMap = new Map();
+    const studentsArray = [];
+
+    attendances.forEach(a => {
+      const status = a.status;
+      if (status === 'present') presentCount++;
+      else if (status === 'late') lateCount++;
+      else if (status === 'absent') absentCount++;
+
+      const studentData = {
+        attendanceId: a.id,
+        studentId: a.studentId,
+        fullName: a.student?.fullName || "Unknown",
+        email: a.student?.email || "N/A",
+        status: status,
+        occurrenceDate: a.occurrenceDate,
+        firstJoinedAt: a.firstJoinedAt,
+        lastJoinedAt: a.lastJoinedAt,
+        joinCount: a.joinCount,
+        totalDurationSeconds: a.totalDurationSeconds
+      };
+      
+      attendanceMap.set(a.studentId, studentData);
+      studentsArray.push(studentData);
+    });
+
+    bookings.forEach(b => {
+      if (!attendanceMap.has(b.studentId) && isSessionEnded) {
+        absentCount++;
+        studentsArray.push({
+          attendanceId: `absent-${b.id}`,
+          studentId: b.studentId,
+          fullName: b.student?.fullName || "Unknown",
+          email: b.student?.email || "N/A",
+          status: 'absent',
+          firstJoinedAt: null,
+          lastJoinedAt: null,
+          joinCount: 0,
+          totalDurationSeconds: 0
+        });
+      }
+    });
+
+    const totalStudents = Math.max(bookings.length, studentsArray.length);
+    const attendedCount = presentCount + lateCount;
+    const attendancePercentage = totalStudents > 0 ? parseFloat(((attendedCount / totalStudents) * 100).toFixed(2)) : 0;
+
+    const trainerAttendance = {
+      trainerId: session?.trainerId || null,
+      trainerName: session?.trainer?.fullName || "Unassigned",
+      status: isSessionEnded ? "present" : (occurrence?.status === 'live' ? "present" : "pending"),
+      durationMinutes: occurrence?.startsAt && occurrence?.endsAt ? Math.round((new Date(occurrence.endsAt).getTime() - new Date(occurrence.startsAt).getTime()) / 60000) : (session?.durationMinutes || 60),
+    };
+
+    const responseData = {
+      sessionId: sessionId,
+      occurrenceId: occurrence?.id || null,
+      date: targetDate,
+      sessionTitle: session?.title || session?.courseTitle || "Unknown Session",
+      courseId: session?.courseId || null,
+      trainerId: session?.trainerId || null,
+      trainerName: session?.trainer?.fullName || null,
+      totalStudents,
+      presentCount,
+      lateCount,
+      absentCount,
+      attendedCount,
+      attendancePercentage,
+      trainerAttendance,
+      students: studentsArray
+    };
+
+    return res.status(200).json({ success: true, data: responseData });
+  } catch (error) {
+    console.error("Admin Get Day Wise Session Attendance Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch day-wise session attendance." });
+  }
+};
+
 module.exports = {
   getAttendanceOverview,
   getAllAttendanceRecords,
@@ -487,5 +729,7 @@ module.exports = {
   getCourseAttendanceSummaryAdmin,
   getSessionAttendanceAdmin,
   getStudentAttendanceAdmin,
-  updateAttendanceRecord
+  updateAttendanceRecord,
+  getSessionOccurrencesAdmin,
+  getDayWiseSessionAttendance
 };

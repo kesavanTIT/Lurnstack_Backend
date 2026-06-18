@@ -61,7 +61,9 @@ const {
   getCourseAttendanceSummaryAdmin,
   getSessionAttendanceAdmin,
   getStudentAttendanceAdmin,
-  updateAttendanceRecord
+  updateAttendanceRecord,
+  getSessionOccurrencesAdmin,
+  getDayWiseSessionAttendance
 } = require("../controllers/adminAttendanceController");
 
 const { protect, isAdmin } = require("../middleware/authMiddleware");
@@ -137,6 +139,8 @@ router.get("/attendance/overview", getAttendanceOverview);
 router.get("/attendance/courses", getAllCoursesAttendance);
 router.get("/courses/:courseId/attendance-summary", getCourseAttendanceSummaryAdmin);
 router.get("/sessions/:sessionId/attendance", getSessionAttendanceAdmin);
+router.get("/sessions/:sessionId/occurrences", getSessionOccurrencesAdmin);
+router.get("/sessions/:sessionId/attendance/:date", getDayWiseSessionAttendance);
 router.get("/trainers/:trainerId/attendance", getTrainerAttendanceAdmin);
 router.get("/students/:studentId/attendance", getStudentAttendanceAdmin);
 router.patch("/attendance/:attendanceId", updateAttendanceRecord);
