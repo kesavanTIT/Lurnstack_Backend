@@ -167,14 +167,55 @@ const getStudentAttendanceInCourse = async (req, res) => {
           { sessionId: courseId }
         ]
       },
-      include: { student: { select: { id: true, fullName: true, email: true } } },
+      include: { 
+        student: { select: { id: true, fullName: true, email: true } },
+        occurrence: { select: { startsAt: true, endsAt: true } }
+      },
       orderBy: { occurrenceDate: "desc" }
     });
 
-    const formattedData = attendances.map(a => ({
-      ...a,
-      status: a.status === 'joined' ? 'present' : a.status
-    }));
+    // Fetch real durations to recalculate status dynamically
+    const actualAttendances = await prisma.attendance.findMany({
+      where: {
+        OR: [
+          { courseId: courseId },
+          { sessionId: courseId }
+        ]
+      }
+    });
+
+    const formattedData = attendances.map(a => {
+      let finalStatus = a.status === 'joined' ? 'present' : a.status;
+
+      // Recalculate based on 30% rule if it's currently absent
+      if (finalStatus === 'absent' && a.joinCount > 0) {
+        const actualAtt = actualAttendances.find(att => att.studentId === a.studentId && att.occurrenceDate?.getTime() === a.occurrenceDate?.getTime());
+        if (actualAtt) {
+          let totalSecs = actualAtt.totalDurationSeconds || 0;
+          if (totalSecs === 0 && actualAtt.joinedAt) {
+            const start = new Date(actualAtt.joinedAt).getTime();
+            const end = a.occurrence?.endsAt ? new Date(a.occurrence.endsAt).getTime() : start + 3600000;
+            if (end > start) {
+              totalSecs = Math.round((end - start) / 1000);
+            }
+          }
+
+          const sessionDurationMins = (a.occurrence?.startsAt && a.occurrence?.endsAt)
+            ? Math.max(1, Math.round((new Date(a.occurrence.endsAt) - new Date(a.occurrence.startsAt)) / 60000))
+            : 60;
+          const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.30);
+
+          if (totalSecs >= requiredSeconds) {
+            finalStatus = 'present';
+          }
+        }
+      }
+
+      return {
+        ...a,
+        status: finalStatus
+      };
+    });
 
     return res.status(200).json({ success: true, data: formattedData });
   } catch (error) {
