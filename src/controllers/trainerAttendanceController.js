@@ -43,6 +43,7 @@ const getCourseAttendanceSummary = async (req, res) => {
 const getSessionAttendance = async (req, res) => {
   try {
     const { sessionId } = req.params;
+    const { date } = req.query;
     const trainerId = parseInt(req.user.id);
 
     const session = await prisma.liveSession.findUnique({
@@ -53,8 +54,19 @@ const getSessionAttendance = async (req, res) => {
       return res.status(403).json({ success: false, message: "Forbidden" });
     }
 
+    const whereClause = { sessionId };
+    if (date) {
+      if (date === 'last_week') {
+        const lastWeek = new Date();
+        lastWeek.setDate(lastWeek.getDate() - 7);
+        whereClause.occurrenceDate = { gte: lastWeek };
+      } else {
+        whereClause.occurrenceDate = new Date(`${date}T00:00:00.000Z`);
+      }
+    }
+
     const attendances = await prisma.attendance.findMany({
-      where: { sessionId },
+      where: whereClause,
       include: { 
         student: { select: { id: true, fullName: true, email: true } },
         events: { orderBy: { joinedAt: "asc" } }
@@ -108,11 +120,23 @@ const getSessionAttendance = async (req, res) => {
       };
     });
 
+    let scheduledAt = session.createdAt;
+    let endedAt = null;
+    const baseDate = (date && date !== 'last_week') ? date : new Date().toISOString().slice(0, 10);
+    if (session.startTime) {
+      try { scheduledAt = new Date(`${baseDate}T${session.startTime}:00+05:30`).toISOString(); } catch(e) {}
+    }
+    if (session.endTime) {
+      try { endedAt = new Date(`${baseDate}T${session.endTime}:00+05:30`).toISOString(); } catch(e) {}
+    }
+
     return res.status(200).json({
       success: true,
       data: {
         sessionId: session.id,
         sessionTitle: session.title || "Live Session",
+        scheduledAt,
+        endedAt,
         totalStudents,
         presentCount,
         lateCount,

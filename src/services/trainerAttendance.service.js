@@ -67,18 +67,19 @@ const verifySessionOwnership = async (sessionId, trainerId) => {
 };
 
 const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
-  const dateStart = new Date(`${dateStr}T00:00:00.000Z`);
-  const dateEnd = new Date(`${dateStr}T23:59:59.999Z`);
+  const exactDate = new Date(`${dateStr}T00:00:00.000Z`);
 
   const [session, occurrence, bookings] = await Promise.all([
     prisma.liveSession.findUnique({
       where: { id: sessionId },
-      select: { id: true, title: true, courseTitle: true, trainerId: true },
+      select: { id: true, title: true, courseTitle: true, trainerId: true, startTime: true, endTime: true },
     }),
-    prisma.sessionOccurrence.findFirst({
+    prisma.sessionOccurrence.findUnique({
       where: {
-        sessionId,
-        occurrenceDate: { gte: dateStart, lte: dateEnd },
+        sessionId_occurrenceDate: {
+          sessionId,
+          occurrenceDate: exactDate,
+        }
       },
       select: {
         id: true,
@@ -129,7 +130,7 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
   const mainAttendanceRecords = await prisma.attendance.findMany({
     where: {
       sessionId: liveSessionId,
-      occurrenceDate: { gte: dateStart, lte: dateEnd },
+      occurrenceDate: exactDate,
     },
     include: {
       events: { orderBy: { joinedAt: "asc" } },
@@ -252,13 +253,23 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
 
   const filteredStudents = statusFilter ? allStudents.filter((s) => s.status === statusFilter || s.isTrainer) : allStudents;
 
+  let finalStartsAt = occurrence.startsAt;
+  let finalEndsAt = occurrence.endsAt;
+  
+  if (session && session.startTime && session.endTime) {
+    try {
+      finalStartsAt = new Date(`${dateStr}T${session.startTime}:00+05:30`);
+      finalEndsAt = new Date(`${dateStr}T${session.endTime}:00+05:30`);
+    } catch(e) {}
+  }
+
   return {
     session: {
       id: occurrence.id,
       name: session.courseTitle || session.title,
       batch: session.title,
       date: formatDate(occurrence.occurrenceDate),
-      time: `${formatTime(occurrence.startsAt)} – ${formatTime(occurrence.endsAt)}`,
+      time: `${formatTime(finalStartsAt)} – ${formatTime(finalEndsAt)}`,
     },
     summary: {
       totalStudents,
@@ -275,14 +286,15 @@ const markAttendance = async ({ occurrenceId, studentId, joinTime, leaveTime }) 
 };
 
 const getAttendanceSummary = async (sessionId, dateStr) => {
-  const dateStart = new Date(`${dateStr}T00:00:00.000Z`);
-  const dateEnd = new Date(`${dateStr}T23:59:59.999Z`);
+  const exactDate = new Date(`${dateStr}T00:00:00.000Z`);
 
   const [occurrence, enrollmentCount] = await Promise.all([
-    prisma.sessionOccurrence.findFirst({
+    prisma.sessionOccurrence.findUnique({
       where: {
-        sessionId,
-        occurrenceDate: { gte: dateStart, lte: dateEnd },
+        sessionId_occurrenceDate: {
+          sessionId,
+          occurrenceDate: exactDate,
+        }
       },
       select: { id: true, startsAt: true, endsAt: true },
     }),
@@ -301,7 +313,7 @@ const getAttendanceSummary = async (sessionId, dateStr) => {
   const mainAttendances = await prisma.attendance.findMany({
     where: {
       sessionId,
-      occurrenceDate: { gte: dateStart, lte: dateEnd },
+      occurrenceDate: exactDate,
     },
     include: { events: true },
   });
