@@ -12,34 +12,34 @@ datasource db {
 }
 
 model User {
-  id              Int              @id @default(autoincrement())
-  fullName        String
-  email           String           @unique
-  password        String
-  phoneNumber     String?          @unique
-  phoneNormalized String?          @unique
-  role            Role             @default(STUDENT)
-  isActive        Boolean          @default(true)
-  createdAt       DateTime         @default(now())
-  profilePhotoUrl String?          @map("PROFILE_PHOTO_URL")
-  liveSessions        LiveSession[]
-  sessionCards        SessionCard[]
-  sessionBookings     SessionBooking[]
-  attendances         Attendance[]
-  bookings            Booking[]             @relation(name: "UserBookingRelation")
-  passwordResetTokens PasswordResetToken[]
-  payments                  Payment[]           @relation(name: "UserPaymentRelation")
-  trainerEarnings           TrainerEarning[]    @relation(name: "TrainerEarningRelation")
-  trainerPayouts            TrainerPayout[]     @relation(name: "TrainerPayoutRelation")
-  trainerOccurrences        SessionOccurrence[] @relation(name: "TrainerSessionOccurrence")
-  studentAttendances        StudentAttendance[] @relation(name: "StudentAttendance")
-  trainerStudentAttendances StudentAttendance[] @relation(name: "TrainerStudentAttendance")
+  id                        Int                     @id @default(autoincrement())
+  fullName                  String
+  email                     String                  @unique
+  password                  String
+  phoneNumber               String?                 @unique
+  phoneNormalized           String?                 @unique
+  role                      Role                    @default(STUDENT)
+  isActive                  Boolean                 @default(true)
+  createdAt                 DateTime                @default(now())
+  profilePhotoUrl           String?                 @map("PROFILE_PHOTO_URL")
+  liveSessions              LiveSession[]
+  sessionCards              SessionCard[]
+  sessionBookings           SessionBooking[]
+  attendances               Attendance[]
+  bookings                  Booking[]               @relation(name: "UserBookingRelation")
+  passwordResetTokens       PasswordResetToken[]
+  payments                  Payment[]               @relation(name: "UserPaymentRelation")
+  trainerEarnings           TrainerEarning[]        @relation(name: "TrainerEarningRelation")
+  trainerPayouts            TrainerPayout[]         @relation(name: "TrainerPayoutRelation")
+  trainerOccurrences        SessionOccurrence[]     @relation(name: "TrainerSessionOccurrence")
+  studentAttendances        StudentAttendance[]     @relation(name: "StudentAttendance")
+  trainerStudentAttendances StudentAttendance[]     @relation(name: "TrainerStudentAttendance")
   whatsappReminders         WhatsAppReminder[]
   campaignDeliveries        OfferCampaignDelivery[]
   campaignClicks            OfferCampaignClick[]
   payoutAccount             TrainerPayoutAccount?
-  payoutRequests            TrainerPayoutRequest[] @relation(name: "TrainerPayoutRequestRelation")
-  certificates              Certificate[]          @relation(name: "UserCertificateRelation")
+  payoutRequests            TrainerPayoutRequest[]  @relation(name: "TrainerPayoutRequestRelation")
+  certificates              Certificate[]           @relation(name: "UserCertificateRelation")
 }
 
 enum Role {
@@ -68,7 +68,6 @@ model LiveClass {
   sectionType     String?
   source          String?
 }
-
 
 model Category {
   id          String   @id @default(uuid())
@@ -123,28 +122,28 @@ model LiveSession {
   // pricingState: PENDING_PRICE | FREE | PRICED
   //   Default is PENDING_PRICE for newly created sessions.
   //   Existing sessions that already have priceInPaise set will be PRICED.
-  pricingState  String @default("PENDING_PRICE")
+  pricingState String @default("PENDING_PRICE")
   // publishState: DRAFT | PUBLISHED | CANCELLED | ENDED
   //   Default is PUBLISHED so all existing sessions remain visible to students.
-  publishState  String @default("PUBLISHED")
+  publishState String @default("PUBLISHED")
 
-  pricing         SessionPricing?  @relation(name: "SessionPricingRelation")
-  billingBookings Booking[]        @relation(name: "SessionBookingRelation")
-  payments        Payment[]        @relation(name: "SessionPaymentRelation")
-  trainerEarnings TrainerEarning[] @relation(name: "SessionEarningRelation")
-  trainerPayouts  TrainerPayout[]  @relation(name: "SessionPayoutRelation")
+  pricing            SessionPricing?     @relation(name: "SessionPricingRelation")
+  billingBookings    Booking[]           @relation(name: "SessionBookingRelation")
+  payments           Payment[]           @relation(name: "SessionPaymentRelation")
+  trainerEarnings    TrainerEarning[]    @relation(name: "SessionEarningRelation")
+  trainerPayouts     TrainerPayout[]     @relation(name: "SessionPayoutRelation")
   occurrences        SessionOccurrence[]
   studentAttendances StudentAttendance[]
-  whatsappReminders    WhatsAppReminder[]
+  whatsappReminders  WhatsAppReminder[]
 
-  recordingUrl    String?
-  materials       String?
+  recordingUrl String?
+  materials    String?
 
-  sectionType         String?
-  source              String?
-  sessionType         String?
-  createdByRole       String?
-  requiresAdminReview Boolean? @default(false)
+  sectionType          String?
+  source               String?
+  sessionType          String?
+  createdByRole        String?
+  requiresAdminReview  Boolean? @default(false)
   enableWhatsApp       Boolean  @default(true)
   whatsappTemplateName String?
   whatsappCustomTitle  String?
@@ -178,43 +177,43 @@ model SessionBooking {
 }
 
 model Attendance {
-  id                   String            @id @default(uuid())
+  id                   String    @id @default(uuid())
   studentId            Int
   sessionId            String
-  joinDate             String?           // Restored to prevent data loss
-  joinedAt             DateTime?         @default(now()) // Restored to prevent data loss
-  occurrenceDate       DateTime          @default(now())
-  status               String            @default("pending") // pending, present, late, absent
-  firstJoinedAt        DateTime          @default(now())
-  lastJoinedAt         DateTime          @default(now())
-  joinCount            Int               @default(1)
-  totalDurationSeconds Int               @default(0)
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @default(now()) @updatedAt
+  joinDate             String? // Restored to prevent data loss
+  joinedAt             DateTime? @default(now()) // Restored to prevent data loss
+  occurrenceDate       DateTime  @default(now())
+  status               String    @default("pending") // pending, present, late, absent
+  firstJoinedAt        DateTime  @default(now())
+  lastJoinedAt         DateTime  @default(now())
+  joinCount            Int       @default(1)
+  totalDurationSeconds Int       @default(0)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @default(now()) @updatedAt
 
-  session              LiveSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  student              User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  isJoined             Boolean           @default(false)
+  session  LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student  User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  isJoined Boolean     @default(false)
 
-  events               AttendanceEvent[]
+  events AttendanceEvent[]
 
   // TEMPORARILY COMMENTED OUT FOR MIGRATION
   // @@unique([studentId, sessionId, occurrenceDate])
 }
 
 model AttendanceEvent {
-  id              String      @id @default(uuid())
+  id              String    @id @default(uuid())
   attendanceId    String
   studentId       Int
   sessionId       String
-  occurrenceDate  DateTime    @default(now())
-  joinedAt        DateTime    @default(now())
+  occurrenceDate  DateTime  @default(now())
+  joinedAt        DateTime  @default(now())
   leftAt          DateTime?
-  durationSeconds Int         @default(0)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @default(now()) @updatedAt
+  durationSeconds Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
 
-  attendance      Attendance  @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  attendance Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
 }
 
 model SessionPricing {
@@ -252,8 +251,8 @@ model Booking {
   whatsappReminderStatus    String?
   whatsappReminderError     String?
 
-  accessScope               String           @default("session")
-  courseId                  String?
+  accessScope String  @default("session")
+  courseId    String?
 }
 
 enum BookingStatus {
@@ -295,13 +294,13 @@ enum PaymentStatus {
 }
 
 model TrainerEarning {
-  id                      String               @id @default(uuid())
+  id                      String                @id @default(uuid())
   trainerId               Int
-  trainer                 User                 @relation(name: "TrainerEarningRelation", fields: [trainerId], references: [id], onDelete: Cascade)
+  trainer                 User                  @relation(name: "TrainerEarningRelation", fields: [trainerId], references: [id], onDelete: Cascade)
   trainerName             String
   trainerEmail            String
   sessionId               String
-  session                 LiveSession          @relation(name: "SessionEarningRelation", fields: [sessionId], references: [id], onDelete: Cascade)
+  session                 LiveSession           @relation(name: "SessionEarningRelation", fields: [sessionId], references: [id], onDelete: Cascade)
   sessionTitle            String
   paidStudentCount        Int
   sessionPricePaise       Int
@@ -310,23 +309,23 @@ model TrainerEarning {
   trainerEarningPaise     Int
   platformSharePercentage Float
   platformEarningPaise    Int
-  refundAdjustmentPaise   Int                  @default(0)
+  refundAdjustmentPaise   Int                   @default(0)
   finalPayablePaise       Int
-  status                  TrainerEarningStatus @default(unpaid)
-  lockedAmountPaise       Int                  @default(0)
-  createdAt               DateTime             @default(now())
-  updatedAt               DateTime             @updatedAt
+  status                  TrainerEarningStatus  @default(unpaid)
+  lockedAmountPaise       Int                   @default(0)
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
   payoutRequestId         String?
   payoutRequest           TrainerPayoutRequest? @relation(name: "PayoutRequestEarningRelation", fields: [payoutRequestId], references: [id], onDelete: SetNull)
 
   // Legacy columns preserved as optional to prevent breaking references
-  sessionDate             DateTime?
-  bookingId               String?
-  booking                 Booking?             @relation(name: "BookingEarningRelation", fields: [bookingId], references: [id], onDelete: Cascade)
-  paymentId               String?
-  payment                 Payment?             @relation(name: "PaymentEarningRelation", fields: [paymentId], references: [id], onDelete: Cascade)
-  availableAfter          DateTime?
-  paidAt                  DateTime?
+  sessionDate    DateTime?
+  bookingId      String?
+  booking        Booking?  @relation(name: "BookingEarningRelation", fields: [bookingId], references: [id], onDelete: Cascade)
+  paymentId      String?
+  payment        Payment?  @relation(name: "PaymentEarningRelation", fields: [paymentId], references: [id], onDelete: Cascade)
+  availableAfter DateTime?
+  paidAt         DateTime?
 }
 
 enum TrainerEarningStatus {
@@ -368,7 +367,7 @@ model SessionOccurrence {
   session        LiveSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   trainerId      Int
   trainer        User                @relation(name: "TrainerSessionOccurrence", fields: [trainerId], references: [id])
-  occurrenceDate DateTime            // Date-only representation for grouping
+  occurrenceDate DateTime // Date-only representation for grouping
   startsAt       DateTime
   endsAt         DateTime
   status         String              @default("scheduled") // scheduled, live, completed
@@ -395,7 +394,7 @@ model StudentAttendance {
   firstJoinedAt  DateTime          @default(now())
   lastJoinedAt   DateTime          @default(now())
   joinCount      Int               @default(1)
-  status         String            // present, late, absent
+  status         String // present, late, absent
   source         String            @default("join_button") // join_button, admin_manual
   finalizedAt    DateTime?
   createdAt      DateTime          @default(now())
@@ -421,67 +420,67 @@ model PasswordResetToken {
 // ─────────────────────────────────────────────────────────────────
 model OTPVerification {
   id         Int      @id @default(autoincrement())
-  identifier String   // email address or phone number
-  code       String   // 6-digit OTP (stored as plain string)
+  identifier String // email address or phone number
+  code       String // 6-digit OTP (stored as plain string)
   expiresAt  DateTime // set to now() + 1 minute at creation time
   createdAt  DateTime @default(now())
 }
 
 model WhatsAppReminder {
-  id           String      @id @default(uuid())
+  id           String    @id @default(uuid())
   sessionId    String
   userId       Int
   phone        String
-  status       String      // sent, failed, skipped
+  status       String // sent, failed, skipped
   messageId    String?
   error        String?
   sentAt       DateTime?
-  reminderType String      @default("session_reminder_30min")
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  reminderType String    @default("session_reminder_30min")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  session    LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, userId, reminderType])
 }
 
 model OfferCampaign {
-  id               String                  @id @default(uuid())
+  id               String    @id @default(uuid())
   campaignName     String
   offerTitle       String
   description      String?
-  discountType     String                  // "percentage" | "flat"
+  discountType     String // "percentage" | "flat"
   discountValue    Float?
-  theme            String?                 @default("light")
+  theme            String?   @default("light")
   validTill        DateTime
   categoryIds      String[]
   courseId         String?
   sessionId        String?
-  audienceType     String                  // "all_students" | "category_students" | "course_students" | "session_students" | "inactive_students"
+  audienceType     String // "all_students" | "category_students" | "course_students" | "session_students" | "inactive_students"
   subject          String
   heading          String
   body             String
   buttonText       String
   buttonLink       String
-  templateType     String                  @default("offer") // "offer" | "session_intimation"
+  templateType     String    @default("offer") // "offer" | "session_intimation"
   logoVariant      String?
   logoAssetKey     String?
   logoAlt          String?
   logoUrl          String?
   showLogo         Boolean
   heroImageUrl     String?
-  status           String                  @default("draft") // "draft" | "ready" | "sending" | "sent" | "failed"
-  recipientCount   Int                     @default(0)
-  sentCount        Int                     @default(0)
-  failedCount      Int                     @default(0)
+  status           String    @default("draft") // "draft" | "ready" | "sending" | "sent" | "failed"
+  recipientCount   Int       @default(0)
+  sentCount        Int       @default(0)
+  failedCount      Int       @default(0)
   createdByAdminId Int
   sentAt           DateTime?
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  deliveries       OfferCampaignDelivery[]
-  clicks           OfferCampaignClick[]
+  deliveries OfferCampaignDelivery[]
+  clicks     OfferCampaignClick[]
 }
 
 model OfferCampaignDelivery {
@@ -506,7 +505,7 @@ model OfferCampaignClick {
   studentId  Int?
   student    User?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
   email      String?
-  targetType String        // "session" | "course" | "category"
+  targetType String // "session" | "course" | "category"
   targetId   String?
   clickedAt  DateTime      @default(now())
   userAgent  String?
@@ -514,26 +513,26 @@ model OfferCampaignClick {
 }
 
 model TrainerPayoutAccount {
-  id                   String                     @id @default(uuid())
-  trainerId            Int                        @unique
-  trainer              User                       @relation(fields: [trainerId], references: [id], onDelete: Cascade)
-  accountHolderName    String
-  bankName             String
-  accountNumber        String                     // encrypted
-  accountNumberLast4   String
-  ifsc                 String
-  upiId                String?
-  pan                  String
-  phoneNumber          String
-  status               TrainerPayoutAccountStatus @default(pending)
-  rejectionReason      String?
-  verifiedByAdminId    Int?
-  verifiedAt           DateTime?
-  rejectedByAdminId    Int?
-  rejectedAt           DateTime?
-  isLocked             Boolean                    @default(false)
-  createdAt            DateTime                   @default(now())
-  updatedAt            DateTime                   @updatedAt
+  id                 String                     @id @default(uuid())
+  trainerId          Int                        @unique
+  trainer            User                       @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  accountHolderName  String
+  bankName           String
+  accountNumber      String // encrypted
+  accountNumberLast4 String
+  ifsc               String
+  upiId              String?
+  pan                String
+  phoneNumber        String
+  status             TrainerPayoutAccountStatus @default(pending)
+  rejectionReason    String?
+  verifiedByAdminId  Int?
+  verifiedAt         DateTime?
+  rejectedByAdminId  Int?
+  rejectedAt         DateTime?
+  isLocked           Boolean                    @default(false)
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
 }
 
 enum TrainerPayoutAccountStatus {
@@ -549,7 +548,7 @@ model TrainerPayoutAccountHistory {
   oldStatus       String
   newStatus       String
   adminId         Int?
-  adminName       String?  // snapshot nullable
+  adminName       String? // snapshot nullable
   note            String?
   createdAt       DateTime @default(now())
 }
@@ -558,12 +557,12 @@ model TrainerPayoutRequest {
   id                             String                     @id @default(uuid())
   trainerId                      Int
   trainer                        User                       @relation(name: "TrainerPayoutRequestRelation", fields: [trainerId], references: [id], onDelete: Cascade)
-  trainerName                    String                     // snapshot
+  trainerName                    String // snapshot
   requestedAmountPaise           Int
   availableBalanceAtRequestPaise Int
   lockedAmountPaise              Int
   status                         TrainerPayoutRequestStatus @default(requested)
-  payoutAccountSnapshot          Json                       // json
+  payoutAccountSnapshot          Json // json
   adminNote                      String?
   rejectionReason                String?
   approvedByAdminId              Int?
@@ -579,8 +578,8 @@ model TrainerPayoutRequest {
   createdAt                      DateTime                   @default(now())
   updatedAt                      DateTime                   @updatedAt
 
-  earnings                       TrainerEarning[]           @relation(name: "PayoutRequestEarningRelation")
-  history                        TrainerPayoutRequestHistory[]
+  earnings TrainerEarning[]              @relation(name: "PayoutRequestEarningRelation")
+  history  TrainerPayoutRequestHistory[]
 }
 
 enum TrainerPayoutRequestStatus {
@@ -600,7 +599,7 @@ model TrainerPayoutRequestHistory {
   oldStatus       String
   newStatus       String
   adminId         Int?
-  adminName       String?                    // snapshot nullable
+  adminName       String? // snapshot nullable
   note            String?
   createdAt       DateTime                   @default(now())
 }
@@ -666,7 +665,7 @@ model Certificate {
   attendancePct   Float
   certificateType CertificateType
   paymentStatus   CertPaymentStatus @default(PENDING)
-  certificateUrl  String?           // Azure Blob path (unsigned base path)
+  certificateUrl  String? // Azure Blob path (unsigned base path)
   razorpayOrderId String?           @unique
   issuedAt        DateTime?
   createdAt       DateTime          @default(now())
@@ -677,11 +676,11 @@ model Certificate {
 }
 
 model CertificateSettings {
-  id                     String   @id @default(uuid())
-  freeThreshold          Float    @default(75)    // percentage (e.g. 75 = 75%)
-  certificatePricePaise  Int      @default(50000)  // ₹500 in paise
-  updatedAt              DateTime @updatedAt
-  createdAt              DateTime @default(now())
+  id                    String   @id @default(uuid())
+  freeThreshold         Float    @default(75) // percentage (e.g. 75 = 75%)
+  certificatePricePaise Int      @default(50000) // ₹500 in paise
+  updatedAt             DateTime @updatedAt
+  createdAt             DateTime @default(now())
 }
 
 model CertificateLog {
@@ -690,7 +689,7 @@ model CertificateLog {
   certificate   Certificate         @relation(fields: [certificateId], references: [id], onDelete: Cascade)
   event         CertificateLogEvent
   ipAddress     String?
-  metadata      Json?               // paymentRef, userAgent, etc.
+  metadata      Json? // paymentRef, userAgent, etc.
   createdAt     DateTime            @default(now())
 }
 
@@ -737,25 +736,25 @@ model Trainer {
 }
 
 model TrainerSession {
-  id          String                   @id @default(cuid())
+  id          String                     @id @default(cuid())
   name        String
   batch       String
   trainerId   String
-  trainer     Trainer                  @relation(fields: [trainerId], references: [id])
+  trainer     Trainer                    @relation(fields: [trainerId], references: [id])
   occurrences TrainerSessionOccurrence[]
   enrollments TrainerEnrollment[]
-  createdAt   DateTime                 @default(now())
+  createdAt   DateTime                   @default(now())
 }
 
 model TrainerSessionOccurrence {
-  id          String                @id @default(cuid())
+  id          String              @id @default(cuid())
   sessionId   String
-  session     TrainerSession        @relation(fields: [sessionId], references: [id])
+  session     TrainerSession      @relation(fields: [sessionId], references: [id])
   date        DateTime
   startTime   DateTime
   endTime     DateTime
   attendances TrainerAttendance[]
-  createdAt   DateTime              @default(now())
+  createdAt   DateTime            @default(now())
 }
 
 model TrainerStudent {

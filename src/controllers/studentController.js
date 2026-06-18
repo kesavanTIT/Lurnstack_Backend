@@ -2291,7 +2291,7 @@ const getStudentTITClasses = async (req, res) => {
         id: cls.id,
         courseId: cls.courseId,
         courseName: cls.courseTitle || cls.category || "Live Session",
-        title: cls.title || "",
+        title: cls.classTitle || cls.title || "",
         classTitle: cls.classTitle || cls.title || "",
         instructor: cls.trainer?.fullName || "Trainer",
         description: cls.description || "",
