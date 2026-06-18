@@ -222,17 +222,22 @@ const getTrainerAttendanceAdmin = async (req, res) => {
     const { courseId, startDate, endDate } = req.query;
     
     const filter = { trainerId: parseInt(trainerId) };
-    if (courseId) filter.courseId = courseId;
+    if (courseId) {
+      if (courseId === "unknown") filter.session = { courseId: null };
+      else filter.session = { courseId };
+    }
     if (startDate || endDate) {
       filter.occurrenceDate = {};
       if (startDate) filter.occurrenceDate.gte = new Date(startDate);
       if (endDate) filter.occurrenceDate.lte = new Date(endDate);
     }
     
+    const sessionFilter = filter.session ? { ...filter.session, OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] } : { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] };
+
     const occurrences = await prisma.sessionOccurrence.findMany({
       where: {
         ...filter,
-        session: { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] }
+        session: sessionFilter
       },
       include: {
         session: true,
@@ -320,11 +325,14 @@ const getAllCoursesAttendance = async (req, res) => {
 const getCourseAttendanceSummaryAdmin = async (req, res) => {
   try {
     const { courseId } = req.params;
+    const queryCourseId = courseId === "unknown" ? null : courseId;
 
     const occurrences = await prisma.sessionOccurrence.findMany({
       where: {
-        courseId,
-        session: { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] }
+        session: { 
+          courseId: queryCourseId,
+          OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] 
+        }
       },
       include: {
         session: { include: { trainer: { select: { id: true, fullName: true, email: true } } } }
@@ -335,9 +343,12 @@ const getCourseAttendanceSummaryAdmin = async (req, res) => {
     const attendances = await prisma.attendance.findMany({
       where: {
         session: { 
-          courseId,
+          courseId: queryCourseId,
           OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }]
         }
+      },
+      include: {
+        session: { include: { trainer: { select: { id: true, fullName: true, email: true } } } }
       }
     });
 
@@ -346,30 +357,60 @@ const getCourseAttendanceSummaryAdmin = async (req, res) => {
       const dateKey = new Date(a.occurrenceDate).toISOString().split('T')[0];
       const key = `${a.sessionId}-${dateKey}`;
       if (!attendanceGroup[key]) {
-        attendanceGroup[key] = { presentCount: 0, lateCount: 0, absentCount: 0 };
+        attendanceGroup[key] = { 
+          sessionId: a.sessionId,
+          session: a.session,
+          occurrenceDate: a.occurrenceDate,
+          presentCount: 0, 
+          lateCount: 0, 
+          absentCount: 0 
+        };
       }
       if (a.status === "present" || a.status === "joined") attendanceGroup[key].presentCount++;
       else if (a.status === "late") attendanceGroup[key].lateCount++;
       else if (a.status === "absent") attendanceGroup[key].absentCount++;
     });
 
-    const summaryMap = occurrences.map(occ => {
+    const summaryMap = [];
+    const processedKeys = new Set();
+
+    occurrences.forEach(occ => {
       const dateKey = new Date(occ.occurrenceDate).toISOString().split('T')[0];
       const key = `${occ.sessionId}-${dateKey}`;
+      processedKeys.add(key);
       const stats = attendanceGroup[key] || { presentCount: 0, lateCount: 0, absentCount: 0 };
       
-      return {
+      summaryMap.push({
         occurrenceId: occ.id,
         sessionId: occ.sessionId,
         sessionTitle: occ.session?.title || occ.session?.courseTitle || "Unknown Session",
         trainer: occ.session?.trainer,
         date: occ.occurrenceDate,
-        status: occ.status,
+        status: occ.status || "completed",
         presentCount: stats.presentCount,
         lateCount: stats.lateCount,
         absentCount: stats.absentCount
-      };
+      });
     });
+
+    Object.keys(attendanceGroup).forEach(key => {
+      if (!processedKeys.has(key)) {
+        const stats = attendanceGroup[key];
+        summaryMap.push({
+          occurrenceId: key,
+          sessionId: stats.sessionId,
+          sessionTitle: stats.session?.title || stats.session?.courseTitle || "Unknown Session",
+          trainer: stats.session?.trainer,
+          date: stats.occurrenceDate,
+          status: "completed",
+          presentCount: stats.presentCount,
+          lateCount: stats.lateCount,
+          absentCount: stats.absentCount
+        });
+      }
+    });
+
+    summaryMap.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     return res.status(200).json({ success: true, data: summaryMap });
   } catch (error) {
