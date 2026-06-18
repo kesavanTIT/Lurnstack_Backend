@@ -180,13 +180,9 @@ const getStudentAttendanceInCourse = async (req, res) => {
     });
 
     // Fetch real durations to recalculate status dynamically
+    const sessionIds = [...new Set(attendances.map(a => a.sessionId).filter(Boolean))];
     const actualAttendances = await prisma.attendance.findMany({
-      where: {
-        OR: [
-          { courseId: courseId },
-          { sessionId: courseId }
-        ]
-      }
+      where: { sessionId: { in: sessionIds } }
     });
 
     const formattedData = attendances.map(a => {
