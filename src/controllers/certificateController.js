@@ -118,6 +118,14 @@ const generateCertificate = async (req, res) => {
       courseId
     );
 
+    if (eligibility.status === "INELIGIBLE") {
+      return res.status(403).json({
+        success: false,
+        message: eligibility.message,
+        eligibility: eligibility.status,
+      });
+    }
+
     if (eligibility.status === ELIGIBILITY.INCOMPLETE) {
       return res.status(400).json({
         success: false,
@@ -136,7 +144,14 @@ const generateCertificate = async (req, res) => {
 
     // Fetch details for ID generation
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    const session = await prisma.liveSession.findFirst({ where: { courseId } });
+    const session = await prisma.liveSession.findFirst({
+      where: {
+        OR: [
+          { courseId },
+          { id: courseId }
+        ]
+      }
+    });
     const courseName = session?.courseTitle || session?.title || "LurnStack Course";
     const studentName = customStudentName || user?.fullName || "Student";
     const collegeName = customCollegeName || null;
@@ -148,50 +163,21 @@ const generateCertificate = async (req, res) => {
     const verificationUrl = `https://lurnstack.com/verify/${certificateId}`;
     const issueDate = new Date();
 
-    if (eligibility.status === ELIGIBILITY.PAID) {
-      // For PAID certs, create the record but don't generate PDF yet
-      const cert = await prisma.certificate.upsert({
-        where: { userId_courseId: { userId, courseId } },
-        update: {
-          certificateId, studentName, courseName, collegeName, verificationUrl, issueDate
-        },
-        create: {
-          userId,
-          courseId,
-          certificateId, studentName, courseName, collegeName, verificationUrl, issueDate,
-          attendancePct: eligibility.attendancePct,
-          certificateType: "PAID",
-          paymentStatus: "PENDING",
-        },
-      });
-
-      return res.status(200).json({
-        success: true,
-        message:
-          "Certificate requires payment. Use /api/certificates/purchase to proceed.",
-        data: {
-          certificateId: cert.certificateId,
-          certificateType: "PAID",
-          paymentStatus: "PENDING",
-          pricePaise: eligibility.certificatePricePaise,
-        },
-      });
-    }
-
-    // ── FREE certificate → generate immediately ────────────────
+    // ── Generate certificate immediately (FREE or paid-eligible) ──
     const cert = await prisma.certificate.upsert({
       where: { userId_courseId: { userId, courseId } },
       update: {
         certificateId, studentName, courseName, collegeName, verificationUrl, issueDate,
-        paymentStatus: "PAID"
+        paymentStatus: "PAID",
+        certificateType: eligibility.type || "FREE",
       },
       create: {
         userId,
         courseId,
         certificateId, studentName, courseName, collegeName, verificationUrl, issueDate,
         attendancePct: eligibility.attendancePct,
-        certificateType: "FREE",
-        paymentStatus: "PAID", // Free = auto-paid
+        certificateType: eligibility.type || "FREE",
+        paymentStatus: "PAID", // Auto-paid since they are eligible (Free count met or Paid course purchased)
       },
     });
 
@@ -215,7 +201,7 @@ const generateCertificate = async (req, res) => {
       message: "Certificate generated successfully.",
       data: {
         certificateId: cert.id,
-        certificateType: "FREE",
+        certificateType: cert.certificateType,
         paymentStatus: "PAID",
         issuedAt: new Date().toISOString(),
         downloadUrl: signedUrl,
@@ -947,7 +933,20 @@ const getEligibilityStatus = async (req, res) => {
     const { courseId } = req.params;
     const eligibility = await certificateService.checkEligibility(userId, courseId);
     
-    return res.status(200).json({ eligibility: eligibility.status });
+    if (eligibility.status === "ELIGIBLE") {
+      return res.status(200).json({
+        eligibility: "ELIGIBLE",
+        status: "ELIGIBLE",
+        type: eligibility.type,
+      });
+    } else {
+      return res.status(200).json({
+        eligibility: "INELIGIBLE",
+        status: "INELIGIBLE",
+        required: eligibility.required,
+        attended: eligibility.attended,
+      });
+    }
   } catch (error) {
     console.error("Get Eligibility Status Error:", error);
     return res.status(500).json({ success: false, message: "Internal server error." });

@@ -117,29 +117,130 @@ const calculateAttendance = async (userId, courseId) => {
 // checkEligibility — FREE | PAID | NONE | INCOMPLETE
 // ─────────────────────────────────────────────────────────────────
 const checkEligibility = async (userId, courseId) => {
-  const courseCompleted = await isCourseCompleted(courseId);
-  if (!courseCompleted) {
+  // Support lookup by courseId or sessionId (id)
+  const session = await prisma.liveSession.findFirst({
+    where: {
+      OR: [
+        { courseId: courseId },
+        { id: courseId }
+      ]
+    },
+    include: { pricing: true }
+  });
+
+  if (!session) {
     return {
-      status: ELIGIBILITY.INCOMPLETE,
-      attendancePct: 0,
+      status: "INELIGIBLE",
+      type: "FREE",
       attended: 0,
+      required: 3,
+      attendancePct: 0,
       total: 0,
-      message: "Course is not yet completed.",
+      message: "Course/Session not found.",
     };
   }
 
-  const { attended, total, pct } = await calculateAttendance(userId, courseId);
-  const { freeThreshold, certificatePricePaise } = await getSettings();
+  const resolvedCourseId = session.courseId || session.id;
 
-  if (pct === 0) {
+  // Count how many occurrences the student attended (present / late / joined)
+  const attended = await prisma.studentAttendance.count({
+    where: {
+      courseId: resolvedCourseId,
+      studentId: userId,
+      status: { in: PRESENT_STATUSES },
+    },
+  });
+
+  // Calculate total occurrences for the course to determine pct and total count
+  const total = await prisma.sessionOccurrence.count({
+    where: { courseId: resolvedCourseId, status: COMPLETED_OCCURRENCE_STATUS },
+  });
+  const pct = total > 0 ? parseFloat(((attended / total) * 100).toFixed(2)) : 0;
+
+  // Determine if PAID session
+  const isPaid = session.pricingState === "PRICED" && (session.priceInPaise || 0) > 0;
+
+  if (isPaid) {
+    // Paid Session Rule:
+    // Must be purchased (paid booking exists with status in ["paid", "completed", "joined"])
+    // and attended >= 1 occurrence.
+    const booking = await prisma.booking.findFirst({
+      where: {
+        studentId: userId,
+        status: { in: ["paid", "completed", "joined"] },
+        OR: [
+          { sessionId: session.id },
+          { courseId: resolvedCourseId }
+        ]
+      }
+    });
+
+    const hasPurchased = !!booking;
+
+    if (!hasPurchased) {
+      return {
+        status: "INELIGIBLE",
+        type: "PAID",
+        attended,
+        required: 1,
+        attendancePct: pct,
+        total,
+        message: "Ineligible — Student has not purchased this paid course.",
+      };
+    }
+
+    if (attended < 1) {
+      return {
+        status: "INELIGIBLE",
+        type: "PAID",
+        attended,
+        required: 1,
+        attendancePct: pct,
+        total,
+        message: "Ineligible — At least 1 session occurrence must be attended.",
+      };
+    }
+
     return {
-      status: ELIGIBILITY.NONE,
-      attendancePct: pct,
+      status: "ELIGIBLE",
+      type: "PAID",
       attended,
+      required: 1,
+      attendancePct: pct,
       total,
-      message: "Not eligible — 0% attendance.",
+      message: "Eligible for a PAID certificate.",
     };
+  } else {
+    // Free Session Rule:
+    // Attendance count > 2 (i.e., attended at least 3 occurrences)
+    if (attended > 2) {
+      return {
+        status: "ELIGIBLE",
+        type: "FREE",
+        attended,
+        required: 3,
+        attendancePct: pct,
+        total,
+        message: `Eligible for a FREE certificate (attended ${attended} sessions).`,
+      };
+    } else {
+      return {
+        status: "INELIGIBLE",
+        type: "FREE",
+        attended,
+        required: 3,
+        attendancePct: pct,
+        total,
+        message: `Ineligible — Must attend at least 3 occurrences (attended ${attended}).`,
+      };
+    }
   }
+}
+
+/*
+  // Old code remains commented out to avoid encoding problems:
+  const freeThreshold = 0;
+  const certificatePricePaise = 0;
 
   if (pct >= freeThreshold) {
     return {
@@ -162,7 +263,7 @@ const checkEligibility = async (userId, courseId) => {
     certificatePricePaise,
     message: `Eligible for a PAID certificate (${pct}% < ${freeThreshold}%). Price: ₹${(certificatePricePaise / 100).toFixed(2)}`,
   };
-};
+*/
 
 // ─────────────────────────────────────────────────────────────────
 // getCourseDates — fetch start, end dates and calculate duration
@@ -223,11 +324,40 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   if (!user) throw new Error("User not found");
 
   const session = await prisma.liveSession.findFirst({
-    where: { courseId },
-    select: { courseTitle: true, title: true },
+    where: {
+      OR: [
+        { courseId: courseId },
+        { id: courseId }
+      ]
+    },
+    select: { courseId: true, courseTitle: true, title: true, category: true },
   });
   const courseTitle =
     session?.courseTitle || session?.title || "LurnStack Course";
+
+  let categoryName = customOptions.categoryName || null;
+  if (!categoryName) {
+    if (session?.courseId) {
+      const cat = await prisma.category.findUnique({
+        where: { id: session.courseId }
+      });
+      if (cat) {
+        categoryName = cat.name;
+      }
+    }
+    if (!categoryName && session?.category) {
+      const cat = await prisma.category.findFirst({
+        where: {
+          OR: [
+            { id: session.category },
+            { slug: session.category },
+            { name: session.category }
+          ]
+        }
+      });
+      categoryName = cat ? cat.name : session.category;
+    }
+  }
 
   // Fetch dates and calculate duration
   const { startDate: dbStart, endDate: dbEnd, durationDays } = await getCourseDates(courseId);
@@ -377,20 +507,28 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
      .fillColor("#0f172a")
      .text(studentNameText.toUpperCase(), 0, 205, { align: "center" });
 
-  // 4. Description Paragraph
-  const descText = `This is to certify that ${studentNameText} has successfully completed the ${courseTitle} course offered by Lurnstack (Tamil Info Technology Pvt. Ltd.). The course was conducted for a duration of ${durationDays} days, from ${formattedStartDate} to ${formattedEndDate}.`;
+  // 4. Category Name (Center, Bold Green)
+  if (categoryName) {
+    doc.font("Helvetica-Bold")
+       .fontSize(12)
+       .fillColor("#10b981") // Premium green color
+       .text(`CATEGORY: ${categoryName.toUpperCase()}`, 0, 270, { align: "center", characterSpacing: 1.5 });
+  }
+
+  // 5. Description Paragraph
+  const descText = `This is to certify that ${studentNameText} has successfully completed the ${courseTitle} course${categoryName ? ` in the category of ${categoryName}` : ""} offered by Lurnstack (Tamil Info Technology Pvt. Ltd.). The course was conducted for a duration of ${durationDays} days, from ${formattedStartDate} to ${formattedEndDate}.`;
 
   const descText2 = `During the period, they gained comprehensive knowledge in ${courseTitle} concepts, including fundamentals, application development, data processing, and problem-solving, demonstrating strong technical aptitude and dedication. We congratulate the learner on this achievement and wish them continued success in their future endeavors.`;
 
   doc.font("Times-Roman")
      .fontSize(15)
      .fillColor("#334155")
-     .text(descText, 100, 275, { align: "center", lineGap: 6, width: pageW - 200 });
+     .text(descText, 100, 295, { align: "center", lineGap: 6, width: pageW - 200 });
      
   doc.font("Helvetica")
      .fontSize(11)
      .fillColor("#64748b")
-     .text(descText2, 100, 335, { align: "center", lineGap: 5, width: pageW - 200 });
+     .text(descText2, 100, 360, { align: "center", lineGap: 5, width: pageW - 200 });
 
   // 6. Date of Issue (Bottom Left)
   doc.font("Helvetica-Bold")
@@ -506,7 +644,7 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
 // ─────────────────────────────────────────────────────────────────
 // generateMockCertificatePDF — create PDF without DB restrictions
 // ─────────────────────────────────────────────────────────────────
-const generateMockCertificatePDF = async (studentName, courseTitle, startDate, endDate) => {
+const generateMockCertificatePDF = async (studentName, courseTitle, startDate, endDate, categoryName = "Demo Category") => {
   const fs = require("fs");
   const path = require("path");
   
@@ -581,12 +719,20 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
   // Student Name
   doc.font("Helvetica-Bold").fontSize(48).fillColor("#0f172a").text((studentName || "Student").toUpperCase(), 0, 205, { align: "center" });
 
+  // Category Name
+  if (categoryName) {
+    doc.font("Helvetica-Bold")
+       .fontSize(12)
+       .fillColor("#10b981") // Premium green color
+       .text(`CATEGORY: ${categoryName.toUpperCase()}`, 0, 270, { align: "center", characterSpacing: 1.5 });
+  }
+
   // Descriptions
   const descText = `This is to certify that ${studentName} has successfully completed the ${courseTitle} course offered by Lurnstack (Tamil Info Technology Pvt. Ltd.). The course was conducted for a duration of ${durationDays} days, from ${formattedStartDate} to ${formattedEndDate}.`;
   const descText2 = `During the period, they gained comprehensive knowledge in ${courseTitle} concepts, including fundamentals, application development, data processing, and problem-solving, demonstrating strong technical aptitude and dedication. We congratulate the learner on this achievement and wish them continued success in their future endeavors.`;
 
-  doc.font("Times-Roman").fontSize(15).fillColor("#334155").text(descText, 100, 275, { align: "center", lineGap: 6, width: pageW - 200 });
-  doc.font("Helvetica").fontSize(11).fillColor("#64748b").text(descText2, 100, 335, { align: "center", lineGap: 5, width: pageW - 200 });
+  doc.font("Times-Roman").fontSize(15).fillColor("#334155").text(descText, 100, 295, { align: "center", lineGap: 6, width: pageW - 200 });
+  doc.font("Helvetica").fontSize(11).fillColor("#64748b").text(descText2, 100, 360, { align: "center", lineGap: 5, width: pageW - 200 });
 
   // Issue Date
   doc.font("Helvetica-Bold").fontSize(15).fillColor("#111827").text(issuedDate, 80, bottomY - 30, { width: 180, align: "center" });
