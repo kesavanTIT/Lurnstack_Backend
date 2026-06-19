@@ -13,7 +13,9 @@ const {
 const buildGlobalFilters = (query) => {
   const { trainerId, courseId, studentId, sessionId, status, startDate, endDate, date } = query;
   const filter = {};
-  const sessionFilter = {};
+  const sessionFilter = {
+    OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }]
+  };
 
   if (trainerId) sessionFilter.trainerId = parseInt(trainerId);
   if (courseId) sessionFilter.courseId = courseId === "unknown" ? null : courseId;
@@ -30,9 +32,7 @@ const buildGlobalFilters = (query) => {
     if (endDate) filter.occurrenceDate.lte = new Date(endDate);
   }
 
-  if (Object.keys(sessionFilter).length > 0) {
-    filter.session = sessionFilter;
-  }
+  filter.session = sessionFilter;
 
   return filter;
 };
@@ -120,6 +120,9 @@ const formatOccurrenceRow = ({ occurrence, roster }) => {
 };
 
 const getOccurrenceDateFilter = (query) => {
+  if (!query || !query.date || String(query.date).trim() === "" || String(query.date).trim() === "null" || String(query.date).trim() === "undefined") {
+    return {};
+  }
   const range = getDayRange(query.date);
   return range ? { occurrenceDate: { gte: range.start, lte: range.end } } : {};
 };

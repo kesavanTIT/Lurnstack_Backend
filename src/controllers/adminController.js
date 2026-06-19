@@ -522,158 +522,127 @@ const createLiveClass = async (req, res) => {
     const durationMinutes = parseDurationMinutes(duration);
 
     const isTIT = sectionType === "TIT" || source === "admin_tit_classes";
-    if (isTIT) {
-      // 1. Resolve trainerId from instructor name
-      let trainerId = null;
-      if (resolvedInstructor) {
-        const matchedTrainer = await prisma.user.findFirst({
-          where: {
-            role: "TRAINER",
-            fullName: { contains: resolvedInstructor, mode: "insensitive" }
-          }
-        });
-        if (matchedTrainer) {
-          trainerId = matchedTrainer.id;
+    
+    // Always resolve trainerId from instructor name for LiveSession mapping
+    let trainerId = null;
+    if (resolvedInstructor) {
+      const matchedTrainer = await prisma.user.findFirst({
+        where: {
+          role: "TRAINER",
+          fullName: { contains: resolvedInstructor, mode: "insensitive" }
         }
-      }
-      if (!trainerId) {
-        return res.status(400).json({
-          success: false,
-          message: `Trainer '${resolvedInstructor}' not found. Please ensure the trainer exists.`
-        });
-      }
-
-      // 2. Parse and normalize time and date
-      const formattedTime = normalizeTimeToHHMM(checkTime);
-      const scheduledDate = date; // e.g. "2026-06-11"
-      const scheduledAtStr = `${scheduledDate} ${formattedTime}`;
-      const calculatedEndTime = addMinutesToTime(formattedTime, durationMinutes);
-      const finalEndTime = resolvedEndTimeInput || calculatedEndTime;
-      const endsAtStr = finalEndTime ? `${scheduledDate} ${finalEndTime}` : null;
-
-      // Try to find a matching category by courseName if courseId is not explicitly passed
-      let finalCourseId = resolvedCourseId;
-      if (!finalCourseId && courseName) {
-        const existingCategory = await prisma.category.findFirst({
-          where: { name: { equals: courseName, mode: 'insensitive' } }
-        });
-        if (existingCategory) {
-          finalCourseId = existingCategory.id;
-        }
-      }
-
-      const isRecurring = req.body.isRecurring === true || req.body.isRecurring === "true" || req.body.isRecurring === "1" || req.body.isRecurring === 1;
-      const recurrenceType = isRecurring ? req.body.recurrenceType : null;
-
-      const parsedRecurringDays = validation.parsed;
-
-      // 3. Create LiveSession
-      const newSession = await prisma.liveSession.create({
-        data: {
-          courseId: finalCourseId,
-          courseTitle: courseName,
-          category: courseName,
-          trainerId,
-          title: title || classTitle,
-          classTitle: classTitle || title,
-          description: description || null,
-          startTime: formattedTime,
-          endTime: finalEndTime || null,
-          timezone: "Asia/Kolkata",
-          meetingLink: meetingLink || meetLink,
-          isRecurring,
-          recurrenceType,
-          status: "active",
-          cancelledDates: [],
-          thumbnail,
-          pricingState: "PENDING_PRICE",
-          publishState: "DRAFT",
-          sectionType: "TIT",
-          sessionType: "TIT",
-          source: "admin_tit_classes",
-          createdByRole: "admin",
-          requiresAdminReview: true,
-          scheduledDate,
-          scheduledAt: scheduledAtStr,
-          endsAt: endsAtStr,
-          durationMinutes,
-          enableWhatsApp: false, // Force false for TIT classes
-          trainerInstructions: req.body.trainerInstructions || null,
-          isRecurring: req.body.isRecurring === true || req.body.isRecurring === "true",
-          recurrenceType: req.body.recurrenceType || null,
-          recurringDays: parsedRecurringDays,
-          recurrenceEndDate: dateValidation.parsed,
-        },
       });
-
-      // Automatically generate SessionOccurrence records
-      await generateOccurrences(newSession);
-
-      let thumbnailResponse = newSession.thumbnail;
-      if (thumbnailResponse && !thumbnailResponse.startsWith("http")) {
-        thumbnailResponse = `${req.protocol}://${req.get("host")}/${thumbnailResponse.replace(/\\/g, "/")}`;
+      if (matchedTrainer) {
+        trainerId = matchedTrainer.id;
       }
-
-      return res.status(201).json({
-        success: true,
-        message: "Live class created successfully!",
-        data: {
-          id: newSession.id,
-          courseId: newSession.courseId,
-          courseName: newSession.courseTitle || "",
-          title: newSession.title || "",
-          classTitle: newSession.classTitle || "",
-          instructor: resolvedInstructor || "",
-          description: newSession.description || "",
-          date: newSession.scheduledDate || scheduledDate || "",
-          startTime: newSession.startTime || "",
-          endTime: newSession.endTime || "",
-          time: newSession.startTime || "",
-          duration: duration || "",
-          meetingLink: newSession.meetingLink || "",
-          meetLink: newSession.meetingLink || "",
-          thumbnail: thumbnailResponse,
-          isRecurring: newSession.isRecurring,
-          recurrenceType: newSession.recurrenceType,
-          recurringDays: serializeRecurringDays(newSession.recurringDays),
-          recurrenceEndDate: newSession.recurrenceEndDate || null,
-          publishState: newSession.publishState,
-          pricingState: newSession.pricingState,
-          requiresAdminReview: newSession.requiresAdminReview,
-          sectionType: newSession.sectionType,
-          sessionType: newSession.sessionType,
-          source: newSession.source,
-          createdByRole: newSession.createdByRole,
-        },
+    }
+    if (!trainerId) {
+      return res.status(400).json({
+        success: false,
+        message: `Trainer '${resolvedInstructor}' not found. Please ensure the trainer exists.`
       });
     }
 
-    const newClass = await prisma.liveClass.create({
+    // Parse and normalize time and date
+    const formattedTime = normalizeTimeToHHMM(checkTime);
+    const scheduledDate = date; // e.g. "2026-06-11"
+    const scheduledAtStr = `${scheduledDate} ${formattedTime}`;
+    const calculatedEndTime = addMinutesToTime(formattedTime, durationMinutes);
+    const finalEndTime = resolvedEndTimeInput || calculatedEndTime;
+    const endsAtStr = finalEndTime ? `${scheduledDate} ${finalEndTime}` : null;
+
+    // Try to find a matching category by courseName if courseId is not explicitly passed
+    let finalCourseId = resolvedCourseId;
+    if (!finalCourseId && courseName) {
+      const existingCategory = await prisma.category.findFirst({
+        where: { name: { equals: courseName, mode: 'insensitive' } }
+      });
+      if (existingCategory) {
+        finalCourseId = existingCategory.id;
+      }
+    }
+
+    const isRecurring = req.body.isRecurring === true || req.body.isRecurring === "true" || req.body.isRecurring === "1" || req.body.isRecurring === 1;
+    const recurrenceType = isRecurring ? req.body.recurrenceType : null;
+
+    const parsedRecurringDays = validation.parsed;
+
+    // Create LiveSession (both for TIT and standard course sessions)
+    const newSession = await prisma.liveSession.create({
       data: {
-        courseName,
-        classTitle,
-        instructor,
-        description,
-        date,
-        time,
-        duration,
-        scheduledAt,
-        durationMinutes,
-        meetLink,
+        courseId: finalCourseId,
+        courseTitle: courseName,
+        category: courseName,
+        trainerId,
+        title: title || classTitle,
+        classTitle: classTitle || title,
+        description: description || null,
+        startTime: formattedTime,
+        endTime: finalEndTime || null,
+        timezone: "Asia/Kolkata",
+        meetingLink: meetingLink || meetLink,
+        isRecurring,
+        recurrenceType,
+        status: "active",
+        cancelledDates: [],
         thumbnail,
-        sectionType: sectionType || null,
-        source: source || null,
+        pricingState: isTIT ? "PENDING_PRICE" : "FREE",
+        publishState: isTIT ? "DRAFT" : "PUBLISHED",
+        sectionType: isTIT ? "TIT" : null,
+        sessionType: isTIT ? "TIT" : null,
+        source: isTIT ? "admin_tit_classes" : "admin_course_classes",
+        createdByRole: "admin",
+        requiresAdminReview: isTIT,
+        scheduledDate,
+        scheduledAt: scheduledAtStr,
+        endsAt: endsAtStr,
+        durationMinutes,
+        enableWhatsApp: false, // Force false for admin scheduled classes
+        trainerInstructions: req.body.trainerInstructions || null,
+        recurringDays: parsedRecurringDays,
+        recurrenceEndDate: dateValidation.parsed,
       },
     });
 
-    if (newClass.thumbnail) {
-      newClass.thumbnail = `${req.protocol}://${req.get("host")}/${newClass.thumbnail.replace(/\\/g, "/")}`;
+    // Automatically generate SessionOccurrence records so attendance system picks it up
+    await generateOccurrences(newSession);
+
+    let thumbnailResponse = newSession.thumbnail;
+    if (thumbnailResponse && !thumbnailResponse.startsWith("http")) {
+      thumbnailResponse = `${req.protocol}://${req.get("host")}/${thumbnailResponse.replace(/\\/g, "/")}`;
     }
 
     return res.status(201).json({
       success: true,
       message: "Live class created successfully!",
-      data: newClass,
+      data: {
+        id: newSession.id,
+        courseId: newSession.courseId,
+        courseName: newSession.courseTitle || "",
+        title: newSession.title || "",
+        classTitle: newSession.classTitle || "",
+        instructor: resolvedInstructor || "",
+        description: newSession.description || "",
+        date: newSession.scheduledDate || scheduledDate || "",
+        startTime: newSession.startTime || "",
+        endTime: newSession.endTime || "",
+        time: newSession.startTime || "",
+        duration: duration || "",
+        meetLink: newSession.meetingLink || "",
+        meetingLink: newSession.meetingLink || "",
+        thumbnail: thumbnailResponse,
+        isRecurring: newSession.isRecurring,
+        recurrenceType: newSession.recurrenceType,
+        recurringDays: serializeRecurringDays(newSession.recurringDays),
+        recurrenceEndDate: newSession.recurrenceEndDate || null,
+        publishState: newSession.publishState,
+        pricingState: newSession.pricingState,
+        requiresAdminReview: newSession.requiresAdminReview,
+        sectionType: newSession.sectionType,
+        sessionType: newSession.sessionType,
+        source: newSession.source,
+        createdByRole: newSession.createdByRole,
+      },
     });
   } catch (error) {
     console.error("Create Live Class Error:", error);
@@ -817,6 +786,18 @@ const updateLiveClass = async (req, res) => {
       }
       if (resolvedCourseId !== undefined) {
         updateData.courseId = resolvedCourseId;
+      }
+
+      if (sectionType !== undefined) {
+        const isTITUpdate = sectionType === "TIT";
+        updateData.sectionType = isTITUpdate ? "TIT" : null;
+        updateData.sessionType = isTITUpdate ? "TIT" : null;
+        updateData.source = isTITUpdate ? "admin_tit_classes" : "admin_course_classes";
+        updateData.requiresAdminReview = isTITUpdate;
+        if (!isTITUpdate) {
+          updateData.pricingState = "FREE";
+          updateData.publishState = "PUBLISHED";
+        }
       }
 
       if (resolvedInstructor !== undefined) {
