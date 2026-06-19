@@ -593,8 +593,8 @@ const getSessionAttendanceAdmin = async (req, res) => {
           firstJoinedAt: a.firstJoinedAt,
           lastJoinedAt: a.lastJoinedAt,
           joinCount: a.joinCount,
-          durationMinutes: Math.round(getDurationSeconds(a) / 60),
-          totalDurationSeconds: getDurationSeconds(a)
+          durationMinutes: Math.round(getDurationSeconds(a, { endsAt: session?.endedAt || session?.endTime }) / 60),
+          totalDurationSeconds: getDurationSeconds(a, { endsAt: session?.endedAt || session?.endTime })
         });
       });
     }
@@ -656,6 +656,7 @@ const getStudentAttendanceAdmin = async (req, res) => {
       where: filter,
       include: {
         session: true,
+        occurrence: true,
         student: { select: { id: true, fullName: true, email: true } },
       },
       orderBy: { occurrenceDate: "desc" }
@@ -672,7 +673,7 @@ const getStudentAttendanceAdmin = async (req, res) => {
     let studentName = "Student";
     const formatted = attendances.map((a) => {
       const legacy = legacyByKey.get(`${a.sessionId}-${a.studentId}-${a.occurrenceDate.toISOString()}`);
-      const durationSeconds = getDurationSeconds(legacy);
+      const durationSeconds = getDurationSeconds(legacy, a.occurrence);
       studentName = a.student?.fullName || studentName;
       return {
         attendanceId: legacy?.id || a.id,
@@ -820,7 +821,7 @@ const getAllAttendanceRecords = async (req, res) => {
       seenKeys.add(key);
       const legacyAttendance = legacyByKey.get(key);
       const occurrence = occurrenceMap.get(`${a.sessionId}-${a.occurrenceDate.toISOString()}`);
-      const durationSeconds = getDurationSeconds(legacyAttendance);
+      const durationSeconds = getDurationSeconds(legacyAttendance, occurrence);
       let durationMinutes = Math.round(durationSeconds / 60);
       const status = normalizeStatus(a.status);
       return {
@@ -859,8 +860,8 @@ const getAllAttendanceRecords = async (req, res) => {
       const status = normalizeStatus(a.status);
       if (requestedStatus && status !== normalizeStatus(requestedStatus)) return;
 
-      const durationSeconds = getDurationSeconds(a);
       const occurrence = occurrenceMap.get(`${a.sessionId}-${a.occurrenceDate.toISOString()}`);
+      const durationSeconds = getDurationSeconds(a, occurrence);
       formattedData.push({
         id: a.id,
         attendanceId: a.id,

@@ -31,20 +31,54 @@ const getDateKey = (date) => {
   return new Date(date).toISOString().slice(0, 10);
 };
 
-const getDurationSeconds = (attendance) => {
+const getDurationSeconds = (attendance, occurrence) => {
   if (!attendance) return 0;
   if (attendance.totalDurationSeconds && attendance.totalDurationSeconds > 0) {
     return attendance.totalDurationSeconds;
   }
 
-  if (!Array.isArray(attendance.events)) return 0;
-  return attendance.events.reduce((sum, event) => {
+  const events = Array.isArray(attendance.events) ? attendance.events : [];
+
+  if (events.length === 0) {
+    const joinedAt = attendance.firstJoinedAt || attendance.joinedAt;
+    let leftAt = attendance.lastJoinedAt || attendance.leftAt || attendance.left_at;
+    if (joinedAt) {
+      if (!leftAt) {
+        if (occurrence?.endsAt) {
+          leftAt = occurrence.endsAt;
+        } else {
+          leftAt = new Date();
+        }
+      }
+      const start = new Date(joinedAt);
+      const end = new Date(leftAt);
+      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start) {
+        return Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
+      }
+    }
+    return 0;
+  }
+
+  return events.reduce((sum, event) => {
     if (event.durationSeconds && event.durationSeconds > 0) {
       return sum + event.durationSeconds;
     }
 
-    if (event.joinedAt && event.leftAt) {
-      return sum + Math.max(0, Math.floor((new Date(event.leftAt) - new Date(event.joinedAt)) / 1000));
+    const joinedAt = event.joinedAt;
+    let leftAt = event.leftAt;
+    if (joinedAt) {
+      if (!leftAt) {
+        if (occurrence?.endsAt) {
+          leftAt = occurrence.endsAt;
+        } else {
+          leftAt = new Date();
+        }
+      }
+      const start = new Date(joinedAt);
+      const end = new Date(leftAt);
+      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start) {
+        return sum + Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
+      }
     }
 
     return sum;
@@ -82,11 +116,15 @@ const resolveFinalStatus = ({ studentAttendance, attendance, occurrence }) => {
   }
 
   const requiredSeconds = getRequiredSeconds(occurrence);
-  const durationSeconds = getDurationSeconds(attendance);
+  const durationSeconds = getDurationSeconds(attendance, occurrence);
   const joined = Boolean(studentAttendance || attendance);
 
-  if (joined && requiredSeconds > 0 && durationSeconds > 0 && durationSeconds < requiredSeconds) {
-    return "absent";
+  if (joined && requiredSeconds > 0) {
+    if (durationSeconds >= requiredSeconds) {
+      return "present";
+    } else if (durationSeconds > 0 && durationSeconds < requiredSeconds) {
+      return "absent";
+    }
   }
 
   return status;
@@ -230,7 +268,7 @@ const buildRosterForOccurrence = async ({ session, occurrence, date }) => {
     row.firstJoinedAt = attendance.firstJoinedAt || attendance.joinedAt || null;
     row.lastJoinedAt = attendance.lastJoinedAt || attendance.joinedAt || null;
     row.joinCount = attendance.joinCount || 0;
-    row.totalDurationSeconds = getDurationSeconds(attendance);
+    row.totalDurationSeconds = getDurationSeconds(attendance, occurrence);
   });
 
   studentAttendances.forEach((studentAttendance) => {
