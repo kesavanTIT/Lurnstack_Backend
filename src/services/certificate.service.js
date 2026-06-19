@@ -189,15 +189,29 @@ const checkEligibility = async (userId, courseId) => {
       };
     }
 
-    return {
-      status: "ELIGIBLE",
-      type: "PAID",
-      attended,
-      required: 1,
-      attendancePct: pct,
-      total,
-      message: "Eligible for a PAID certificate.",
-    };
+    const isEnded = session.endedAt !== null || session.status === "ended" || session.publishState === "ENDED";
+
+    if (isEnded) {
+      return {
+        status: "ELIGIBLE",
+        type: "PAID",
+        attended,
+        required: 1,
+        attendancePct: pct,
+        total,
+        message: "Eligible for a PAID certificate.",
+      };
+    } else {
+      return {
+        status: "INCOMPLETE",
+        type: "PAID",
+        attended,
+        required: 1,
+        attendancePct: pct,
+        total,
+        message: "Incomplete — Purchased but trainer has not ended the session.",
+      };
+    }
   } else {
     // Free Session Rule:
     // Attendance count > 2 (i.e., attended at least 3 occurrences)
@@ -426,12 +440,12 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   doc.rect(m + 6, m + 6, pageW - 2 * m - 12, pageH - 2 * m - 12).lineWidth(1).strokeColor("#cbd5e1").stroke();
   
   // Watermark image
-  const watermarkPath = path.join(process.cwd(), "uploads", "certificates", "watermark.jpg");
+  const watermarkPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
   if (fs.existsSync(watermarkPath)) {
     try {
       doc.save();
       // Use doc.opacity for images and set it to 15% so it is actually visible
-      doc.opacity(0.15);
+      doc.opacity(0.08);
       const wmSize = 350;
       const wmX = (pageW - wmSize) / 2;
       const wmY = (pageH - wmSize) / 2;
@@ -467,7 +481,7 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   ).fill();
   
   // 5. Logo
-  const logoPath = path.join(process.cwd(), "uploads", "logo.png");
+  const logoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
   let logoDrawn = false;
   if (fs.existsSync(logoPath)) {
     try { 

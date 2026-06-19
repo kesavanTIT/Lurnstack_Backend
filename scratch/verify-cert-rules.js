@@ -32,38 +32,60 @@ const certificateService = require('../src/services/certificate.service');
 async function runTests() {
   console.log('=== Running Certificate Rule Tests ===\n');
 
-  // Test Case 1: Paid Session - Purchased & Attended 1 session
+  // Test Case 1: Paid Session - Purchased & Attended 1 session & Ended
   {
     mockPrisma.liveSession.findFirst = async () => ({
       id: 'session-paid',
       courseId: 'course-paid',
       pricingState: 'PRICED',
-      priceInPaise: 49900
+      priceInPaise: 49900,
+      endedAt: new Date()
     });
     mockPrisma.studentAttendance.count = async () => 1;
     mockPrisma.booking.findFirst = async () => ({ id: 'booking-paid' });
     mockPrisma.sessionOccurrence.count = async () => 5;
 
     const result = await certificateService.checkEligibility(123, 'course-paid');
-    console.log('TC1 (Paid Session - Purchased & Attended 1):', result);
+    console.log('TC1 (Paid Session - Purchased & Attended 1 & Ended):', result);
     assert.strictEqual(result.status, 'ELIGIBLE');
     assert.strictEqual(result.type, 'PAID');
   }
 
-  // Test Case 2: Paid Session - Purchased but 0 attendance (immediate unlock)
+  // Test Case 2: Paid Session - Purchased but 0 attendance & Ended
   {
     mockPrisma.liveSession.findFirst = async () => ({
       id: 'session-paid',
       courseId: 'course-paid',
       pricingState: 'PRICED',
-      priceInPaise: 49900
+      priceInPaise: 49900,
+      endedAt: new Date()
     });
     mockPrisma.studentAttendance.count = async () => 0;
     mockPrisma.booking.findFirst = async () => ({ id: 'booking-paid' });
 
     const result = await certificateService.checkEligibility(123, 'course-paid');
-    console.log('TC2 (Paid Session - Purchased & 0 Attendance):', result);
+    console.log('TC2 (Paid Session - Purchased & 0 Attendance & Ended):', result);
     assert.strictEqual(result.status, 'ELIGIBLE');
+    assert.strictEqual(result.type, 'PAID');
+    assert.strictEqual(result.attended, 0);
+  }
+
+  // Test Case 2b: Paid Session - Purchased but 0 attendance & NOT Ended
+  {
+    mockPrisma.liveSession.findFirst = async () => ({
+      id: 'session-paid',
+      courseId: 'course-paid',
+      pricingState: 'PRICED',
+      priceInPaise: 49900,
+      endedAt: null,
+      status: 'active'
+    });
+    mockPrisma.studentAttendance.count = async () => 0;
+    mockPrisma.booking.findFirst = async () => ({ id: 'booking-paid' });
+
+    const result = await certificateService.checkEligibility(123, 'course-paid');
+    console.log('TC2b (Paid Session - Purchased & 0 Attendance & NOT Ended):', result);
+    assert.strictEqual(result.status, 'INCOMPLETE');
     assert.strictEqual(result.type, 'PAID');
     assert.strictEqual(result.attended, 0);
   }
@@ -74,7 +96,8 @@ async function runTests() {
       id: 'session-paid',
       courseId: 'course-paid',
       pricingState: 'PRICED',
-      priceInPaise: 49900
+      priceInPaise: 49900,
+      endedAt: new Date()
     });
     mockPrisma.studentAttendance.count = async () => 1;
     mockPrisma.booking.findFirst = async () => null;
