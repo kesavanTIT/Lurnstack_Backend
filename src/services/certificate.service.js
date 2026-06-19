@@ -189,18 +189,6 @@ const checkEligibility = async (userId, courseId) => {
       };
     }
 
-    if (attended < 1) {
-      return {
-        status: "INELIGIBLE",
-        type: "PAID",
-        attended,
-        required: 1,
-        attendancePct: pct,
-        total,
-        message: "Ineligible — At least 1 session occurrence must be attended.",
-      };
-    }
-
     return {
       status: "ELIGIBLE",
       type: "PAID",
@@ -213,16 +201,31 @@ const checkEligibility = async (userId, courseId) => {
   } else {
     // Free Session Rule:
     // Attendance count > 2 (i.e., attended at least 3 occurrences)
+    // and session must be ended by trainer.
+    const isEnded = session.endedAt !== null || session.status === "ended" || session.publishState === "ENDED";
+    
     if (attended > 2) {
-      return {
-        status: "ELIGIBLE",
-        type: "FREE",
-        attended,
-        required: 3,
-        attendancePct: pct,
-        total,
-        message: `Eligible for a FREE certificate (attended ${attended} sessions).`,
-      };
+      if (isEnded) {
+        return {
+          status: "ELIGIBLE",
+          type: "FREE",
+          attended,
+          required: 3,
+          attendancePct: pct,
+          total,
+          message: `Eligible for a FREE certificate (attended ${attended} sessions).`,
+        };
+      } else {
+        return {
+          status: "INCOMPLETE",
+          type: "FREE",
+          attended,
+          required: 3,
+          attendancePct: pct,
+          total,
+          message: `Incomplete — Attended ${attended} sessions but trainer has not ended the session.`,
+        };
+      }
     } else {
       return {
         status: "INELIGIBLE",
@@ -356,6 +359,15 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
         }
       });
       categoryName = cat ? cat.name : session.category;
+    }
+  }
+
+  if (!categoryName && courseId) {
+    const cat = await prisma.category.findUnique({
+      where: { id: courseId }
+    });
+    if (cat) {
+      categoryName = cat.name;
     }
   }
 

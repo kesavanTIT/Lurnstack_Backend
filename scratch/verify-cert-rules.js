@@ -48,10 +48,9 @@ async function runTests() {
     console.log('TC1 (Paid Session - Purchased & Attended 1):', result);
     assert.strictEqual(result.status, 'ELIGIBLE');
     assert.strictEqual(result.type, 'PAID');
-    assert.strictEqual(result.attended, 1);
   }
 
-  // Test Case 2: Paid Session - Purchased but 0 attendance
+  // Test Case 2: Paid Session - Purchased but 0 attendance (immediate unlock)
   {
     mockPrisma.liveSession.findFirst = async () => ({
       id: 'session-paid',
@@ -64,7 +63,7 @@ async function runTests() {
 
     const result = await certificateService.checkEligibility(123, 'course-paid');
     console.log('TC2 (Paid Session - Purchased & 0 Attendance):', result);
-    assert.strictEqual(result.status, 'INELIGIBLE');
+    assert.strictEqual(result.status, 'ELIGIBLE');
     assert.strictEqual(result.type, 'PAID');
     assert.strictEqual(result.attended, 0);
   }
@@ -86,20 +85,41 @@ async function runTests() {
     assert.strictEqual(result.type, 'PAID');
   }
 
-  // Test Case 4: Free Session - Attended 3 sessions
+  // Test Case 4: Free Session - Attended 3 sessions & Trainer Ended
   {
     mockPrisma.liveSession.findFirst = async () => ({
       id: 'session-free',
       courseId: 'course-free',
       pricingState: 'FREE',
-      priceInPaise: 0
+      priceInPaise: 0,
+      endedAt: new Date()
     });
     mockPrisma.studentAttendance.count = async () => 3;
     mockPrisma.sessionOccurrence.count = async () => 10;
 
     const result = await certificateService.checkEligibility(123, 'course-free');
-    console.log('TC4 (Free Session - Attended 3):', result);
+    console.log('TC4 (Free Session - Attended 3 & Ended):', result);
     assert.strictEqual(result.status, 'ELIGIBLE');
+    assert.strictEqual(result.type, 'FREE');
+    assert.strictEqual(result.attended, 3);
+  }
+
+  // Test Case 4b: Free Session - Attended 3 sessions but NOT Ended
+  {
+    mockPrisma.liveSession.findFirst = async () => ({
+      id: 'session-free',
+      courseId: 'course-free',
+      pricingState: 'FREE',
+      priceInPaise: 0,
+      endedAt: null,
+      status: 'active'
+    });
+    mockPrisma.studentAttendance.count = async () => 3;
+    mockPrisma.sessionOccurrence.count = async () => 10;
+
+    const result = await certificateService.checkEligibility(123, 'course-free');
+    console.log('TC4b (Free Session - Attended 3 but NOT Ended):', result);
+    assert.strictEqual(result.status, 'INCOMPLETE');
     assert.strictEqual(result.type, 'FREE');
     assert.strictEqual(result.attended, 3);
   }
@@ -110,7 +130,8 @@ async function runTests() {
       id: 'session-free',
       courseId: 'course-free',
       pricingState: 'FREE',
-      priceInPaise: 0
+      priceInPaise: 0,
+      endedAt: new Date()
     });
     mockPrisma.studentAttendance.count = async () => 2;
     mockPrisma.sessionOccurrence.count = async () => 10;

@@ -780,6 +780,13 @@ const getMyCertificates = async (req, res) => {
         where: { userId_courseId: { userId, courseId } }
       });
       if (!cert || cert.paymentStatus !== "PAID" || !cert.certificateUrl) {
+        const eligibility = await certificateService.checkEligibility(userId, courseId);
+        if (eligibility.status === "ELIGIBLE" && eligibility.type === "PAID") {
+          return res.status(200).json({
+            paymentStatus: "PAID",
+            placeholder: true
+          });
+        }
         return res.status(200).json({ data: null });
       }
       
@@ -876,6 +883,7 @@ const getEligibleCourses = async (req, res) => {
   try {
     const userId = parseInt(req.user.id);
     
+    // Fetch attendances
     const attendances = await prisma.studentAttendance.findMany({
       where: { studentId: userId },
       select: { 
@@ -887,14 +895,48 @@ const getEligibleCourses = async (req, res) => {
       orderBy: { occurrenceDate: "desc" }
     });
 
+    // Fetch bookings for paid sessions
+    const bookings = await prisma.booking.findMany({
+      where: {
+        studentId: userId,
+        status: { in: ["paid", "completed", "joined"] }
+      },
+      include: {
+        session: {
+          select: {
+            id: true,
+            courseId: true,
+            title: true,
+            courseTitle: true,
+            trainer: { select: { fullName: true } }
+          }
+        }
+      }
+    });
+
     const courseMap = new Map();
+    
+    // Add records from attendance
     for (const a of attendances) {
-      if (!courseMap.has(a.courseId)) {
+      if (a.courseId && !courseMap.has(a.courseId)) {
         courseMap.set(a.courseId, {
           courseId: a.courseId,
           title: a.session?.courseTitle || a.session?.title || "Unknown Course",
           trainerName: a.trainer?.fullName || "Unknown Trainer",
           completedAt: a.occurrenceDate ? a.occurrenceDate.toISOString() : new Date().toISOString()
+        });
+      }
+    }
+
+    // Add records from bookings
+    for (const b of bookings) {
+      const cid = b.courseId || b.sessionId;
+      if (cid && !courseMap.has(cid)) {
+        courseMap.set(cid, {
+          courseId: cid,
+          title: b.session?.courseTitle || b.session?.title || "Unknown Course",
+          trainerName: b.session?.trainer?.fullName || "Unknown Trainer",
+          completedAt: b.createdAt ? b.createdAt.toISOString() : new Date().toISOString()
         });
       }
     }
@@ -936,13 +978,22 @@ const getEligibilityStatus = async (req, res) => {
     if (eligibility.status === "ELIGIBLE") {
       return res.status(200).json({
         eligibility: "ELIGIBLE",
-        status: "ELIGIBLE",
+        status: eligibility.type,
         type: eligibility.type,
+        required: eligibility.required,
+        attended: eligibility.attended,
       });
     } else {
+      let finalStatus = "NONE";
+      if (eligibility.status === "INCOMPLETE") {
+        finalStatus = "INCOMPLETE";
+      } else if (eligibility.type === "PAID" && eligibility.status !== "ELIGIBLE") {
+        finalStatus = "PAID";
+      }
       return res.status(200).json({
-        eligibility: "INELIGIBLE",
-        status: "INELIGIBLE",
+        eligibility: eligibility.status,
+        status: finalStatus,
+        type: eligibility.type,
         required: eligibility.required,
         attended: eligibility.attended,
       });
