@@ -30,6 +30,10 @@ const buildGlobalFilters = (query) => {
     filter.occurrenceDate = {};
     if (startDate) filter.occurrenceDate.gte = new Date(startDate);
     if (endDate) filter.occurrenceDate.lte = new Date(endDate);
+  } else {
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    filter.occurrenceDate = { lte: endOfToday };
   }
 
   filter.session = sessionFilter;
@@ -135,9 +139,16 @@ const buildStatusFilter = (status) => {
 };
 
 const buildCourseAndTrainerAttendance = async (query = {}) => {
+  const now = new Date();
+  const endOfToday = new Date(now);
+  endOfToday.setHours(23, 59, 59, 999);
+  const dateFilter = getOccurrenceDateFilter(query);
+  const finalDateFilter = Object.keys(dateFilter).length > 0 
+    ? dateFilter 
+    : { occurrenceDate: { lte: endOfToday } };
   const occurrences = await prisma.sessionOccurrence.findMany({
     where: {
-      ...getOccurrenceDateFilter(query),
+      ...finalDateFilter,
       session: { OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }] },
     },
     include: {
@@ -342,6 +353,10 @@ const getTrainerAttendanceAdmin = async (req, res) => {
       filter.occurrenceDate = {};
       if (startDate) filter.occurrenceDate.gte = new Date(startDate);
       if (endDate) filter.occurrenceDate.lte = new Date(endDate);
+    } else {
+      const endOfToday = new Date();
+      endOfToday.setHours(23, 59, 59, 999);
+      filter.occurrenceDate = { lte: endOfToday };
     }
     
     const sessionFilter = filter.session ? { ...filter.session, OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] } : { OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] };
