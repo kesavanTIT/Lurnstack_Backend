@@ -1,6 +1,44 @@
 const cron = require('node-cron');
 const prisma = require('../config/db');
 
+const syncLegacyAttendance = async ({ occurrence, studentId, status, firstJoinedAt, lastJoinedAt, joinCount = 0, totalDurationSeconds = 0 }) => {
+  const existing = await prisma.attendance.findFirst({
+    where: {
+      studentId,
+      sessionId: occurrence.sessionId,
+      occurrenceDate: occurrence.occurrenceDate,
+    },
+  });
+
+  if (existing) {
+    return prisma.attendance.update({
+      where: { id: existing.id },
+      data: {
+        status,
+        firstJoinedAt: firstJoinedAt || existing.firstJoinedAt,
+        lastJoinedAt: lastJoinedAt || existing.lastJoinedAt,
+        joinCount: Math.max(existing.joinCount || 0, joinCount || 0),
+        totalDurationSeconds: Math.max(existing.totalDurationSeconds || 0, totalDurationSeconds || 0),
+        isJoined: status !== "absent",
+      },
+    });
+  }
+
+  return prisma.attendance.create({
+    data: {
+      studentId,
+      sessionId: occurrence.sessionId,
+      occurrenceDate: occurrence.occurrenceDate,
+      status,
+      firstJoinedAt: firstJoinedAt || occurrence.endsAt || new Date(),
+      lastJoinedAt: lastJoinedAt || occurrence.endsAt || new Date(),
+      joinCount,
+      totalDurationSeconds,
+      isJoined: status !== "absent",
+    },
+  });
+};
+
 // Runs every 5 minutes
 cron.schedule('*/5 * * * *', async () => {
   console.log('Running attendance finalization job...');
@@ -65,6 +103,16 @@ cron.schedule('*/5 * * * *', async () => {
         await prisma.studentAttendance.createMany({
           data: absentRecords,
         });
+
+        for (const record of absentRecords) {
+          await syncLegacyAttendance({
+            occurrence,
+            studentId: record.studentId,
+            status: "absent",
+            joinCount: 0,
+            totalDurationSeconds: 0,
+          });
+        }
       }
 
       // ENFORCE 30% RULE FOR STUDENTS WHO JOINED
@@ -102,6 +150,9 @@ cron.schedule('*/5 * * * *', async () => {
         if (totalSecs < requiredSeconds) {
           newStatus = "absent";
         }
+        if (newStatus === "joined") {
+          newStatus = "present";
+        }
 
         await prisma.studentAttendance.update({
           where: { id: sa.id },
@@ -109,6 +160,16 @@ cron.schedule('*/5 * * * *', async () => {
             status: newStatus,
             finalizedAt: now
           }
+        });
+
+        await syncLegacyAttendance({
+          occurrence,
+          studentId: sa.studentId,
+          status: newStatus === "joined" ? "present" : newStatus,
+          firstJoinedAt: sa.firstJoinedAt,
+          lastJoinedAt: sa.lastJoinedAt,
+          joinCount: sa.joinCount,
+          totalDurationSeconds: totalSecs,
         });
       }
 
