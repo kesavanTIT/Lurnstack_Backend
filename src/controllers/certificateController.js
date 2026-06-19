@@ -888,7 +888,7 @@ const getEligibleCourses = async (req, res) => {
       where: { studentId: userId },
       select: { 
         courseId: true, 
-        session: { select: { title: true, courseTitle: true } },
+        session: { select: { title: true, courseTitle: true, courseId: true } },
         trainer: { select: { fullName: true } },
         occurrenceDate: true
       },
@@ -918,9 +918,10 @@ const getEligibleCourses = async (req, res) => {
     
     // Add records from attendance
     for (const a of attendances) {
-      if (a.courseId && !courseMap.has(a.courseId)) {
-        courseMap.set(a.courseId, {
-          courseId: a.courseId,
+      const cid = a.session?.courseId || a.courseId;
+      if (cid && !courseMap.has(cid)) {
+        courseMap.set(cid, {
+          courseId: cid,
           title: a.session?.courseTitle || a.session?.title || "Unknown Course",
           trainerName: a.trainer?.fullName || "Unknown Trainer",
           completedAt: a.occurrenceDate ? a.occurrenceDate.toISOString() : new Date().toISOString()
@@ -930,7 +931,7 @@ const getEligibleCourses = async (req, res) => {
 
     // Add records from bookings
     for (const b of bookings) {
-      const cid = b.courseId || b.sessionId;
+      const cid = b.session?.courseId || b.courseId || b.sessionId;
       if (cid && !courseMap.has(cid)) {
         courseMap.set(cid, {
           courseId: cid,
