@@ -508,7 +508,7 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   doc.rect(m + 6, m + 6, pageW - 2 * m - 12, pageH - 2 * m - 12).lineWidth(1).strokeColor("#cbd5e1").stroke();
   
   // Watermark image
-  let watermarkPath = path.join(process.cwd(), "uploads", "Logo3.png");
+  let watermarkPath = path.join(process.cwd(), "templates", "Logo3.png");
   if (!fs.existsSync(watermarkPath)) {
     watermarkPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo3.png";
   }
@@ -552,7 +552,7 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   ).fill();
   
   // 5. Logo
-  let logoPath = path.join(process.cwd(), "uploads", "Logo3.png");
+  let logoPath = path.join(process.cwd(), "templates", "Logo3.png");
   if (!fs.existsSync(logoPath)) {
     logoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo3.png";
   }
@@ -787,7 +787,7 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
   doc.rect(m + 6, m + 6, pageW - 2 * m - 12, pageH - 2 * m - 12).lineWidth(1).strokeColor("#cbd5e1").stroke();
   
   // Watermark image
-  let watermarkPath = path.join(process.cwd(), "uploads", "Logo3.png");
+  let watermarkPath = path.join(process.cwd(), "templates", "Logo3.png");
   if (!fs.existsSync(watermarkPath)) {
     watermarkPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo3.png";
   }
@@ -820,7 +820,7 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
   doc.fillColor("#65a30d").polygon([pageW - 20, pageH - 20], [pageW - 20, pageH - 250], [pageW - 250, pageH - 20]).fill();
   
   // 5. Logo
-  let logoPath = path.join(process.cwd(), "uploads", "Logo3.png");
+  let logoPath = path.join(process.cwd(), "templates", "Logo3.png");
   if (!fs.existsSync(logoPath)) {
     logoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo3.png";
   }
