@@ -786,9 +786,28 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
   doc.rect(m, m, pageW - 2 * m, pageH - 2 * m).lineWidth(2).strokeColor("#e2e8f0").stroke();
   doc.rect(m + 6, m + 6, pageW - 2 * m - 12, pageH - 2 * m - 12).lineWidth(1).strokeColor("#cbd5e1").stroke();
   
-  // Watermark fallback
-  doc.font("Times-Italic").fontSize(400).fillColor("#cbd5e1").fillOpacity(0.08).text("t", (pageW - 400) / 2 + 100, (pageH - 400) / 2, { align: 'center', width: 400 });
-  doc.fillOpacity(1); // reset
+  // Watermark image
+  let watermarkPath = path.join(process.cwd(), "uploads", "Logo3.png");
+  if (!fs.existsSync(watermarkPath)) {
+    watermarkPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo3.png";
+  }
+  if (fs.existsSync(watermarkPath)) {
+    try {
+      doc.save();
+      doc.opacity(0.08);
+      const wmSize = 350;
+      const wmX = (pageW - wmSize) / 2;
+      const wmY = (pageH - wmSize) / 2;
+      doc.image(watermarkPath, wmX, wmY, { width: wmSize, height: wmSize });
+      doc.restore();
+    } catch (e) {
+      console.error("Failed to load watermark image", e);
+    }
+  } else {
+    // Watermark fallback
+    doc.font("Times-Italic").fontSize(400).fillColor("#cbd5e1").fillOpacity(0.08).text("t", (pageW - 400) / 2 + 100, (pageH - 400) / 2, { align: 'center', width: 400 });
+    doc.fillOpacity(1); // reset
+  }
 
   // 3. Top-Left Dark Blue Corner Frame
   const blueColor = "#111827"; 
@@ -800,11 +819,28 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
   doc.fillColor("#84cc16").polygon([pageW - 20, pageH - 20], [pageW - 20, pageH - 350], [pageW - 350, pageH - 20]).fill();
   doc.fillColor("#65a30d").polygon([pageW - 20, pageH - 20], [pageW - 20, pageH - 250], [pageW - 250, pageH - 20]).fill();
   
-  // 5. Logo fallback
-  doc.circle(110, 100, 30).fillColor("#84cc16").fill();
-  doc.font("Times-Italic").fontSize(45).fillColor("#ffffff").text("t", 80, 75, { width: 60, align: 'center' });
-  doc.font("Helvetica-Bold").fontSize(34).fillColor("#111827").text("LURNSTACK", 160, 75);
-  doc.font("Helvetica-Bold").fontSize(11).fillColor("#64748b").text("TAMIL INFO TECHNOLOGY", 160, 112, { characterSpacing: 1 });
+  // 5. Logo
+  let logoPath = path.join(process.cwd(), "uploads", "Logo3.png");
+  if (!fs.existsSync(logoPath)) {
+    logoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo3.png";
+  }
+  let logoDrawn = false;
+  if (fs.existsSync(logoPath)) {
+    try { 
+      doc.image(logoPath, 80, 70, { width: 140 }); 
+      logoDrawn = true; 
+    } catch (e) {
+      console.error("Failed to load logo image", e);
+    }
+  } 
+  
+  if (!logoDrawn) {
+    // Draw "t" green logo circle fallback
+    doc.circle(110, 100, 30).fillColor("#84cc16").fill();
+    doc.font("Times-Italic").fontSize(45).fillColor("#ffffff").text("t", 80, 75, { width: 60, align: 'center' });
+    doc.font("Helvetica-Bold").fontSize(34).fillColor("#111827").text("LURNSTACK", 160, 75);
+    doc.font("Helvetica-Bold").fontSize(11).fillColor("#64748b").text("TAMIL INFO TECHNOLOGY", 160, 112, { characterSpacing: 1 });
+  }
 
   const bottomY = 480; 
 
