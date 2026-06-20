@@ -1354,7 +1354,7 @@ const joinSession = async (req, res) => {
     if (!occurrence) {
       occurrence = await prisma.sessionOccurrence.create({
         data: {
-          courseId: session.courseId || "default",
+          courseId: session.courseId || session.id || "default",
           sessionId: session.id,
           trainerId: session.trainerId,
           occurrenceDate: targetDate,
@@ -1387,7 +1387,7 @@ const joinSession = async (req, res) => {
     } else {
       studentAttendance = await prisma.studentAttendance.create({
         data: {
-          courseId: session.courseId || "default",
+          courseId: session.courseId || session.id || "default",
           sessionId: session.id,
           occurrenceId: occurrence.id,
           occurrenceDate: targetDate,

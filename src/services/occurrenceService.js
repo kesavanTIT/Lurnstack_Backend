@@ -95,7 +95,7 @@ const generateOccurrences = async (session, daysToGenerate = 30) => {
 
       if (startsAt && endsAt) {
         occurrencesData.push({
-          courseId: session.courseId || "default",
+          courseId: session.courseId || session.id || "default",
           sessionId: session.id,
           trainerId: session.trainerId,
           occurrenceDate: new Date(`${dateStr}T00:00:00Z`), // start of day UTC

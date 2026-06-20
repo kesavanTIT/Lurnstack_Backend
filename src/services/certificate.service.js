@@ -38,8 +38,17 @@ function getBlobServiceClient() {
 function getSharedKeyCredential() {
   if (_sharedKeyCred) return _sharedKeyCred;
 
-  const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-  const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
+  let accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+  let accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
+
+  if ((!accountName || !accountKey) && process.env.AZURE_STORAGE_CONNECTION_STRING) {
+    const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING;
+    const nameMatch = connStr.match(/AccountName=([^;]+)/);
+    const keyMatch = connStr.match(/AccountKey=([^;]+)/);
+    if (nameMatch) accountName = nameMatch[1];
+    if (keyMatch) accountKey = keyMatch[1];
+  }
+
   if (!accountName || !accountKey) {
     throw new Error(
       "AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY must be set for signed URLs"
@@ -90,9 +99,33 @@ const isCourseCompleted = async (courseId) => {
 // calculateAttendance — { attended, total, pct }
 // ─────────────────────────────────────────────────────────────────
 const calculateAttendance = async (userId, courseId) => {
+  // Support lookup by courseId or sessionId
+  const session = await prisma.liveSession.findFirst({
+    where: {
+      OR: [
+        { courseId: courseId },
+        { id: courseId }
+      ]
+    }
+  });
+
+  if (!session) {
+    return { attended: 0, total: 0, pct: 0 };
+  }
+
+  const resolvedCourseId = session.courseId || session.id;
+  const isFallbackId = resolvedCourseId === session.id;
+
   // Total completed occurrences = total possible classes
   const total = await prisma.sessionOccurrence.count({
-    where: { courseId, status: COMPLETED_OCCURRENCE_STATUS },
+    where: {
+      status: COMPLETED_OCCURRENCE_STATUS,
+      OR: [
+        { courseId: resolvedCourseId },
+        isFallbackId ? { sessionId: session.id } : null,
+        isFallbackId ? { courseId: "default", sessionId: session.id } : null
+      ].filter(Boolean)
+    },
   });
 
   if (total === 0) {
@@ -102,9 +135,13 @@ const calculateAttendance = async (userId, courseId) => {
   // Count how many of those the student attended (present / late / joined)
   const attended = await prisma.studentAttendance.count({
     where: {
-      courseId,
       studentId: userId,
       status: { in: PRESENT_STATUSES },
+      OR: [
+        { courseId: resolvedCourseId },
+        isFallbackId ? { sessionId: session.id } : null,
+        isFallbackId ? { courseId: "default", sessionId: session.id } : null
+      ].filter(Boolean)
     },
   });
 
@@ -141,19 +178,31 @@ const checkEligibility = async (userId, courseId) => {
   }
 
   const resolvedCourseId = session.courseId || session.id;
+  const isFallbackId = resolvedCourseId === session.id;
 
   // Count how many occurrences the student attended (present / late / joined)
   const attended = await prisma.studentAttendance.count({
     where: {
-      courseId: resolvedCourseId,
       studentId: userId,
       status: { in: PRESENT_STATUSES },
+      OR: [
+        { courseId: resolvedCourseId },
+        isFallbackId ? { sessionId: session.id } : null,
+        isFallbackId ? { courseId: "default", sessionId: session.id } : null
+      ].filter(Boolean)
     },
   });
 
   // Calculate total occurrences for the course to determine pct and total count
   const total = await prisma.sessionOccurrence.count({
-    where: { courseId: resolvedCourseId, status: COMPLETED_OCCURRENCE_STATUS },
+    where: {
+      status: COMPLETED_OCCURRENCE_STATUS,
+      OR: [
+        { courseId: resolvedCourseId },
+        isFallbackId ? { sessionId: session.id } : null,
+        isFallbackId ? { courseId: "default", sessionId: session.id } : null
+      ].filter(Boolean)
+    },
   });
   const pct = total > 0 ? parseFloat(((attended / total) * 100).toFixed(2)) : 0;
 
@@ -286,8 +335,27 @@ const checkEligibility = async (userId, courseId) => {
 // getCourseDates — fetch start, end dates and calculate duration
 // ─────────────────────────────────────────────────────────────────
 const getCourseDates = async (courseId) => {
+  const session = await prisma.liveSession.findFirst({
+    where: {
+      OR: [
+        { courseId: courseId },
+        { id: courseId }
+      ]
+    }
+  });
+
+  const resolvedCourseId = session ? (session.courseId || session.id) : courseId;
+  const isFallbackId = session ? (resolvedCourseId === session.id) : false;
+
   const occurrences = await prisma.sessionOccurrence.findMany({
-    where: { courseId, status: COMPLETED_OCCURRENCE_STATUS },
+    where: {
+      status: COMPLETED_OCCURRENCE_STATUS,
+      OR: [
+        { courseId: resolvedCourseId },
+        isFallbackId ? { sessionId: session.id } : null,
+        isFallbackId ? { courseId: "default", sessionId: session.id } : null
+      ].filter(Boolean)
+    },
     orderBy: { startsAt: "asc" },
     select: { startsAt: true, endsAt: true },
   });
@@ -801,23 +869,34 @@ const getSignedDownloadUrl = (blobName, isLocal = false) => {
     return `/api/certificates/download/local/${blobName}`;
   }
 
-  const sharedKeyCred = getSharedKeyCredential();
-  const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+  try {
+    const sharedKeyCred = getSharedKeyCredential();
+    let accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
 
-  const expiresOn = new Date();
-  expiresOn.setMinutes(expiresOn.getMinutes() + SIGNED_URL_EXPIRY_MINUTES);
+    if (!accountName && process.env.AZURE_STORAGE_CONNECTION_STRING) {
+      const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING;
+      const nameMatch = connStr.match(/AccountName=([^;]+)/);
+      if (nameMatch) accountName = nameMatch[1];
+    }
 
-  const sasToken = generateBlobSASQueryParameters(
-    {
-      containerName: AZURE_CONTAINER_NAME,
-      blobName,
-      permissions: BlobSASPermissions.parse("r"), // read-only
-      expiresOn,
-    },
-    sharedKeyCred
-  ).toString();
+    const expiresOn = new Date();
+    expiresOn.setMinutes(expiresOn.getMinutes() + SIGNED_URL_EXPIRY_MINUTES);
 
-  return `https://${accountName}.blob.core.windows.net/${AZURE_CONTAINER_NAME}/${blobName}?${sasToken}`;
+    const sasToken = generateBlobSASQueryParameters(
+      {
+        containerName: AZURE_CONTAINER_NAME,
+        blobName,
+        permissions: BlobSASPermissions.parse("r"), // read-only
+        expiresOn,
+      },
+      sharedKeyCred
+    ).toString();
+
+    return `https://${accountName}.blob.core.windows.net/${AZURE_CONTAINER_NAME}/${blobName}?${sasToken}`;
+  } catch (err) {
+    console.warn("SAS URL generation failed, falling back to local download URL:", err.message);
+    return `/api/certificates/download/local/${blobName}`;
+  }
 };
 
 // ─────────────────────────────────────────────────────────────────

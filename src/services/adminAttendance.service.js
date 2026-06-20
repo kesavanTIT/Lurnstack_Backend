@@ -374,7 +374,7 @@ const syncManualAttendanceStatus = async ({ attendanceId, status }) => {
         } else {
           studentAttendance = await tx.studentAttendance.create({
             data: {
-              courseId: occurrence.courseId || attendance.session?.courseId || "default",
+              courseId: occurrence.courseId || attendance.session?.courseId || attendance.sessionId || "default",
               sessionId: attendance.sessionId,
               occurrenceId: occurrence.id,
               occurrenceDate: occurrence.occurrenceDate,
