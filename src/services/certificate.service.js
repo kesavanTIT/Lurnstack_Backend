@@ -508,7 +508,10 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   doc.rect(m + 6, m + 6, pageW - 2 * m - 12, pageH - 2 * m - 12).lineWidth(1).strokeColor("#cbd5e1").stroke();
   
   // Watermark image
-  const watermarkPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
+  let watermarkPath = path.join(process.cwd(), "uploads", "Logo3.png");
+  if (!fs.existsSync(watermarkPath)) {
+    watermarkPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo3.png";
+  }
   if (fs.existsSync(watermarkPath)) {
     try {
       doc.save();
@@ -549,7 +552,10 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   ).fill();
   
   // 5. Logo
-  const logoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
+  let logoPath = path.join(process.cwd(), "uploads", "Logo3.png");
+  if (!fs.existsSync(logoPath)) {
+    logoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo3.png";
+  }
   let logoDrawn = false;
   if (fs.existsSync(logoPath)) {
     try { 
