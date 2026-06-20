@@ -168,6 +168,31 @@ const getAdminTrainerEarnings = async (req, res) => {
         });
       }
 
+      const trainerIds = Array.from(new Set(Object.values(groups).map(g => g.trainerId).filter(Boolean)));
+      const allTrainerEarnings = await prisma.trainerEarning.findMany({
+        where: { trainerId: { in: trainerIds } }
+      });
+      const allTrainerPayouts = await prisma.trainerPayoutRequest.findMany({
+        where: { trainerId: { in: trainerIds } }
+      });
+      const trainerStatsMap = {};
+      for (const tId of trainerIds) {
+        const tEarnings = allTrainerEarnings.filter(e => e.trainerId === tId);
+        const tPayouts = allTrainerPayouts.filter(p => p.trainerId === tId);
+        const excludedStatuses = ["rejected", "adjusted", "pending_session_completion", "failed", "cancelled", "on_hold"];
+        const totalEarnedPaise = tEarnings
+          .filter(e => !excludedStatuses.includes(e.status))
+          .reduce((sum, e) => sum + (e.finalPayablePaise || 0), 0);
+        const totalPaidPaise = tPayouts
+          .filter(p => p.status === "paid")
+          .reduce((sum, p) => sum + (p.requestedAmountPaise || 0), 0);
+        trainerStatsMap[tId] = {
+          totalEarnedPaise,
+          paidAmountPaise: totalPaidPaise,
+          balancePayablePaise: Math.max(totalEarnedPaise - totalPaidPaise, 0)
+        };
+      }
+
       // Collect all unique payoutRequestIds across all groups
       const allPayoutRequestIds = new Set();
       for (const group of Object.values(groups)) {
@@ -259,6 +284,14 @@ const getAdminTrainerEarnings = async (req, res) => {
         // Sort history descending (latest first)
         historyList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
         group.history = historyList;
+
+        const stats = trainerStatsMap[group.trainerId] || {
+          totalEarnedPaise: group.finalPayablePaise,
+          paidAmountPaise: 0,
+          balancePayablePaise: group.finalPayablePaise
+        };
+        group.paidAmountPaise = stats.paidAmountPaise;
+        group.balancePayablePaise = stats.balancePayablePaise;
 
         // Cleanup temporary properties
         const { payoutRequestIds, rawEarnings, ...rest } = group;
