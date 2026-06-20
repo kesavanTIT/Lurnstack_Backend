@@ -919,11 +919,12 @@ const getEligibleCourses = async (req, res) => {
     
     // Add records from attendance
     for (const a of attendances) {
-      const cid = a.session?.courseId || a.sessionId || a.courseId;
+      if (!a.session) continue;
+      const cid = a.session.courseId || a.sessionId || a.courseId;
       if (cid && cid !== "default" && !courseMap.has(cid)) {
         courseMap.set(cid, {
           courseId: cid,
-          title: a.session?.courseTitle || a.session?.title || "Unknown Course",
+          title: a.session.courseTitle || a.session.title || "Unknown Course",
           trainerName: a.trainer?.fullName || "Unknown Trainer",
           completedAt: a.occurrenceDate ? a.occurrenceDate.toISOString() : new Date().toISOString()
         });
@@ -932,12 +933,13 @@ const getEligibleCourses = async (req, res) => {
 
     // Add records from bookings
     for (const b of bookings) {
-      const cid = b.session?.courseId || b.session?.id || b.sessionId || b.courseId;
+      if (!b.session) continue;
+      const cid = b.session.courseId || b.session.id || b.sessionId || b.courseId;
       if (cid && cid !== "default" && !courseMap.has(cid)) {
         courseMap.set(cid, {
           courseId: cid,
-          title: b.session?.courseTitle || b.session?.title || "Unknown Course",
-          trainerName: b.session?.trainer?.fullName || "Unknown Trainer",
+          title: b.session.courseTitle || b.session.title || "Unknown Course",
+          trainerName: b.session.trainer?.fullName || "Unknown Trainer",
           completedAt: b.createdAt ? b.createdAt.toISOString() : new Date().toISOString()
         });
       }
