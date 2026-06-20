@@ -508,9 +508,9 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   doc.rect(m + 6, m + 6, pageW - 2 * m - 12, pageH - 2 * m - 12).lineWidth(1).strokeColor("#cbd5e1").stroke();
   
   // Watermark image
-  let watermarkPath = path.join(process.cwd(), "templates", "Logo3.png");
+  let watermarkPath = path.join(process.cwd(), "templates", "Logo4.png");
   if (!fs.existsSync(watermarkPath)) {
-    watermarkPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo3.png";
+    watermarkPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
   }
   if (fs.existsSync(watermarkPath)) {
     try {
@@ -552,9 +552,9 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   ).fill();
   
   // 5. Logo
-  let logoPath = path.join(process.cwd(), "templates", "Logo3.png");
+  let logoPath = path.join(process.cwd(), "templates", "Logo4.png");
   if (!fs.existsSync(logoPath)) {
-    logoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo3.png";
+    logoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
   }
   let logoDrawn = false;
   if (fs.existsSync(logoPath)) {
@@ -650,10 +650,25 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
       const qrY = bottomY - 60;
       doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize });
       
-      // Add green "t" inside QR
-      doc.rect(qrX + (qrSize/2) - 8, qrY + (qrSize/2) - 8, 16, 16).fillColor("#ffffff").fill();
-      doc.circle(qrX + (qrSize/2), qrY + (qrSize/2), 6).fillColor("#84cc16").fill();
-      doc.font("Times-Italic").fontSize(9).fillColor("#ffffff").text("t", qrX + (qrSize/2) - 5, qrY + (qrSize/2) - 4, {width: 10, align: "center"});
+      // Add Logo4.png inside QR center
+      doc.rect(qrX + (qrSize/2) - 9, qrY + (qrSize/2) - 9, 18, 18).fillColor("#ffffff").fill();
+      let qrLogoPath = path.join(process.cwd(), "templates", "Logo4.png");
+      if (!fs.existsSync(qrLogoPath)) {
+        qrLogoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
+      }
+      let qrLogoDrawn = false;
+      if (fs.existsSync(qrLogoPath)) {
+        try {
+          doc.image(qrLogoPath, qrX + (qrSize/2) - 8, qrY + (qrSize/2) - 4, { width: 16 });
+          qrLogoDrawn = true;
+        } catch (e) {
+          console.error("Failed to load QR center logo", e);
+        }
+      }
+      if (!qrLogoDrawn) {
+        doc.circle(qrX + (qrSize/2), qrY + (qrSize/2), 6).fillColor("#84cc16").fill();
+        doc.font("Times-Italic").fontSize(9).fillColor("#ffffff").text("t", qrX + (qrSize/2) - 5, qrY + (qrSize/2) - 4, {width: 10, align: "center"});
+      }
     } catch (err) {
       console.error("Failed to generate QR code", err);
     }
@@ -787,9 +802,9 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
   doc.rect(m + 6, m + 6, pageW - 2 * m - 12, pageH - 2 * m - 12).lineWidth(1).strokeColor("#cbd5e1").stroke();
   
   // Watermark image
-  let watermarkPath = path.join(process.cwd(), "templates", "Logo3.png");
+  let watermarkPath = path.join(process.cwd(), "templates", "Logo4.png");
   if (!fs.existsSync(watermarkPath)) {
-    watermarkPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo3.png";
+    watermarkPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
   }
   if (fs.existsSync(watermarkPath)) {
     try {
@@ -820,9 +835,9 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
   doc.fillColor("#65a30d").polygon([pageW - 20, pageH - 20], [pageW - 20, pageH - 250], [pageW - 250, pageH - 20]).fill();
   
   // 5. Logo
-  let logoPath = path.join(process.cwd(), "templates", "Logo3.png");
+  let logoPath = path.join(process.cwd(), "templates", "Logo4.png");
   if (!fs.existsSync(logoPath)) {
-    logoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo3.png";
+    logoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
   }
   let logoDrawn = false;
   if (fs.existsSync(logoPath)) {
@@ -882,9 +897,24 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
     const qrX = (pageW / 2) - (qrSize / 2);
     const qrY = bottomY - 60;
     doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize });
-    doc.rect(qrX + (qrSize/2) - 8, qrY + (qrSize/2) - 8, 16, 16).fillColor("#ffffff").fill();
-    doc.circle(qrX + (qrSize/2), qrY + (qrSize/2), 6).fillColor("#84cc16").fill();
-    doc.font("Times-Italic").fontSize(9).fillColor("#ffffff").text("t", qrX + (qrSize/2) - 5, qrY + (qrSize/2) - 4, {width: 10, align: "center"});
+    doc.rect(qrX + (qrSize/2) - 9, qrY + (qrSize/2) - 9, 18, 18).fillColor("#ffffff").fill();
+    let qrLogoPath = path.join(process.cwd(), "templates", "Logo4.png");
+    if (!fs.existsSync(qrLogoPath)) {
+      qrLogoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
+    }
+    let qrLogoDrawn = false;
+    if (fs.existsSync(qrLogoPath)) {
+      try {
+        doc.image(qrLogoPath, qrX + (qrSize/2) - 8, qrY + (qrSize/2) - 4, { width: 16 });
+        qrLogoDrawn = true;
+      } catch (e) {
+        console.error("Failed to load QR center logo", e);
+      }
+    }
+    if (!qrLogoDrawn) {
+      doc.circle(qrX + (qrSize/2), qrY + (qrSize/2), 6).fillColor("#84cc16").fill();
+      doc.font("Times-Italic").fontSize(9).fillColor("#ffffff").text("t", qrX + (qrSize/2) - 5, qrY + (qrSize/2) - 4, {width: 10, align: "center"});
+    }
   } catch (err) {}
 
   // Signature
