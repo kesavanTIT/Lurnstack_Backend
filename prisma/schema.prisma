@@ -234,8 +234,8 @@ model Booking {
   id              String           @id @default(uuid())
   studentId       Int
   student         User             @relation(name: "UserBookingRelation", fields: [studentId], references: [id], onDelete: Cascade)
-  sessionId       String
-  session         LiveSession      @relation(name: "SessionBookingRelation", fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId       String?
+  session         LiveSession?     @relation(name: "SessionBookingRelation", fields: [sessionId], references: [id], onDelete: SetNull)
   sessionDate     DateTime
   amountPaise     Int
   currency        String           @default("INR")
@@ -271,8 +271,8 @@ model Payment {
   booking           Booking          @relation(name: "BookingPaymentRelation", fields: [bookingId], references: [id], onDelete: Cascade)
   studentId         Int
   student           User             @relation(name: "UserPaymentRelation", fields: [studentId], references: [id], onDelete: Cascade)
-  sessionId         String
-  session           LiveSession      @relation(name: "SessionPaymentRelation", fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId         String?
+  session           LiveSession?     @relation(name: "SessionPaymentRelation", fields: [sessionId], references: [id], onDelete: SetNull)
   razorpayOrderId   String           @unique
   razorpayPaymentId String?          @unique
   razorpaySignature String?
@@ -299,8 +299,8 @@ model TrainerEarning {
   trainer                 User                  @relation(name: "TrainerEarningRelation", fields: [trainerId], references: [id], onDelete: Cascade)
   trainerName             String
   trainerEmail            String
-  sessionId               String
-  session                 LiveSession           @relation(name: "SessionEarningRelation", fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId               String?
+  session                 LiveSession?          @relation(name: "SessionEarningRelation", fields: [sessionId], references: [id], onDelete: SetNull)
   sessionTitle            String
   paidStudentCount        Int
   sessionPricePaise       Int
@@ -350,8 +350,8 @@ model TrainerPayout {
   id                 String      @id @default(uuid())
   trainerId          Int
   trainer            User        @relation(name: "TrainerPayoutRelation", fields: [trainerId], references: [id], onDelete: Cascade)
-  sessionId          String
-  session            LiveSession @relation(name: "SessionPayoutRelation", fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId          String?
+  session            LiveSession? @relation(name: "SessionPayoutRelation", fields: [sessionId], references: [id], onDelete: SetNull)
   sessionDate        DateTime
   amountPaise        Int
   status             String      @default("pending")
