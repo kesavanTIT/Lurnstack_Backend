@@ -675,11 +675,11 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   }
 
   // 7. Signature (Bottom Right)
-  const signatureImagePath = path.join(process.cwd(), "uploads", "signature.png");
+  const signatureImagePath = path.join(process.cwd(), "src", "assets", "image", "signature.png");
   
   if (fs.existsSync(signatureImagePath)) {
     try {
-      doc.image(signatureImagePath, pageW - 230, bottomY - 65, { width: 120 });
+      doc.image(signatureImagePath, pageW - 238, bottomY - 48, { width: 135 });
     } catch (e) {
       console.error("Failed to load signature image", e);
     }
@@ -918,7 +918,16 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
   } catch (err) {}
 
   // Signature
-  doc.font("Times-Italic").fontSize(44).fillColor("#111827").text("Priya. P", pageW - 260, bottomY - 50, { width: 180, align: "center" });
+  const signatureImagePath = path.join(process.cwd(), "src", "assets", "image", "signature.png");
+  if (fs.existsSync(signatureImagePath)) {
+    try {
+      doc.image(signatureImagePath, pageW - 238, bottomY - 48, { width: 135 });
+    } catch (e) {
+      console.error("Failed to load signature image", e);
+    }
+  } else {
+    doc.font("Times-Italic").fontSize(44).fillColor("#111827").text("Priya. P", pageW - 260, bottomY - 50, { width: 180, align: "center" });
+  }
   doc.moveTo(pageW - 260, bottomY).lineTo(pageW - 80, bottomY).lineWidth(1).strokeColor("#94a3b8").stroke();
   doc.font("Helvetica-Bold").fontSize(10).fillColor("#64748b").text("AUTHORIZED SIGNATURE", pageW - 260, bottomY + 10, { width: 180, align: "center", characterSpacing: 1.5 });
 

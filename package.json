@@ -28,6 +28,7 @@
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.8",
     "pdfkit": "^0.19.1",
+    "pngjs": "^7.0.0",
     "prisma": "^5.14.0",
     "qrcode": "^1.5.4",
     "razorpay": "^2.9.6"
