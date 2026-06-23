@@ -216,6 +216,48 @@ const validateRecurrenceEndDate = (recurrenceEndDate) => {
   return { isValid: true, parsed: dateStr };
 };
 
+// Helper: query completed occurrences and compute duration & count in memory
+const populateSessionProgress = async (sessions) => {
+  if (!sessions) return sessions;
+  const isArray = Array.isArray(sessions);
+  const sessionList = isArray ? sessions : [sessions];
+  if (sessionList.length === 0) return sessions;
+
+  const sessionIds = sessionList.map(s => s.id);
+
+  const completedOccurrences = await prisma.sessionOccurrence.findMany({
+    where: {
+      sessionId: { in: sessionIds },
+      status: "completed"
+    },
+    select: {
+      sessionId: true,
+      startsAt: true,
+      endsAt: true
+    }
+  });
+
+  const progressMap = {};
+  for (const occ of completedOccurrences) {
+    const sId = occ.sessionId;
+    if (!progressMap[sId]) {
+      progressMap[sId] = { completedHours: 0, completedDays: 0 };
+    }
+    const durationMs = occ.endsAt.getTime() - occ.startsAt.getTime();
+    const durationHours = Math.max(0, durationMs / (1000 * 60 * 60));
+    progressMap[sId].completedHours += durationHours;
+    progressMap[sId].completedDays += 1;
+  }
+
+  for (const s of sessionList) {
+    const progress = progressMap[s.id] || { completedHours: 0, completedDays: 0 };
+    s.completedHours = Math.round(progress.completedHours * 100) / 100;
+    s.completedDays = progress.completedDays;
+  }
+
+  return sessions;
+};
+
 // Helper: build response shape for session
 const formatSession = (session, categoryMap = new Map(), req = null) => {
   const now = new Date();
@@ -284,6 +326,10 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
     trainerInstructions: session.trainerInstructions,
     recurringDays: serializeRecurringDays(session.recurringDays),
     recurrenceEndDate: session.recurrenceEndDate || null,
+    totalHours: session.totalHours !== undefined && session.totalHours !== null ? session.totalHours : null,
+    totalDays: session.totalDays !== undefined && session.totalDays !== null ? session.totalDays : null,
+    completedHours: session.completedHours !== undefined && session.completedHours !== null ? session.completedHours : 0,
+    completedDays: session.completedDays !== undefined && session.completedDays !== null ? session.completedDays : 0,
   };
 };
 
@@ -528,6 +574,8 @@ const createSession = async (req, res) => {
         trainerInstructions: req.body.trainerInstructions || null,
         recurringDays: parsedRecurringDays,
         recurrenceEndDate: dateValidation.parsed,
+        totalHours: req.body.totalHours !== undefined && req.body.totalHours !== "" && req.body.totalHours !== null ? parseFloat(req.body.totalHours) : null,
+        totalDays: req.body.totalDays !== undefined && req.body.totalDays !== "" && req.body.totalDays !== null ? parseInt(req.body.totalDays, 10) : null,
       },
       include: { trainer: true },
     });
@@ -537,6 +585,8 @@ const createSession = async (req, res) => {
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    await populateSessionProgress(session);
 
     return res.status(201).json({
       success: true,
@@ -568,6 +618,8 @@ const getTrainerSessions = async (req, res) => {
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    await populateSessionProgress(sessions);
 
     return res.status(200).json({
       success: true,
@@ -607,6 +659,8 @@ const getSingleTrainerSession = async (req, res) => {
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    await populateSessionProgress(session);
 
     return res.status(200).json({
       success: true,
@@ -691,6 +745,12 @@ const updateTrainerSession = async (req, res) => {
     if (meetingLink !== undefined) updateData.meetingLink = meetingLink;
     if (isRecurring !== undefined) updateData.isRecurring = isRecurring;
     if (recurrenceType !== undefined) updateData.recurrenceType = recurrenceType;
+    if (req.body.totalHours !== undefined) {
+      updateData.totalHours = req.body.totalHours !== "" && req.body.totalHours !== null ? parseFloat(req.body.totalHours) : null;
+    }
+    if (req.body.totalDays !== undefined) {
+      updateData.totalDays = req.body.totalDays !== "" && req.body.totalDays !== null ? parseInt(req.body.totalDays, 10) : null;
+    }
 
     if (updateData.isRecurring === false) {
       updateData.recurrenceType = null;
@@ -851,6 +911,8 @@ const updateTrainerSession = async (req, res) => {
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
 
+    await populateSessionProgress(updated);
+
     return res.status(200).json({
       success: true,
       message: "Live class updated successfully",
@@ -926,6 +988,8 @@ const pauseSession = async (req, res) => {
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
 
+    await populateSessionProgress(updated);
+
     return res.status(200).json({
       success: true,
       message: "Session paused successfully.",
@@ -958,6 +1022,8 @@ const resumeSession = async (req, res) => {
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    await populateSessionProgress(updated);
 
     return res.status(200).json({
       success: true,
@@ -1002,6 +1068,8 @@ const endSession = async (req, res) => {
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    await populateSessionProgress(updated);
 
     return res.status(200).json({
       success: true,

@@ -182,6 +182,48 @@ const serializeRecurringDays = (recurringDays) => {
   return [];
 };
 
+// Helper: query completed occurrences and compute duration & count in memory
+const populateSessionProgress = async (sessions) => {
+  if (!sessions) return sessions;
+  const isArray = Array.isArray(sessions);
+  const sessionList = isArray ? sessions : [sessions];
+  if (sessionList.length === 0) return sessions;
+
+  const sessionIds = sessionList.map(s => s.id);
+
+  const completedOccurrences = await prisma.sessionOccurrence.findMany({
+    where: {
+      sessionId: { in: sessionIds },
+      status: "completed"
+    },
+    select: {
+      sessionId: true,
+      startsAt: true,
+      endsAt: true
+    }
+  });
+
+  const progressMap = {};
+  for (const occ of completedOccurrences) {
+    const sId = occ.sessionId;
+    if (!progressMap[sId]) {
+      progressMap[sId] = { completedHours: 0, completedDays: 0 };
+    }
+    const durationMs = occ.endsAt.getTime() - occ.startsAt.getTime();
+    const durationHours = Math.max(0, durationMs / (1000 * 60 * 60));
+    progressMap[sId].completedHours += durationHours;
+    progressMap[sId].completedDays += 1;
+  }
+
+  for (const s of sessionList) {
+    const progress = progressMap[s.id] || { completedHours: 0, completedDays: 0 };
+    s.completedHours = Math.round(progress.completedHours * 100) / 100;
+    s.completedDays = progress.completedDays;
+  }
+
+  return sessions;
+};
+
 // Helper: build response shape for student session
 const formatSession = (session, categoryMap = new Map(), studentId = null, req = null, activeCourseIds = new Set()) => {
   const now = new Date();
@@ -346,6 +388,10 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
     lastJoinedAt,
     recordingUrl: session.recordingUrl || null,
     materials: session.materials || null,
+    totalHours: session.totalHours !== undefined && session.totalHours !== null ? session.totalHours : null,
+    totalDays: session.totalDays !== undefined && session.totalDays !== null ? session.totalDays : null,
+    completedHours: session.completedHours !== undefined && session.completedHours !== null ? session.completedHours : 0,
+    completedDays: session.completedDays !== undefined && session.completedDays !== null ? session.completedDays : 0,
     liveClass
   };
 };
@@ -421,6 +467,8 @@ const getAllLiveClasses = async (req, res) => {
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    await populateSessionProgress(sessions);
 
     const todayStr = getKolkataDateString(now);
 
@@ -566,6 +614,10 @@ const getAllLiveClasses = async (req, res) => {
         lastJoinedAt,
         recordingUrl: session.recordingUrl || null,
         materials: session.materials || null,
+        totalHours: session.totalHours !== undefined && session.totalHours !== null ? session.totalHours : null,
+        totalDays: session.totalDays !== undefined && session.totalDays !== null ? session.totalDays : null,
+        completedHours: session.completedHours !== undefined && session.completedHours !== null ? session.completedHours : 0,
+        completedDays: session.completedDays !== undefined && session.completedDays !== null ? session.completedDays : 0,
         liveClass
       };
     });
@@ -654,6 +706,8 @@ const getLiveClassById = async (req, res) => {
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    await populateSessionProgress(session);
 
     const categoryRecord = session.courseId ? categoryMap.get(session.courseId) : null;
     let courseTitle = null;
@@ -799,6 +853,10 @@ const getLiveClassById = async (req, res) => {
         lastJoinedAt,
         recordingUrl: session.recordingUrl || null,
         materials: session.materials || null,
+        totalHours: session.totalHours !== undefined && session.totalHours !== null ? session.totalHours : null,
+        totalDays: session.totalDays !== undefined && session.totalDays !== null ? session.totalDays : null,
+        completedHours: session.completedHours !== undefined && session.completedHours !== null ? session.completedHours : 0,
+        completedDays: session.completedDays !== undefined && session.completedDays !== null ? session.completedDays : 0,
         liveClass
       }
     });
@@ -926,6 +984,8 @@ const getStudentSessions = async (req, res) => {
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
 
+    await populateSessionProgress(sessions);
+
     let formattedSessions = sessions.map(session => formatSession(session, categoryMap, studentId, req, activeCourseIds));
 
     if (filter) {
@@ -978,6 +1038,8 @@ const getStudentSessionDetails = async (req, res) => {
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    await populateSessionProgress(session);
 
     res.status(200).json({
       success: true,
@@ -1092,6 +1154,9 @@ const getMySessionCards = async (req, res) => {
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    const cardSessions = cards.map(c => c.session).filter(Boolean);
+    await populateSessionProgress(cardSessions);
 
     const formattedCards = cards.map(card => {
       const session = card.session;
@@ -1771,6 +1836,9 @@ const getMyJoinedSessions = async (req, res) => {
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    const attSessions = attendances.map(a => a.session).filter(Boolean);
+    await populateSessionProgress(attSessions);
 
     const formattedBookings = attendances.map(att => {
       const session = att.session;

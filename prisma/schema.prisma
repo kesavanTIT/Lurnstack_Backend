@@ -151,6 +151,8 @@ model LiveSession {
   trainerInstructions  String?
   recurringDays        Json?
   recurrenceEndDate    String?
+  totalHours           Float?
+  totalDays            Int?
 }
 
 model SessionCard {
