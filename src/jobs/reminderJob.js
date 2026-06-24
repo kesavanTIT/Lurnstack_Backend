@@ -50,6 +50,12 @@ cron.schedule("* * * * *", async () => {
           status: {
             notIn: ["cancelled", "ended"],
           },
+          // Exclude TIT classes from reminder emails/SMS
+          AND: [
+            { OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }] },
+            { OR: [{ sessionType: { not: "TIT" } }, { sessionType: null }] },
+            { OR: [{ source: { not: "admin_tit_classes" } }, { source: null }] }
+          ]
         },
       },
       include: {

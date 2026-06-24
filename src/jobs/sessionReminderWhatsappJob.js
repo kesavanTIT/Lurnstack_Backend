@@ -73,7 +73,7 @@ const runWhatsappReminderJob = async () => {
       console.log(`[WHATSAPP-JOB] Processing "${session.title}" (starts in ${minutesLeft} mins, ${isPaid ? "PAID" : "FREE"}).`);
 
       // Skip TIT classes (Requirement 3: no WhatsApp reminders for TIT classes)
-      if (session.sectionType === "TIT" || session.source === "admin_tit_classes") {
+      if (session.sectionType === "TIT" || session.source === "admin_tit_classes" || session.sessionType === "TIT") {
         console.log(`[WHATSAPP-JOB]   → Skipping TIT session "${session.title}". No WhatsApp reminder required.`);
         continue;
       }
