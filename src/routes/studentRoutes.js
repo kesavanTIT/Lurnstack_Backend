@@ -59,8 +59,14 @@ router.post("/sessions/:sessionId/heartbeat", require("../controllers/studentCon
 // @route   POST /api/student/sessions/:sessionId/leave
 router.post("/sessions/:sessionId/leave", require("../controllers/studentController").leaveSession);
 
+// @route   GET /api/student/attendance/history
+router.get("/attendance/history", require("../controllers/studentController").getStudentAttendanceHistory);
+
 // @route   GET /api/student/attendance
 router.get("/attendance", require("../controllers/studentController").getStudentAttendance);
+
+// @route   GET /api/student/courses/:courseId/attendance-eligibility
+router.get("/courses/:courseId/attendance-eligibility", require("../controllers/studentController").getCourseAttendanceEligibility);
 
 // @route   GET /api/student/courses/:courseId/attendance
 router.get("/courses/:courseId/attendance", require("../controllers/studentController").getCourseAttendance);

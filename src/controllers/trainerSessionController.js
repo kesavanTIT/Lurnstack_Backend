@@ -611,7 +611,7 @@ const createSession = async (req, res) => {
 const getTrainerSessions = async (req, res) => {
   try {
     const sessions = await prisma.liveSession.findMany({
-      where: { trainerId: parseInt(req.user.id) },
+      where: { trainerId: parseInt(req.user.id), status: { not: "deleted" } },
       include: { trainer: true },
       orderBy: { createdAt: "desc" },
     });
@@ -948,8 +948,9 @@ const deleteTrainerSession = async (req, res) => {
       });
     }
 
-    await prisma.liveSession.delete({
+    await prisma.liveSession.update({
       where: { id: sessionId },
+      data: { status: "deleted" },
     });
 
     return res.status(200).json({

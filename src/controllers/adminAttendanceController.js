@@ -460,9 +460,12 @@ const getCourseAttendanceSummaryAdmin = async (req, res) => {
 
     const occurrences = await prisma.sessionOccurrence.findMany({
       where: {
-        session: { 
-          courseId: queryCourseId,
-          OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }] 
+        OR: [
+          { courseId: queryCourseId },
+          { session: { courseId: queryCourseId } }
+        ],
+        session: {
+          OR: [{ sectionType: { not: 'TIT' } }, { sectionType: null }]
         }
       },
       include: {

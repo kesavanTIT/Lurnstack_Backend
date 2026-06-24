@@ -446,6 +446,7 @@ const getAllLiveClasses = async (req, res) => {
 
     const sessions = await prisma.liveSession.findMany({
       where: {
+        status: { not: "deleted" },
         AND: [
           { OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }] },
           { OR: [{ sessionType: { not: "TIT" } }, { sessionType: null }] },
@@ -920,6 +921,7 @@ const getStudentSessions = async (req, res) => {
 
     let whereClause = {
       AND: [
+        { status: { not: "deleted" } },
         {
           OR: [
             { status: { not: "ended" } },
@@ -2421,6 +2423,7 @@ const getStudentTITClasses = async (req, res) => {
   try {
     const classes = await prisma.liveSession.findMany({
       where: {
+        status: { not: "deleted" },
         sectionType: "TIT",
         source: "admin_tit_classes",
         publishState: "PUBLISHED",
@@ -2483,6 +2486,97 @@ const getStudentTITClasses = async (req, res) => {
   }
 };
 
+const getStudentAttendanceHistory = async (req, res) => {
+  try {
+    const studentId = parseInt(req.user.id);
+    const { page = 1, limit = 10, courseId } = req.query;
+
+    const parsedPage = Math.max(1, parseInt(page, 10));
+    const parsedLimit = Math.max(1, parseInt(limit, 10));
+    const skip = (parsedPage - 1) * parsedLimit;
+
+    const whereClause = { studentId };
+    if (courseId) {
+      whereClause.session = { courseId };
+    }
+
+    const [total, attendanceRecords] = await Promise.all([
+      prisma.attendance.count({ where: whereClause }),
+      prisma.attendance.findMany({
+        where: whereClause,
+        include: {
+          session: { select: { title: true, courseId: true, courseTitle: true } },
+          events: true
+        },
+        orderBy: { occurrenceDate: "desc" },
+        skip,
+        take: parsedLimit
+      })
+    ]);
+
+    const formattedData = attendanceRecords.map(a => {
+      let finalStatus = a.status === 'joined' ? 'present' : a.status;
+      return {
+        id: a.id,
+        sessionId: a.sessionId,
+        studentId: a.studentId,
+        occurrenceDate: a.occurrenceDate,
+        startsAt: a.occurrenceDate,
+        firstJoinedAt: a.firstJoinedAt,
+        lastJoinedAt: a.lastJoinedAt,
+        joinCount: a.joinCount,
+        totalDurationSeconds: a.totalDurationSeconds,
+        attendedMinutes: a.totalDurationSeconds ? Math.round(a.totalDurationSeconds / 60) : 0,
+        status: finalStatus,
+        sessionTitle: a.session?.title || "Unknown Session",
+        courseId: a.session?.courseId || null,
+        courseTitle: a.session?.courseTitle || null,
+        events: a.events || []
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: formattedData,
+      pagination: {
+        total,
+        page: parsedPage,
+        limit: parsedLimit,
+        totalPages: Math.ceil(total / parsedLimit)
+      }
+    });
+  } catch (error) {
+    console.error("Get Student Attendance History Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch attendance history." });
+  }
+};
+
+const getCourseAttendanceEligibility = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = parseInt(req.user.id);
+
+    const certificateService = require("../services/certificate.service");
+    const eligibility = await certificateService.checkEligibility(userId, courseId);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        attendancePercentage: eligibility.attendancePct ?? 0,
+        isEligible: eligibility.status === "ELIGIBLE",
+        eligibilityStatus: eligibility.status,
+        certificateType: eligibility.type,
+        attendedCount: eligibility.attended,
+        totalSessions: eligibility.total,
+        message: eligibility.message
+      }
+    });
+  } catch (error) {
+    console.error("Get Student Course Attendance Eligibility Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch attendance eligibility." });
+  }
+};
+
 module.exports = {
   getAllLiveClasses,
   getLiveClassById,
@@ -2504,5 +2598,7 @@ module.exports = {
   leaveSession,
   formatSession,
   getStudentTITClasses,
+  getStudentAttendanceHistory,
+  getCourseAttendanceEligibility,
 };
 

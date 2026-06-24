@@ -975,8 +975,9 @@ const deleteLiveClass = async (req, res) => {
         });
       }
 
-      await prisma.liveSession.delete({
+      await prisma.liveSession.update({
         where: { id: rawId },
+        data: { status: "deleted" },
       });
 
       return res.status(200).json({
@@ -1091,6 +1092,7 @@ const getLiveClasses = async (req, res) => {
   try {
     const classes = await prisma.liveSession.findMany({
       where: {
+        status: { not: "deleted" },
         sectionType: "TIT",
         source: "admin_tit_classes",
       },
