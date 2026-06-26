@@ -497,6 +497,16 @@ const createSession = async (req, res) => {
       });
     }
 
+    if (req.body.totalHours !== undefined && req.body.totalHours !== "" && req.body.totalHours !== null) {
+      const parsedHours = parseFloat(req.body.totalHours);
+      if (isNaN(parsedHours) || parsedHours < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "totalHours must be a positive number.",
+        });
+      }
+    }
+
     let resolvedCourseId = null;
     let resolvedCourseTitle = null;
     let resolvedCategory = null;
@@ -700,6 +710,16 @@ const updateTrainerSession = async (req, res) => {
         return res.status(400).json({
           success: false,
           message: dateValidation.message,
+        });
+      }
+    }
+
+    if (req.body.totalHours !== undefined && req.body.totalHours !== "" && req.body.totalHours !== null) {
+      const parsedHours = parseFloat(req.body.totalHours);
+      if (isNaN(parsedHours) || parsedHours < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "totalHours must be a positive number.",
         });
       }
     }
