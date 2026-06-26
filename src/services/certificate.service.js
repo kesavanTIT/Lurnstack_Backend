@@ -263,27 +263,28 @@ const checkEligibility = async (userId, courseId) => {
     }
   } else {
     // Free Session Rule:
-    // Attendance count > 2 (i.e., attended at least 3 occurrences)
+    // Attendance count >= required (i.e., min(3, total) occurrences)
     // and session must be ended by trainer.
+    const required = total > 0 ? Math.min(3, total) : 3;
     const isEnded = session.endedAt !== null || session.status === "ended" || session.publishState === "ENDED";
     
-    if (attended > 2) {
+    if (attended >= required) {
       if (isEnded) {
         return {
           status: "ELIGIBLE",
           type: "FREE",
           attended,
-          required: 3,
+          required,
           attendancePct: pct,
           total,
-          message: `Eligible for a FREE certificate (attended ${attended} sessions).`,
+          message: `Eligible for a FREE certificate (attended ${attended} of ${required} sessions).`,
         };
       } else {
         return {
           status: "INCOMPLETE",
           type: "FREE",
           attended,
-          required: 3,
+          required,
           attendancePct: pct,
           total,
           message: `Incomplete — Attended ${attended} sessions but trainer has not ended the session.`,
@@ -294,10 +295,10 @@ const checkEligibility = async (userId, courseId) => {
         status: "INELIGIBLE",
         type: "FREE",
         attended,
-        required: 3,
+        required,
         attendancePct: pct,
         total,
-        message: `Ineligible — Must attend at least 3 occurrences (attended ${attended}).`,
+        message: `Ineligible — Must attend at least ${required} occurrences (attended ${attended}).`,
       };
     }
   }
