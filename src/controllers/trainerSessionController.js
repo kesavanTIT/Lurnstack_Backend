@@ -330,6 +330,8 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
     totalDays: session.totalDays !== undefined && session.totalDays !== null ? session.totalDays : null,
     completedHours: session.completedHours !== undefined && session.completedHours !== null ? session.completedHours : 0,
     completedDays: session.completedDays !== undefined && session.completedDays !== null ? session.completedDays : 0,
+    deleteRequested: session.deleteRequested || false,
+    deleteRejectReason: session.deleteRejectReason || null,
   };
 };
 
@@ -970,7 +972,10 @@ const requestDeleteSession = async (req, res) => {
 
     const updatedSession = await prisma.liveSession.update({
       where: { id: sessionId },
-      data: { deleteRequested: true },
+      data: { 
+        deleteRequested: true,
+        deleteRejectReason: null
+      },
       include: { trainer: true },
     });
 

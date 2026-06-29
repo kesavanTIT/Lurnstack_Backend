@@ -145,6 +145,7 @@ model LiveSession {
   createdByRole        String?
   requiresAdminReview  Boolean? @default(false)
   deleteRequested      Boolean  @default(false)
+  deleteRejectReason   String?
   enableWhatsApp       Boolean  @default(true)
   whatsappTemplateName String?
   whatsappCustomTitle  String?

@@ -1135,6 +1135,7 @@ const approveDeleteRequest = async (req, res) => {
 const rejectDeleteRequest = async (req, res) => {
   try {
     const { sessionId } = req.params;
+    const { reason } = req.body;
     const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
     if (!session || !session.deleteRequested) {
       return res.status(404).json({ success: false, message: "Delete request not found or session doesn't exist." });
@@ -1142,7 +1143,10 @@ const rejectDeleteRequest = async (req, res) => {
 
     const updated = await prisma.liveSession.update({
       where: { id: sessionId },
-      data: { deleteRequested: false },
+      data: { 
+        deleteRequested: false,
+        deleteRejectReason: reason || null
+      },
     });
     return res.status(200).json({ success: true, message: "Delete request rejected. Session remains active.", data: updated });
   } catch (error) {
