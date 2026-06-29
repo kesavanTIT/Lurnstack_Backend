@@ -141,6 +141,10 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   try {
     const prisma = require("./config/db");
+    
+    // Auto-seed default categories matching student side
+    const seedDefaultCategories = require("./config/seedCategories");
+    await seedDefaultCategories();
 
     // Initialize scheduled jobs
     require("./jobs/occurrenceJob"); // Nightly occurrence generator
