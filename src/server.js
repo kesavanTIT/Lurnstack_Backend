@@ -44,7 +44,14 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow known origins or any local network IP for mobile testing
+    const isLocalNetwork = origin && (
+      origin.startsWith("http://192.168.") || 
+      origin.startsWith("http://10.") || 
+      /^http:\/\/172\.(1[6-9]|2\d|3[0-1])\./.test(origin)
+    );
+    
+    if (!origin || allowedOrigins.includes(origin) || isLocalNetwork) {
       callback(null, true);
     } else {
       callback(null, false); // Block without throwing a 500 server error

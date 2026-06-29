@@ -13,6 +13,9 @@ const {
   deleteLiveClass,
   testSessionReminderWhatsapp,
   testWhatsappReminderManual,
+  getDeleteRequests,
+  approveDeleteRequest,
+  rejectDeleteRequest,
   getLiveClasses,
   getLiveClass,
 } = require("../controllers/adminController");
@@ -107,12 +110,20 @@ router.get("/sessions", getAdminSessionsPricingRef);
 // NOTE: Specific sub-routes MUST be declared before the generic /:sessionId route
 // to prevent Express from matching "revenue" as a sessionId value.
 router.get("/sessions/pending-review", getPendingReviewSessions);
+
+// Admin Session Delete Requests
+router.get("/sessions/delete-requests", getDeleteRequests);
+router.post("/sessions/:sessionId/approve-delete", approveDeleteRequest);
+router.post("/sessions/:sessionId/reject-delete", rejectDeleteRequest);
+
 router.get("/sessions/:sessionId/revenue", getSessionRevenue);
 router.get("/sessions/:sessionId", getAdminSessionById);
+
 router.patch("/sessions/:sessionId/pricing", updateAdminSessionPricing);
 // Admin Session Review & Publish
 // PUT /api/admin/sessions/:sessionId/review -> Admin sets price + publishes session
 router.put("/sessions/:sessionId/review", reviewAndPublishSession);
+
 router.get("/payments", getAdminPayments);
 router.get("/payments/:paymentId", getAdminPaymentById);
 router.post("/payments/:paymentId/refund", refundPayment);
