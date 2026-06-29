@@ -17,6 +17,7 @@ const {
   endCourse,
   completeCourse,
   cancelCourse,
+  requestDeleteSession,
 } = require("../controllers/trainerSessionController");
 
 const {
@@ -87,6 +88,9 @@ router.post("/sessions/:sessionId/resume", resumeSession);
 
 // POST   /api/trainer/sessions/:sessionId/end    → Permanently end the session
 router.post("/sessions/:sessionId/end", endSession);
+
+// POST   /api/trainer/sessions/:sessionId/request-delete → Request to delete the session
+router.post("/sessions/:sessionId/request-delete", requestDeleteSession);
 
 // POST   /api/trainer/sessions/:sessionId/cancel-today → Cancel the session for today
 router.post("/sessions/:sessionId/cancel-today", cancelTodaySession);

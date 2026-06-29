@@ -1085,6 +1085,72 @@ const testWhatsappReminderManual = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// @desc    Get all session deletion requests
+// @route   GET /api/admin/sessions/delete-requests
+// @access  Private/Admin
+// ─────────────────────────────────────────────
+const getDeleteRequests = async (req, res) => {
+  try {
+    const requests = await prisma.liveSession.findMany({
+      where: { deleteRequested: true },
+      include: {
+        trainer: { select: { id: true, fullName: true, email: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+    return res.status(200).json({ success: true, data: requests });
+  } catch (error) {
+    console.error("getDeleteRequests error:", error);
+    return res.status(500).json({ success: false, message: "Server error fetching delete requests." });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Approve a session deletion request
+// @route   POST /api/admin/sessions/:sessionId/approve-delete
+// @access  Private/Admin
+// ─────────────────────────────────────────────
+const approveDeleteRequest = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
+    if (!session || !session.deleteRequested) {
+      return res.status(404).json({ success: false, message: "Delete request not found or session doesn't exist." });
+    }
+
+    await prisma.liveSession.delete({ where: { id: sessionId } });
+    return res.status(200).json({ success: true, message: "Session permanently deleted." });
+  } catch (error) {
+    console.error("approveDeleteRequest error:", error);
+    return res.status(500).json({ success: false, message: "Server error approving delete request." });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Reject a session deletion request
+// @route   POST /api/admin/sessions/:sessionId/reject-delete
+// @access  Private/Admin
+// ─────────────────────────────────────────────
+const rejectDeleteRequest = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
+    if (!session || !session.deleteRequested) {
+      return res.status(404).json({ success: false, message: "Delete request not found or session doesn't exist." });
+    }
+
+    const updated = await prisma.liveSession.update({
+      where: { id: sessionId },
+      data: { deleteRequested: false },
+    });
+    return res.status(200).json({ success: true, message: "Delete request rejected. Session remains active.", data: updated });
+  } catch (error) {
+    console.error("rejectDeleteRequest error:", error);
+    return res.status(500).json({ success: false, message: "Server error rejecting delete request." });
+  }
+};
+
 // @desc    Get all admin-created live classes
 // @route   GET /api/admin/get-live-classes
 // @access  Private/Admin
@@ -1233,8 +1299,9 @@ module.exports = {
   deleteLiveClass,
   testSessionReminderWhatsapp,
   testWhatsappReminderManual,
+  getDeleteRequests,
+  approveDeleteRequest,
+  rejectDeleteRequest,
   getLiveClasses,
   getLiveClass,
 };
-
-

@@ -949,6 +949,51 @@ const updateTrainerSession = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
+// @desc    Request to delete a recurring session
+// @route   POST /api/trainer/sessions/:sessionId/request-delete
+// @access  Private/Trainer
+// ─────────────────────────────────────────────
+const requestDeleteSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const session = await prisma.liveSession.findUnique({
+      where: { id: sessionId },
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: "Session not found.",
+      });
+    }
+
+    const updatedSession = await prisma.liveSession.update({
+      where: { id: sessionId },
+      data: { deleteRequested: true },
+      include: { trainer: true },
+    });
+
+    const categories = await prisma.category.findMany();
+    const categoryMap = new Map(categories.map((c) => [c.id, c]));
+    await populateSessionProgress(updatedSession);
+
+    return res.status(200).json({
+      success: true,
+      message: "Deletion request sent successfully.",
+      data: formatSession(updatedSession, categoryMap, req),
+    });
+  } catch (error) {
+    console.error("requestDeleteSession Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to request deletion.",
+      error: error.message,
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
 // @desc    Delete a trainer session by ID
 // @route   DELETE /api/trainer/sessions/:sessionId
 // @access  Private/Trainer
@@ -1313,6 +1358,7 @@ module.exports = {
   getTrainerSessions,
   getSingleTrainerSession,
   updateTrainerSession,
+  requestDeleteSession,
   deleteTrainerSession,
   pauseSession,
   resumeSession,
