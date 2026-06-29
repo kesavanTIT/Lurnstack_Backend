@@ -801,3 +801,43 @@ model TrainerAttendance {
 
   @@unique([studentId, occurrenceId])
 }
+
+enum DiscountType {
+  PERCENTAGE
+  FLAT_AMOUNT
+  CASHBACK
+}
+
+enum OfferType {
+  CATEGORY_WIDE
+  COURSE_SPECIFIC
+  FLASH_DEAL
+}
+
+model Offer {
+  id               Int          @id @default(autoincrement())
+  title            String
+  discountType     DiscountType
+  discountValue    Float
+  offerType        OfferType
+  targetCategoryId String?
+  targetCourseId   String?
+  startsAt         DateTime
+  endsAt           DateTime
+  isActive         Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+}
+
+model PromoPoster {
+  id        Int      @id @default(autoincrement())
+  title     String
+  imageUrl  String
+  linkUrl   String?
+  startsAt  DateTime
+  endsAt    DateTime
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+

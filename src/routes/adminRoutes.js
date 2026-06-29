@@ -76,6 +76,14 @@ const {
 
 const { protect, isAdmin } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
+const promoUpload = require("../middleware/promoUploadMiddleware");
+
+const {
+  getAdminOffers,
+  createAdminOffer,
+  deleteAdminOffer,
+} = require("../controllers/offerController");
+const { createAdminPromoPoster } = require("../controllers/promoController");
 
 // Public Admin Routes
 router.post("/register", registerAdmin);
@@ -170,6 +178,10 @@ router.patch("/attendance/:attendanceId", updateAttendanceRecord);
 router.post("/whatsapp/test-session-reminder", testSessionReminderWhatsapp);
 router.post("/test-whatsapp-reminder", testWhatsappReminderManual);
 
+// Admin Offer & Promo Poster Management
+router.get("/offers", getAdminOffers);
+router.post("/offers", createAdminOffer);
+router.delete("/offers/:id", deleteAdminOffer);
+router.post("/promos/posters", promoUpload.single("image"), createAdminPromoPoster);
+
 module.exports = router;
-
-

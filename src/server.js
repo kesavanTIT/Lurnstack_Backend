@@ -15,6 +15,8 @@ const aiRoutes = require("./routes/aiRoutes");
 const certificateRoutes = require("./routes/certificateRoutes");
 const trainerAttendanceRoutes = require("./routes/trainerAttendance.routes");
 const attendanceRoutes = require("./routes/attendance.routes");
+const offerRoutes = require("./routes/offerRoutes");
+const promoRoutes = require("./routes/promoRoutes");
 
 // ── Background Jobs ──────────────────────────
 require("./jobs/attendanceJob");
@@ -111,6 +113,8 @@ app.use("/api/sessions", sessionRoutes);
 app.use("/api", offerCampaignRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/certificates", certificateRoutes);
+app.use("/api/offers", offerRoutes);
+app.use("/api/promos", promoRoutes);
 
 // Attendance / Trainer Modules
 app.use("/api/v1", trainerAttendanceRoutes);
