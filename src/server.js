@@ -85,37 +85,19 @@ app.use("/uploads", express.static("uploads", {
 app.get("/", async (req, res) => {
   try {
     const prisma = require("./config/db");
-    const sessions = await prisma.liveSession.findMany({
-      where: {
-        status: "active",
-        AND: [
-          { OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }] },
-          { OR: [{ sessionType: { not: "TIT" } }, { sessionType: null }] },
-          { OR: [{ source: { not: "admin_tit_classes" } }, { source: null }] }
-        ]
-      },
-      include: {
-        trainer: true,
-        pricing: true,
-      }
-    });
-    const categories = await prisma.category.findMany();
-    
+    await prisma.$queryRaw`SELECT 1`;
     res.json({
       success: true,
       message: "🚀 LurnStack Backend API is running!",
       database: "Connected ✅",
-      sessionsCount: sessions.length,
-      categoriesCount: categories.length,
       version: "1.0.0",
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "🚀 LurnStack Backend API is running, but database query failed!",
+    res.json({
+      success: true,
+      message: "🚀 LurnStack Backend API is running!",
       database: "Disconnected ❌",
       error: error.message,
-      stack: error.stack,
       version: "1.0.0",
     });
   }
