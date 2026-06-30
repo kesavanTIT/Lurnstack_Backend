@@ -165,8 +165,8 @@ const getUpcomingSessions = async (req, res) => {
         publishState: "PUBLISHED",
         deleteRequested: false,
         status: {
-          // Exclude permanently ended or cancelled sessions
-          notIn: ["ended", "cancelled"],
+          // Exclude permanently ended, cancelled, or deleted sessions
+          notIn: ["ended", "cancelled", "deleted"],
         },
         OR: [
           { sectionType: { not: "TIT" } },
