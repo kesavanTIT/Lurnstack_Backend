@@ -83,7 +83,11 @@ const {
   createAdminOffer,
   deleteAdminOffer,
 } = require("../controllers/offerController");
-const { createAdminPromoPoster } = require("../controllers/promoController");
+const {
+  createAdminPromoPoster,
+  getAdminPromoPosters,
+  deleteAdminPromoPoster,
+} = require("../controllers/promoController");
 
 // Public Admin Routes
 router.post("/register", registerAdmin);
@@ -182,6 +186,8 @@ router.post("/test-whatsapp-reminder", testWhatsappReminderManual);
 router.get("/offers", getAdminOffers);
 router.post("/offers", createAdminOffer);
 router.delete("/offers/:id", deleteAdminOffer);
+router.get("/promos/posters", getAdminPromoPosters);
 router.post("/promos/posters", promoUpload.single("image"), createAdminPromoPoster);
+router.delete("/promos/posters/:id", deleteAdminPromoPoster);
 
 module.exports = router;

@@ -106,7 +106,96 @@ const createAdminPromoPoster = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// @desc    Get all promo posters (active & inactive)
+// @route   GET /api/admin/promos/posters
+// @access  Private/Admin
+// ─────────────────────────────────────────────
+const getAdminPromoPosters = async (req, res) => {
+  try {
+    const posters = await prisma.promoPoster.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "All promo posters fetched successfully.",
+      data: posters,
+    });
+  } catch (error) {
+    console.error("Get Admin Promo Posters Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to fetch promo posters.",
+      error: error.message,
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
+// @desc    Delete a promo poster (and local file)
+// @route   DELETE /api/admin/promos/posters/:id
+// @access  Private/Admin
+// ─────────────────────────────────────────────
+const deleteAdminPromoPoster = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const posterId = parseInt(id, 10);
+    if (isNaN(posterId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid poster ID format.",
+      });
+    }
+
+    const poster = await prisma.promoPoster.findUnique({
+      where: { id: posterId },
+    });
+
+    if (!poster) {
+      return res.status(404).json({
+        success: false,
+        message: "Promo poster not found.",
+      });
+    }
+
+    // Delete local image file if it exists
+    if (poster.imageUrl) {
+      const fs = require("fs");
+      const path = require("path");
+      const filePath = path.join(__dirname, "../../", poster.imageUrl);
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+          console.log(`Deleted local file: ${filePath}`);
+        } catch (fileErr) {
+          console.error("Failed to delete local file:", fileErr);
+        }
+      }
+    }
+
+    // Delete from database
+    await prisma.promoPoster.delete({
+      where: { id: posterId },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Promo poster deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Delete Admin Promo Poster Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to delete promo poster.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getActivePromoPosters,
   createAdminPromoPoster,
+  getAdminPromoPosters,
+  deleteAdminPromoPoster,
 };
