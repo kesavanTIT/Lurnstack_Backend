@@ -39,6 +39,7 @@ const runWhatsappReminderJob = async () => {
         status: "scheduled",
         session: {
           publishState: "PUBLISHED",
+          deleteRequested: false,
           status: {
             notIn: ["cancelled", "ended"],
           },

@@ -20,6 +20,7 @@ cron.schedule("1 0 * * *", async () => {
       where: {
         isRecurring: true,
         status: "active",
+        deleteRequested: false,
       },
     });
 

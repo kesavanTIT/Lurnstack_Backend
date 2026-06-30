@@ -163,6 +163,7 @@ const getUpcomingSessions = async (req, res) => {
     const sessions = await prisma.liveSession.findMany({
       where: {
         publishState: "PUBLISHED",
+        deleteRequested: false,
         status: {
           // Exclude permanently ended or cancelled sessions
           notIn: ["ended", "cancelled"],

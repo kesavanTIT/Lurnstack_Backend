@@ -447,6 +447,7 @@ const getAllLiveClasses = async (req, res) => {
     const sessions = await prisma.liveSession.findMany({
       where: {
         status: { not: "deleted" },
+        deleteRequested: false,
         AND: [
           { OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }] },
           { OR: [{ sessionType: { not: "TIT" } }, { sessionType: null }] },

@@ -46,6 +46,7 @@ cron.schedule("* * * * *", async () => {
         // Join the parent session and filter by publishState
         session: {
           publishState: "PUBLISHED",
+          deleteRequested: false,
           // Exclude sessions that are cancelled or ended
           status: {
             notIn: ["cancelled", "ended"],
