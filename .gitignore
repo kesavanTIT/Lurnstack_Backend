@@ -12,6 +12,8 @@ package-lock.json
 .user.ini
 
 # Uploaded files (server-generated, not tracked by Git)
-uploads/
+uploads/*
+!uploads/promos/
+!uploads/promos/.gitkeep
 
 
