@@ -99,61 +99,83 @@ const isCourseCompleted = async (courseId) => {
 // calculateAttendance — { attended, total, pct }
 // ─────────────────────────────────────────────────────────────────
 const calculateAttendance = async (userId, courseId) => {
-  // Support lookup by courseId or sessionId
-  const session = await prisma.liveSession.findFirst({
+  // Try to find a live session under this courseId/category that the student has attendance for
+  const attendanceWithSession = await prisma.studentAttendance.findFirst({
     where: {
-      OR: [
-        { courseId: courseId },
-        { id: courseId }
-      ]
-    }
+      studentId: userId,
+      status: { in: PRESENT_STATUSES },
+      session: {
+        OR: [
+          { courseId: courseId },
+          { id: courseId }
+        ]
+      }
+    },
+    include: { session: true }
   });
+
+  let session = attendanceWithSession?.session;
+
+  // If no attendance, try to find a session they booked
+  if (!session) {
+    const bookingWithSession = await prisma.booking.findFirst({
+      where: {
+        studentId: userId,
+        status: { in: ["paid", "completed", "joined"] },
+        session: {
+          OR: [
+            { courseId: courseId },
+            { id: courseId }
+          ]
+        }
+      },
+      include: { session: true }
+    });
+    session = bookingWithSession?.session;
+  }
+
+  // Fallback to the first session found under this courseId
+  if (!session) {
+    session = await prisma.liveSession.findFirst({
+      where: {
+        OR: [
+          { courseId: courseId },
+          { id: courseId }
+        ]
+      }
+    });
+  }
 
   if (!session) {
     return { attended: 0, total: 0, pct: 0 };
   }
 
-  const resolvedCourseId = session.courseId || session.id;
-  const isFallbackId = resolvedCourseId === session.id;
-
-  // Total completed occurrences = total possible classes
-  let total = await prisma.sessionOccurrence.count({
+  // Total completed occurrences specifically for this session
+  const totalCompleted = await prisma.sessionOccurrence.count({
     where: {
+      sessionId: session.id,
       status: COMPLETED_OCCURRENCE_STATUS,
-      OR: [
-        { courseId: resolvedCourseId },
-        isFallbackId ? { sessionId: session.id } : null,
-        isFallbackId ? { courseId: "default", sessionId: session.id } : null
-      ].filter(Boolean)
     },
   });
 
-  if (total === 0) {
-    total = await prisma.sessionOccurrence.count({
-      where: {
-        OR: [
-          { courseId: resolvedCourseId },
-          isFallbackId ? { sessionId: session.id } : null,
-          isFallbackId ? { courseId: "default", sessionId: session.id } : null
-        ].filter(Boolean)
-      },
-    });
-  }
+  const totalScheduled = await prisma.sessionOccurrence.count({
+    where: {
+      sessionId: session.id,
+    },
+  });
+
+  const total = totalCompleted > 0 ? totalCompleted : (totalScheduled > 0 ? totalScheduled : 1);
 
   if (total === 0) {
-    total = 1;
+    return { attended: 0, total: 0, pct: 0 };
   }
 
-  // Count how many of those the student attended (present / late / joined)
+  // Count how many of those the student attended (present / late / joined) specifically for this session
   const attended = await prisma.studentAttendance.count({
     where: {
       studentId: userId,
+      sessionId: session.id,
       status: { in: PRESENT_STATUSES },
-      OR: [
-        { courseId: resolvedCourseId },
-        isFallbackId ? { sessionId: session.id } : null,
-        isFallbackId ? { courseId: "default", sessionId: session.id } : null
-      ].filter(Boolean)
     },
   });
 
@@ -166,16 +188,53 @@ const calculateAttendance = async (userId, courseId) => {
 // checkEligibility — FREE | PAID | NONE | INCOMPLETE
 // ─────────────────────────────────────────────────────────────────
 const checkEligibility = async (userId, courseId) => {
-  // Support lookup by courseId or sessionId (id)
-  const session = await prisma.liveSession.findFirst({
+  // Try to find a live session under this courseId/category that the student has attendance for
+  const attendanceWithSession = await prisma.studentAttendance.findFirst({
     where: {
-      OR: [
-        { courseId: courseId },
-        { id: courseId }
-      ]
+      studentId: userId,
+      status: { in: PRESENT_STATUSES },
+      session: {
+        OR: [
+          { courseId: courseId },
+          { id: courseId }
+        ]
+      }
     },
-    include: { pricing: true }
+    include: { session: { include: { pricing: true } } }
   });
+
+  let session = attendanceWithSession?.session;
+
+  // If no attendance, try to find a session they booked
+  if (!session) {
+    const bookingWithSession = await prisma.booking.findFirst({
+      where: {
+        studentId: userId,
+        status: { in: ["paid", "completed", "joined"] },
+        session: {
+          OR: [
+            { courseId: courseId },
+            { id: courseId }
+          ]
+        }
+      },
+      include: { session: { include: { pricing: true } } }
+    });
+    session = bookingWithSession?.session;
+  }
+
+  // Fallback to the first session found under this courseId
+  if (!session) {
+    session = await prisma.liveSession.findFirst({
+      where: {
+        OR: [
+          { courseId: courseId },
+          { id: courseId }
+        ]
+      },
+      include: { pricing: true }
+    });
+  }
 
   if (!session) {
     return {
@@ -189,49 +248,30 @@ const checkEligibility = async (userId, courseId) => {
     };
   }
 
-  const resolvedCourseId = session.courseId || session.id;
-  const isFallbackId = resolvedCourseId === session.id;
-
-  // Count how many occurrences the student attended (present / late / joined)
+  // Count how many occurrences the student attended (present / late / joined) specifically for this session
   const attended = await prisma.studentAttendance.count({
     where: {
       studentId: userId,
+      sessionId: session.id,
       status: { in: PRESENT_STATUSES },
-      OR: [
-        { courseId: resolvedCourseId },
-        isFallbackId ? { sessionId: session.id } : null,
-        isFallbackId ? { courseId: "default", sessionId: session.id } : null
-      ].filter(Boolean)
     },
   });
 
-  // Calculate total occurrences for the course to determine pct and total count
-  let total = await prisma.sessionOccurrence.count({
+  // Calculate total occurrences specifically for this session to determine pct and total count
+  const totalCompleted = await prisma.sessionOccurrence.count({
     where: {
+      sessionId: session.id,
       status: COMPLETED_OCCURRENCE_STATUS,
-      OR: [
-        { courseId: resolvedCourseId },
-        isFallbackId ? { sessionId: session.id } : null,
-        isFallbackId ? { courseId: "default", sessionId: session.id } : null
-      ].filter(Boolean)
     },
   });
 
-  if (total === 0) {
-    total = await prisma.sessionOccurrence.count({
-      where: {
-        OR: [
-          { courseId: resolvedCourseId },
-          isFallbackId ? { sessionId: session.id } : null,
-          isFallbackId ? { courseId: "default", sessionId: session.id } : null
-        ].filter(Boolean)
-      },
-    });
-  }
+  const totalScheduled = await prisma.sessionOccurrence.count({
+    where: {
+      sessionId: session.id,
+    },
+  });
 
-  if (total === 0) {
-    total = 1;
-  }
+  const total = totalCompleted > 0 ? totalCompleted : (totalScheduled > 0 ? totalScheduled : 1);
   const pct = total > 0 ? parseFloat(((attended / total) * 100).toFixed(2)) : 0;
 
   // Determine if PAID session
@@ -245,10 +285,7 @@ const checkEligibility = async (userId, courseId) => {
       where: {
         studentId: userId,
         status: { in: ["paid", "completed", "joined"] },
-        OR: [
-          { sessionId: session.id },
-          { courseId: resolvedCourseId }
-        ]
+        sessionId: session.id,
       }
     });
 

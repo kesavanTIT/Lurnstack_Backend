@@ -162,19 +162,20 @@ const generateCertificate = async (req, res) => {
     }
     const verificationUrl = `https://lurnstack.com/verify/${certificateId}`;
     const issueDate = new Date();
+    const { endDate: completionDate } = await certificateService.getCourseDates(courseId);
 
     // ── Generate certificate immediately (FREE or paid-eligible) ──
     const cert = await prisma.certificate.upsert({
       where: { userId_courseId: { userId, courseId } },
       update: {
-        certificateId, studentName, courseName, collegeName, verificationUrl, issueDate,
+        certificateId, studentName, courseName, collegeName, verificationUrl, issueDate, completionDate,
         paymentStatus: "PAID",
         certificateType: eligibility.type || "FREE",
       },
       create: {
         userId,
         courseId,
-        certificateId, studentName, courseName, collegeName, verificationUrl, issueDate,
+        certificateId, studentName, courseName, collegeName, verificationUrl, issueDate, completionDate,
         attendancePct: eligibility.attendancePct,
         certificateType: eligibility.type || "FREE",
         paymentStatus: "PAID", // Auto-paid since they are eligible (Free count met or Paid course purchased)
@@ -372,12 +373,13 @@ const purchaseCertificate = async (req, res) => {
     }
     const verificationUrl = `https://lurnstack.com/verify/${certificateId}`;
     const issueDate = new Date();
+    const { endDate: completionDate } = await certificateService.getCourseDates(courseId);
 
     // Upsert certificate record
     const cert = await prisma.certificate.upsert({
       where: { userId_courseId: { userId, courseId } },
       update: {
-        certificateId, studentName, courseName, verificationUrl, issueDate,
+        certificateId, studentName, courseName, verificationUrl, issueDate, completionDate,
         attendancePct: eligibility.attendancePct,
         certificateType: "PAID",
         paymentStatus: "PENDING",
@@ -385,7 +387,7 @@ const purchaseCertificate = async (req, res) => {
       create: {
         userId,
         courseId,
-        certificateId, studentName, courseName, verificationUrl, issueDate,
+        certificateId, studentName, courseName, verificationUrl, issueDate, completionDate,
         attendancePct: eligibility.attendancePct,
         certificateType: "PAID",
         paymentStatus: "PENDING",
