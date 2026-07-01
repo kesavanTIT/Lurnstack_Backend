@@ -9,6 +9,8 @@ const dashboardUserSelect = {
   email: true,
   phoneNumber: true,
   createdAt: true,
+  isActive: true,
+  profilePhotoUrl: true,
 };
 
 const hasUserField = (fieldName) => {
