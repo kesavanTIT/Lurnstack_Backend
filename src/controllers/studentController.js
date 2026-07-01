@@ -236,7 +236,8 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
   if (categoryRecord) {
     if (typeof categoryRecord === "object") {
       courseTitle = categoryRecord.name;
-      categoryName = categoryRecord.description || "Frontend Development";
+      // Map categoryName to slug or ID (used as targetCategoryId on frontend)
+      categoryName = categoryRecord.slug || categoryRecord.id || "Frontend Development";
     } else {
       courseTitle = categoryRecord;
     }
@@ -486,7 +487,8 @@ const getAllLiveClasses = async (req, res) => {
       if (categoryRecord) {
         if (typeof categoryRecord === "object") {
           courseTitle = categoryRecord.name;
-          categoryName = categoryRecord.description || "Frontend Development";
+          // Map categoryName to slug or ID (used as targetCategoryId on frontend)
+          categoryName = categoryRecord.slug || categoryRecord.id || "Frontend Development";
         } else {
           courseTitle = categoryRecord;
         }
@@ -717,7 +719,8 @@ const getLiveClassById = async (req, res) => {
     if (categoryRecord) {
       if (typeof categoryRecord === "object") {
         courseTitle = categoryRecord.name;
-        categoryName = categoryRecord.description || "Frontend Development";
+        // Map categoryName to slug or ID (used as targetCategoryId on frontend)
+        categoryName = categoryRecord.slug || categoryRecord.id || "Frontend Development";
       } else {
         courseTitle = categoryRecord;
       }
@@ -1899,7 +1902,41 @@ const createBooking = async (req, res) => {
       return res.status(400).json({ success: false, message: "This session is free. No booking required." });
     }
 
-    const amountPaise = session.priceInPaise;
+    let amountPaise = session.priceInPaise;
+    try {
+      const now = new Date();
+      // Fetch active discount rules from the database
+      const activeOffers = await prisma.offer.findMany({
+        where: {
+          isActive: true,
+          startsAt: { lte: now },
+          endsAt: { gte: now }
+        }
+      });
+      // Find a matching discount rule for this category or course
+      const matchingOffer = activeOffers.find(offer => {
+        if (offer.offerType === "CATEGORY_WIDE" && offer.targetCategoryId && session.courseId) {
+          return String(offer.targetCategoryId).toLowerCase() === String(session.courseId).toLowerCase();
+        }
+        if (offer.offerType === "COURSE_SPECIFIC" && offer.targetCourseId) {
+          return String(offer.targetCourseId) === String(session.id);
+        }
+        return false;
+      });
+      if (matchingOffer) {
+        if (matchingOffer.discountType === "PERCENTAGE") {
+          amountPaise = Math.round(session.priceInPaise - (session.priceInPaise * (matchingOffer.discountValue / 100)));
+          console.log(`[BOOKING] Applied percentage discount: ${matchingOffer.discountValue}%. New price: ${amountPaise} paise`);
+        } else if (matchingOffer.discountType === "FLAT_AMOUNT") {
+          // Assuming discountValue is stored in Rupees, convert to Paise
+          const discountInPaise = Math.round(matchingOffer.discountValue * 100);
+          amountPaise = Math.max(0, session.priceInPaise - discountInPaise);
+          console.log(`[BOOKING] Applied flat discount: ₹${matchingOffer.discountValue}. New price: ${amountPaise} paise`);
+        }
+      }
+    } catch (offerErr) {
+      console.error("[BOOKING] Failed to calculate discount pricing, using fallback price:", offerErr);
+    }
     const currency = "INR";
 
     const scope = accessScope || "session";
