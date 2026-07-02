@@ -1876,7 +1876,7 @@ const getMyJoinedSessions = async (req, res) => {
 const createBooking = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { sessionDate, accessScope, courseId } = req.body;
+    const { sessionDate, accessScope, courseId, offerId } = req.body;
     const studentId = parseInt(req.user.id);
 
     console.log(`[BOOKING] Initiating booking for session ${sessionId} by student ${studentId}`);
@@ -1884,6 +1884,21 @@ const createBooking = async (req, res) => {
     const scope = accessScope || "session";
     if (scope !== "course" && !sessionDate) {
       return res.status(400).json({ success: false, message: "sessionDate is required." });
+    }
+
+    let bookingDate;
+    if (scope === "course") {
+      bookingDate = (sessionDate && sessionDate !== "null" && sessionDate !== "undefined") 
+        ? new Date(sessionDate) 
+        : new Date();
+      if (isNaN(bookingDate.getTime())) {
+        bookingDate = new Date();
+      }
+    } else {
+      bookingDate = new Date(sessionDate);
+      if (isNaN(bookingDate.getTime())) {
+        return res.status(400).json({ success: false, message: "Invalid sessionDate format." });
+      }
     }
 
     // 1. Session Lookup & Pricing State Check
@@ -1907,54 +1922,6 @@ const createBooking = async (req, res) => {
     if (courseId && session.courseId && courseId !== session.courseId) {
       return res.status(400).json({ success: false, message: "Mismatched course ID for this session." });
     }
-
-    const isFree = session.pricingState === "FREE" || session.pricingState === "PENDING_PRICE" || !session.priceInPaise || session.priceInPaise <= 0;
-
-    if (isFree) {
-      console.log(`[BOOKING] Session ${sessionId} is free. Returning auto-enrollment response.`);
-      return res.status(200).json({ 
-        success: true, 
-        alreadyPaid: true, 
-        message: "Enrolled in free class successfully" 
-      });
-    }
-
-    let amountPaise = session.priceInPaise;
-    try {
-      const now = new Date();
-      // Fetch active discount rules from the database
-      const activeOffers = await prisma.offer.findMany({
-        where: {
-          isActive: true,
-          startsAt: { lte: now },
-          endsAt: { gte: now }
-        }
-      });
-      // Find a matching discount rule for this category or course
-      const matchingOffer = activeOffers.find(offer => {
-        if (offer.offerType === "CATEGORY_WIDE" && offer.targetCategoryId && session.courseId) {
-          return String(offer.targetCategoryId).toLowerCase() === String(session.courseId).toLowerCase();
-        }
-        if (offer.offerType === "COURSE_SPECIFIC" && offer.targetCourseId) {
-          return String(offer.targetCourseId) === String(session.id);
-        }
-        return false;
-      });
-      if (matchingOffer) {
-        if (matchingOffer.discountType === "PERCENTAGE") {
-          amountPaise = Math.round(session.priceInPaise - (session.priceInPaise * (matchingOffer.discountValue / 100)));
-          console.log(`[BOOKING] Applied percentage discount: ${matchingOffer.discountValue}%. New price: ${amountPaise} paise`);
-        } else if (matchingOffer.discountType === "FLAT_AMOUNT") {
-          // Assuming discountValue is stored in Rupees, convert to Paise
-          const discountInPaise = Math.round(matchingOffer.discountValue * 100);
-          amountPaise = Math.max(0, session.priceInPaise - discountInPaise);
-          console.log(`[BOOKING] Applied flat discount: ₹${matchingOffer.discountValue}. New price: ${amountPaise} paise`);
-        }
-      }
-    } catch (offerErr) {
-      console.error("[BOOKING] Failed to calculate discount pricing, using fallback price:", offerErr);
-    }
-    const currency = "INR";
 
     const targetCourseId = courseId || session.courseId;
 
@@ -2005,12 +1972,122 @@ const createBooking = async (req, res) => {
       }
     }
 
+    let amountPaise = session.priceInPaise || 0;
+    let appliedOffer = null;
+    const currency = "INR";
+
+    try {
+      const now = new Date();
+      // Look up the specific offer sent by frontend (if provided)
+      if (offerId) {
+        const parsedOfferId = parseInt(offerId);
+        if (!isNaN(parsedOfferId)) {
+          const specificOffer = await prisma.offer.findUnique({
+            where: { id: parsedOfferId }
+          });
+          
+          if (specificOffer && specificOffer.isActive && new Date(specificOffer.startsAt) <= now && new Date(specificOffer.endsAt) >= now) {
+            let matches = false;
+            if (specificOffer.offerType === "CATEGORY_WIDE" && specificOffer.targetCategoryId && session.courseId) {
+              matches = String(specificOffer.targetCategoryId).toLowerCase() === String(session.courseId).toLowerCase();
+            } else if (specificOffer.offerType === "COURSE_SPECIFIC" && specificOffer.targetCourseId) {
+              matches = String(specificOffer.targetCourseId) === String(session.id);
+            }
+            
+            if (matches) {
+              appliedOffer = specificOffer;
+              console.log(`[BOOKING] Applied frontend-supplied offerId: ${offerId}`);
+            } else {
+              console.warn(`[BOOKING] OfferId ${offerId} does not match target session or category.`);
+            }
+          } else {
+            console.warn(`[BOOKING] OfferId ${offerId} is inactive or expired.`);
+          }
+        } else {
+          console.warn(`[BOOKING] offerId is not a valid integer: ${offerId}`);
+        }
+      }
+
+      // If no frontend offerId was provided or verified, fall back to auto-matching active offers
+      if (!appliedOffer) {
+        const activeOffers = await prisma.offer.findMany({
+          where: {
+            isActive: true,
+            startsAt: { lte: now },
+            endsAt: { gte: now }
+          }
+        });
+        
+        appliedOffer = activeOffers.find(offer => {
+          if (offer.offerType === "CATEGORY_WIDE" && offer.targetCategoryId && session.courseId) {
+            return String(offer.targetCategoryId).toLowerCase() === String(session.courseId).toLowerCase();
+          }
+          if (offer.offerType === "COURSE_SPECIFIC" && offer.targetCourseId) {
+            return String(offer.targetCourseId) === String(session.id);
+          }
+          return false;
+        });
+      }
+
+      if (appliedOffer) {
+        if (appliedOffer.discountType === "PERCENTAGE") {
+          amountPaise = Math.round(session.priceInPaise - (session.priceInPaise * (appliedOffer.discountValue / 100)));
+          console.log(`[BOOKING] Applied percentage discount: ${appliedOffer.discountValue}%. New price: ${amountPaise} paise`);
+        } else if (appliedOffer.discountType === "FLAT_AMOUNT") {
+          const discountInPaise = Math.round(appliedOffer.discountValue * 100);
+          amountPaise = Math.max(0, session.priceInPaise - discountInPaise);
+          console.log(`[BOOKING] Applied flat discount: ₹${appliedOffer.discountValue}. New price: ${amountPaise} paise`);
+        }
+      }
+    } catch (offerErr) {
+      console.error("[BOOKING] Failed to calculate discount pricing, using fallback price:", offerErr);
+    }
+
+    const isFree = session.pricingState === "FREE" || session.pricingState === "PENDING_PRICE" || !session.priceInPaise || session.priceInPaise <= 0 || amountPaise <= 0;
+
+    if (isFree) {
+      console.log(`[BOOKING] Session ${sessionId} is free or discounted to ₹0. Returning auto-enrollment response.`);
+      
+      // Create Booking row (paid) directly
+      const booking = await prisma.booking.create({
+        data: {
+          studentId,
+          sessionId,
+          sessionDate: bookingDate,
+          amountPaise: 0,
+          currency,
+          status: "paid",
+          accessScope: scope,
+          courseId: targetCourseId || null
+        }
+      });
+
+      // Create tracking Payment row
+      await prisma.payment.create({
+        data: {
+          bookingId: booking.id,
+          studentId,
+          sessionId,
+          razorpayOrderId: `free_${booking.id}`,
+          razorpayPaymentId: `free_pay_${booking.id}`,
+          amountPaise: 0,
+          currency,
+          status: "captured",
+          paidAt: new Date()
+        }
+      });
+
+      return res.status(200).json({ 
+        success: true, 
+        alreadyPaid: true, 
+        message: "Enrolled in free class successfully" 
+      });
+    }
+
     if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
       console.error("[BOOKING] Missing Razorpay credentials in environment variables.");
       return res.status(500).json({ success: false, message: "Server configuration error regarding payment gateway." });
     }
-
-    const bookingDate = sessionDate ? new Date(sessionDate) : new Date();
 
     // Create Booking row (pending_payment)
     const booking = await prisma.booking.create({
@@ -2036,7 +2113,7 @@ const createBooking = async (req, res) => {
         bookingId: booking.id,
         sessionId: sessionId,
         studentId: studentId.toString(),
-        sessionDate: sessionDate,
+        sessionDate: sessionDate || null,
         accessScope: scope,
         courseId: targetCourseId || null
       }
