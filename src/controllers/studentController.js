@@ -1881,7 +1881,8 @@ const createBooking = async (req, res) => {
 
     console.log(`[BOOKING] Initiating booking for session ${sessionId} by student ${studentId}`);
 
-    if (!sessionDate) {
+    const scope = accessScope || "session";
+    if (scope !== "course" && !sessionDate) {
       return res.status(400).json({ success: false, message: "sessionDate is required." });
     }
 
@@ -1895,11 +1896,27 @@ const createBooking = async (req, res) => {
       return res.status(404).json({ success: false, message: "Session not found." });
     }
 
+    if (session.publishState && session.publishState !== "PUBLISHED") {
+      return res.status(400).json({ success: false, message: "This session is not bookable as it is not published." });
+    }
+
+    if (session.status === "inactive" || session.status === "archived") {
+      return res.status(400).json({ success: false, message: "This session is not bookable as it is inactive." });
+    }
+
+    if (courseId && session.courseId && courseId !== session.courseId) {
+      return res.status(400).json({ success: false, message: "Mismatched course ID for this session." });
+    }
+
     const isFree = session.pricingState === "FREE" || session.pricingState === "PENDING_PRICE" || !session.priceInPaise || session.priceInPaise <= 0;
 
     if (isFree) {
-      console.log(`[BOOKING] Session ${sessionId} is free. Booking flow rejected.`);
-      return res.status(400).json({ success: false, message: "This session is free. No booking required." });
+      console.log(`[BOOKING] Session ${sessionId} is free. Returning auto-enrollment response.`);
+      return res.status(200).json({ 
+        success: true, 
+        alreadyPaid: true, 
+        message: "Enrolled in free class successfully" 
+      });
     }
 
     let amountPaise = session.priceInPaise;
@@ -1939,7 +1956,6 @@ const createBooking = async (req, res) => {
     }
     const currency = "INR";
 
-    const scope = accessScope || "session";
     const targetCourseId = courseId || session.courseId;
 
     // 2. Paid-access check
@@ -1994,7 +2010,7 @@ const createBooking = async (req, res) => {
       return res.status(500).json({ success: false, message: "Server configuration error regarding payment gateway." });
     }
 
-    const bookingDate = new Date(sessionDate);
+    const bookingDate = sessionDate ? new Date(sessionDate) : new Date();
 
     // Create Booking row (pending_payment)
     const booking = await prisma.booking.create({
