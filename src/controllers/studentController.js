@@ -1988,8 +1988,21 @@ const createBooking = async (req, res) => {
           
           if (specificOffer && specificOffer.isActive && new Date(specificOffer.startsAt) <= now && new Date(specificOffer.endsAt) >= now) {
             let matches = false;
-            if (specificOffer.offerType === "CATEGORY_WIDE" && specificOffer.targetCategoryId && session.courseId) {
-              matches = String(specificOffer.targetCategoryId).toLowerCase() === String(session.courseId).toLowerCase();
+            if (specificOffer.offerType === "CATEGORY_WIDE" && specificOffer.targetCategoryId) {
+              const target = String(specificOffer.targetCategoryId).trim().toLowerCase();
+              const slugifiedTarget = target.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+              
+              const catId = String(session.courseId || "").trim().toLowerCase();
+              const catName = String(session.category || "").trim().toLowerCase();
+              const slugifiedCatName = catName.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+              
+              if (
+                catId === target ||
+                catName === target ||
+                slugifiedCatName === slugifiedTarget
+              ) {
+                matches = true;
+              }
             } else if (specificOffer.offerType === "COURSE_SPECIFIC" && specificOffer.targetCourseId) {
               matches = String(specificOffer.targetCourseId) === String(session.id);
             }
@@ -2019,8 +2032,19 @@ const createBooking = async (req, res) => {
         });
         
         appliedOffer = activeOffers.find(offer => {
-          if (offer.offerType === "CATEGORY_WIDE" && offer.targetCategoryId && session.courseId) {
-            return String(offer.targetCategoryId).toLowerCase() === String(session.courseId).toLowerCase();
+          if (offer.offerType === "CATEGORY_WIDE" && offer.targetCategoryId) {
+            const target = String(offer.targetCategoryId).trim().toLowerCase();
+            const slugifiedTarget = target.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+            
+            const catId = String(session.courseId || "").trim().toLowerCase();
+            const catName = String(session.category || "").trim().toLowerCase();
+            const slugifiedCatName = catName.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+            
+            return (
+              catId === target ||
+              catName === target ||
+              slugifiedCatName === slugifiedTarget
+            );
           }
           if (offer.offerType === "COURSE_SPECIFIC" && offer.targetCourseId) {
             return String(offer.targetCourseId) === String(session.id);
