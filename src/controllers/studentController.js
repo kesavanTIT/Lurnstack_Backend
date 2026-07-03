@@ -1410,7 +1410,7 @@ const joinSession = async (req, res) => {
 
     // Calculate attendance rules: graceEndTime is scheduledAtTime + 15 minutes
     const graceEndTime = new Date(scheduledAtTime.getTime() + 15 * 60 * 1000);
-    const resolvedStatus = joinedAtTime <= graceEndTime ? "joined" : "late";
+    const resolvedStatus = "pending";
 
     // 1. Find or create SessionOccurrence
     let occurrence = await prisma.sessionOccurrence.findUnique({
