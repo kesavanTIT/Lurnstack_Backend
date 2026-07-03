@@ -1,7 +1,7 @@
 "use strict";
 
 const prisma = require("../config/db");
-
+const { getDurationSeconds } = require("../utils/attendanceCalculator");
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STUDENT_THRESHOLD_PCT = 0.30;
@@ -189,17 +189,17 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
           }
         }
         leaveTime = lastKnownLeftAt;
-
+        
+        // Retain sessionHistory mapping purely for UI display if needed
         sessionHistory = mainAtt.events.map(ev => {
           let calcLeftAt = ev.leftAt;
           if (!calcLeftAt) {
              let calcEnd = new Date();
-             
-             // Heartbeat timeout: if the event hasn't been updated in 3 minutes, assume disconnected
              const lastActiveTime = ev.updatedAt ? new Date(ev.updatedAt) : new Date(ev.joinedAt);
              if (calcEnd.getTime() - lastActiveTime.getTime() > 3 * 60 * 1000) {
                calcEnd = lastActiveTime;
-             } else if (occurrence.endsAt && calcEnd > new Date(occurrence.endsAt)) {
+             }
+             if (occurrence.endsAt && calcEnd > new Date(occurrence.endsAt)) {
                calcEnd = new Date(occurrence.endsAt);
              }
              calcLeftAt = calcEnd;
@@ -211,17 +211,7 @@ const getAttendanceData = async (sessionId, dateStr, statusFilter) => {
         });
       }
 
-      let totalSeconds = mainAtt.totalDurationSeconds || 0;
-      let dynamicTotalSeconds = 0;
-      if (sessionHistory.length > 0) {
-        for (const sh of sessionHistory) {
-          if (sh.joinedAt && sh.leftAt) {
-            dynamicTotalSeconds += Math.max(0, Math.floor((new Date(sh.leftAt) - new Date(sh.joinedAt)) / 1000));
-          }
-        }
-      }
-      totalSeconds = Math.max(totalSeconds, dynamicTotalSeconds);
-      
+      const totalSeconds = getDurationSeconds(mainAtt, occurrence);
       durationMins = Math.round(totalSeconds / 60);
 
       const requiredMins = isTrainer ? trainerRequiredMins : studentRequiredMins;

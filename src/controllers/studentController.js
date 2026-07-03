@@ -1,7 +1,7 @@
 const prisma = require("../config/db");
 const razorpay = require("../config/razorpay");
 const crypto = require("crypto");
-
+const { getDurationSeconds } = require("../utils/attendanceCalculator");
 // ─────────────────────────────────────────────────────────────────────────────
 // TIMEZONE & STATUS HELPERS (Asia/Kolkata)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2402,14 +2402,7 @@ const getCourseAttendance = async (req, res) => {
       let finalStatus = a.status === 'joined' ? 'present' : a.status;
 
       if (finalStatus === 'absent' && a.joinCount > 0) {
-        let totalSecs = a.totalDurationSeconds || 0;
-        if (totalSecs === 0 && a.firstJoinedAt) {
-          const start = new Date(a.firstJoinedAt).getTime();
-          const end = occ?.endsAt ? new Date(occ.endsAt).getTime() : start + 3600000;
-          if (end > start) {
-            totalSecs = Math.round((end - start) / 1000);
-          }
-        }
+        const totalSecs = getDurationSeconds(a, occ);
 
         const sessionDurationMins = (occ?.startsAt && occ?.endsAt)
           ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000))
@@ -2420,6 +2413,8 @@ const getCourseAttendance = async (req, res) => {
           finalStatus = 'present';
         }
       }
+      
+      const calcTotalSecs = getDurationSeconds(a, occ);
 
       return {
         id: a.id,
@@ -2431,9 +2426,9 @@ const getCourseAttendance = async (req, res) => {
         firstJoinedAt: a.firstJoinedAt,
         lastJoinedAt: a.lastJoinedAt,
         joinCount: a.joinCount,
-        totalDurationSeconds: a.totalDurationSeconds,
+        totalDurationSeconds: calcTotalSecs,
         sessionDurationMinutes: occ && occ.startsAt && occ.endsAt ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000)) : 60,
-        attendedMinutes: a.totalDurationSeconds ? Math.round(a.totalDurationSeconds / 60) : 0,
+        attendedMinutes: Math.round(calcTotalSecs / 60),
         status: finalStatus,
         sessionTitle: a.session?.title || "Unknown Session",
         courseId: a.session?.courseId || null,
@@ -2455,7 +2450,7 @@ const getSessionAttendance = async (req, res) => {
 
     const attendance = await prisma.attendance.findMany({
       where: { sessionId, studentId },
-      include: { session: true },
+      include: { session: true, events: true },
       orderBy: { occurrenceDate: "desc" }
     });
 
@@ -2472,14 +2467,7 @@ const getSessionAttendance = async (req, res) => {
       let finalStatus = a.status === 'joined' ? 'present' : a.status;
 
       if (finalStatus === 'absent' && a.joinCount > 0) {
-        let totalSecs = a.totalDurationSeconds || 0;
-        if (totalSecs === 0 && a.firstJoinedAt) {
-          const start = new Date(a.firstJoinedAt).getTime();
-          const end = occ?.endsAt ? new Date(occ.endsAt).getTime() : start + 3600000;
-          if (end > start) {
-            totalSecs = Math.round((end - start) / 1000);
-          }
-        }
+        const totalSecs = getDurationSeconds(a, occ);
 
         const sessionDurationMins = (occ?.startsAt && occ?.endsAt)
           ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000))

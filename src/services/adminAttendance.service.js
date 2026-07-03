@@ -1,5 +1,5 @@
 const prisma = require("../config/db");
-
+const { getDurationSeconds } = require("../utils/attendanceCalculator");
 const ACTIVE_BOOKING_STATUSES = ["paid", "joined", "completed"];
 const PRESENT_STATUSES = ["present", "joined", "completed"];
 const ATTENDANCE_THRESHOLD_RATIO = 0.3;
@@ -29,63 +29,6 @@ const getDayRange = (dateInput) => {
 const getDateKey = (date) => {
   if (!date) return "";
   return new Date(date).toISOString().slice(0, 10);
-};
-
-const getDurationSeconds = (attendance, occurrence) => {
-  if (!attendance) return 0;
-  
-  let totalSeconds = attendance.totalDurationSeconds || 0;
-  const events = Array.isArray(attendance.events) ? attendance.events : [];
-  
-  let dynamicTotalSeconds = 0;
-  if (events.length > 0) {
-    dynamicTotalSeconds = events.reduce((sum, event) => {
-      const joinedAt = event.joinedAt;
-      let leftAt = event.leftAt;
-      if (joinedAt) {
-        if (!leftAt) {
-          let calcEnd = new Date();
-          
-          // Heartbeat timeout check
-          const lastActiveTime = event.updatedAt ? new Date(event.updatedAt) : new Date(event.joinedAt);
-          if (calcEnd.getTime() - lastActiveTime.getTime() > 3 * 60 * 1000) {
-            calcEnd = lastActiveTime;
-          } else if (occurrence?.endsAt && calcEnd > new Date(occurrence.endsAt)) {
-            calcEnd = new Date(occurrence.endsAt);
-          }
-          leftAt = calcEnd;
-        }
-        const start = new Date(joinedAt);
-        const end = new Date(leftAt);
-        if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start) {
-          return sum + Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
-        }
-      }
-      return sum;
-    }, 0);
-  } else {
-      const joinedAt = attendance.firstJoinedAt || attendance.joinedAt;
-      let leftAt = attendance.lastJoinedAt || attendance.leftAt || attendance.left_at;
-      if (joinedAt) {
-        if (!leftAt) {
-          let calcEnd = new Date();
-          const lastActiveTime = attendance.updatedAt || joinedAt;
-          if (calcEnd.getTime() - new Date(lastActiveTime).getTime() > 3 * 60 * 1000) {
-            calcEnd = new Date(lastActiveTime);
-          } else if (occurrence?.endsAt && calcEnd > new Date(occurrence.endsAt)) {
-            calcEnd = new Date(occurrence.endsAt);
-          }
-          leftAt = calcEnd;
-        }
-        const start = new Date(joinedAt);
-        const end = new Date(leftAt);
-        if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start) {
-          dynamicTotalSeconds = Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
-        }
-      }
-  }
-
-  return Math.max(totalSeconds, dynamicTotalSeconds);
 };
 
 const getRequiredSeconds = (occurrence) => {
