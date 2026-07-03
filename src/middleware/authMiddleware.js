@@ -8,10 +8,16 @@ const protect = (req, res, next) => {
   try {
     let token = null;
 
-    // Parse cookies manually to support environments without cookie-parser middleware
-    if (req.headers.cookie) {
+    // Check Bearer token header FIRST
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    }
+
+    // Fallback to admin_token cookie if no Bearer token provided
+    if (!token && req.headers.cookie) {
       const cookies = {};
-      req.headers.cookie.split(";").forEach(cookie => {
+      req.headers.cookie.split(";").forEach((cookie) => {
         const parts = cookie.split("=");
         if (parts.length >= 2) {
           cookies[parts.shift().trim()] = decodeURIComponent(parts.join("="));
@@ -20,14 +26,6 @@ const protect = (req, res, next) => {
       req.cookies = cookies;
       if (cookies.admin_token) {
         token = cookies.admin_token;
-      }
-    }
-
-    // Fallback to Bearer token header
-    if (!token) {
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        token = authHeader.split(" ")[1];
       }
     }
 
