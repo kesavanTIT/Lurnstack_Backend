@@ -1023,6 +1023,25 @@ const deleteTrainerSession = async (req, res) => {
       data: { status: "deleted" },
     });
 
+    // Delete occurrences and pending WhatsApp reminders for the deleted session
+    await prisma.sessionOccurrence.deleteMany({
+      where: { sessionId }
+    });
+
+    await prisma.whatsAppReminder.deleteMany({
+      where: { sessionId }
+    });
+
+    await prisma.booking.updateMany({
+      where: { sessionId },
+      data: {
+        whatsappReminderSentAt: null,
+        whatsappReminderStatus: null,
+        whatsappReminderMessageId: null,
+        whatsappReminderError: null
+      }
+    });
+
     return res.status(200).json({
       success: true,
       message: "Live class deleted successfully",

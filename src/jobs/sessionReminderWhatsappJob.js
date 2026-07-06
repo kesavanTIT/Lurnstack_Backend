@@ -41,7 +41,7 @@ const runWhatsappReminderJob = async () => {
           publishState: "PUBLISHED",
           deleteRequested: false,
           status: {
-            notIn: ["cancelled", "ended"],
+            notIn: ["cancelled", "ended", "deleted"],
           },
         },
       },

@@ -146,7 +146,7 @@ async function diagnose() {
       status: "scheduled",
       session: {
         publishState: "PUBLISHED",
-        status: { notIn: ["cancelled", "ended"] },
+        status: { notIn: ["cancelled", "ended", "deleted"] },
       },
     },
     include: {

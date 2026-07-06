@@ -47,9 +47,9 @@ cron.schedule("* * * * *", async () => {
         session: {
           publishState: "PUBLISHED",
           deleteRequested: false,
-          // Exclude sessions that are cancelled or ended
+          // Exclude sessions that are cancelled, ended, or deleted
           status: {
-            notIn: ["cancelled", "ended"],
+            notIn: ["cancelled", "ended", "deleted"],
           },
           // Exclude TIT classes from reminder emails/SMS
           AND: [
