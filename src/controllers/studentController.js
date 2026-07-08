@@ -1267,7 +1267,8 @@ const joinSession = async (req, res) => {
       return null;
     };
 
-    const targetDateStr = parseToKolkataDateString(resolvedDateInput) || session.scheduledDate || getKolkataDateString(now);
+    const targetDateStr = parseToKolkataDateString(resolvedDateInput) || 
+      (session.isRecurring ? getKolkataDateString(now) : (session.scheduledDate || getKolkataDateString(now)));
     const targetDate = new Date(targetDateStr);
     if (isNaN(targetDate.getTime())) {
       return res.status(400).json({ success: false, message: "Invalid session date format." });
