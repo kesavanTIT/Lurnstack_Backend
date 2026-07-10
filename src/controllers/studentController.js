@@ -1677,6 +1677,18 @@ const heartbeatSession = async (req, res) => {
       }
     });
 
+    if (occurrence) {
+      await prisma.studentAttendance.updateMany({
+        where: {
+          occurrenceId: occurrence.id,
+          studentId: studentId
+        },
+        data: {
+          status: newStatus
+        }
+      });
+    }
+
     return res.status(200).json({
       success: true,
       data: {
@@ -1794,6 +1806,18 @@ const leaveSession = async (req, res) => {
         status: newStatus
       }
     });
+
+    if (occurrence) {
+      await prisma.studentAttendance.updateMany({
+        where: {
+          occurrenceId: occurrence.id,
+          studentId: studentId
+        },
+        data: {
+          status: newStatus
+        }
+      });
+    }
 
     return res.status(200).json({
       success: true,

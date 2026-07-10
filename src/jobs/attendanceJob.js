@@ -139,19 +139,30 @@ cron.schedule('*/5 * * * *', async () => {
             totalSecs = Math.round((end - start) / 1000);
           }
         }
-        return [a.studentId, totalSecs];
+        return [a.studentId, { totalSecs, status: a.status }];
       }));
 
       for (const sa of existingAttendances) {
-        const totalSecs = actualAttMap.get(sa.studentId) || 0;
+        const actualInfo = actualAttMap.get(sa.studentId);
+        const totalSecs = actualInfo?.totalSecs || 0;
         let newStatus = sa.status;
         
         // If they didn't meet the 30% threshold, mark them as absent (even if they clicked join)
         if (totalSecs < requiredSeconds) {
           newStatus = "absent";
-        }
-        if (newStatus === "joined") {
-          newStatus = "present";
+        } else if (newStatus === "joined" || newStatus === "pending") {
+          const calculatedStatus = actualInfo?.status;
+          if (calculatedStatus && ["present", "late"].includes(calculatedStatus)) {
+            newStatus = calculatedStatus;
+          } else {
+            // Fallback calculation: check grace period
+            const graceEndTime = occurrence.startsAt ? new Date(new Date(occurrence.startsAt).getTime() + 15 * 60 * 1000) : null;
+            if (sa.firstJoinedAt && graceEndTime && new Date(sa.firstJoinedAt) <= graceEndTime) {
+              newStatus = "present";
+            } else {
+              newStatus = "late";
+            }
+          }
         }
 
         await prisma.studentAttendance.update({
@@ -165,7 +176,7 @@ cron.schedule('*/5 * * * *', async () => {
         await syncLegacyAttendance({
           occurrence,
           studentId: sa.studentId,
-          status: newStatus === "joined" ? "present" : newStatus,
+          status: newStatus,
           firstJoinedAt: sa.firstJoinedAt,
           lastJoinedAt: sa.lastJoinedAt,
           joinCount: sa.joinCount,

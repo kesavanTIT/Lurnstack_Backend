@@ -49,6 +49,17 @@ const isOccurrenceEnded = (occurrence, now = new Date()) => {
   );
 };
 
+const isOccurrenceLive = (occurrence, now = new Date()) => {
+  if (!occurrence) return false;
+  if (occurrence.status === "cancelled" || occurrence.status === "completed" || occurrence.finalizedAt) return false;
+  if (occurrence.startsAt && occurrence.endsAt) {
+    const startsAt = new Date(occurrence.startsAt);
+    const endsAt = new Date(occurrence.endsAt);
+    return startsAt <= now && endsAt >= now;
+  }
+  return occurrence.status === "live" || occurrence.status === "running";
+};
+
 const resolveFinalStatus = ({ studentAttendance, attendance, occurrence }) => {
   const sourceStatus = studentAttendance?.status || attendance?.status || "pending";
   let status = normalizeStatus(sourceStatus);
@@ -58,6 +69,21 @@ const resolveFinalStatus = ({ studentAttendance, attendance, occurrence }) => {
   }
 
   if (!isOccurrenceEnded(occurrence)) {
+    if (isOccurrenceLive(occurrence)) {
+      const joined = Boolean(studentAttendance || attendance);
+      if (joined) {
+        const firstJoined = studentAttendance?.firstJoinedAt || attendance?.firstJoinedAt || attendance?.joinedAt;
+        if (firstJoined) {
+          const graceEndTime = occurrence.startsAt ? new Date(new Date(occurrence.startsAt).getTime() + 15 * 60 * 1000) : null;
+          if (graceEndTime && new Date(firstJoined) <= graceEndTime) {
+            return "present";
+          } else {
+            return "late";
+          }
+        }
+        return "present";
+      }
+    }
     return status;
   }
 
@@ -234,8 +260,10 @@ const buildRosterForOccurrence = async ({ session, occurrence, date }) => {
     const attendance = attendanceByStudent.get(row.studentId);
     row.status = resolveFinalStatus({ studentAttendance, attendance, occurrence });
 
-    if (isOccurrenceEnded(occurrence) && !studentAttendance && !attendance) {
-      row.status = "absent";
+    if (!studentAttendance && !attendance) {
+      if (isOccurrenceEnded(occurrence) || isOccurrenceLive(occurrence)) {
+        row.status = "absent";
+      }
     }
   }
 
