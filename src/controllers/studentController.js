@@ -2550,8 +2550,10 @@ const getStudentAttendance = async (req, res) => {
       
       let finalStatus = a.status === 'joined' ? 'present' : a.status;
 
+      const calcTotalSecs = getDurationSeconds(a, occ);
+
       if (finalStatus === 'absent' && a.joinCount > 0) {
-        let totalSecs = a.totalDurationSeconds || 0;
+        let totalSecs = calcTotalSecs;
         if (totalSecs === 0 && a.firstJoinedAt) {
           const start = new Date(a.firstJoinedAt).getTime();
           const end = occ?.endsAt ? new Date(occ.endsAt).getTime() : start + 3600000;
@@ -2580,9 +2582,9 @@ const getStudentAttendance = async (req, res) => {
         firstJoinedAt: a.firstJoinedAt,
         lastJoinedAt: a.lastJoinedAt,
         joinCount: a.joinCount,
-        totalDurationSeconds: a.totalDurationSeconds,
+        totalDurationSeconds: calcTotalSecs,
         sessionDurationMinutes: occ && occ.startsAt && occ.endsAt ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000)) : 60,
-        attendedMinutes: a.totalDurationSeconds ? Math.round(a.totalDurationSeconds / 60) : 0,
+        attendedMinutes: Math.round(calcTotalSecs / 60),
         status: finalStatus,
         sessionTitle: a.session?.title || "Unknown Session",
         courseId: a.session?.courseId || null,
@@ -2692,7 +2694,16 @@ const getStudentAttendanceHistory = async (req, res) => {
       })
     ]);
 
+    const occList = await prisma.sessionOccurrence.findMany({
+      where: {
+        sessionId: { in: [...new Set(attendanceRecords.map(a => a.sessionId))] },
+        occurrenceDate: { in: [...new Set(attendanceRecords.map(a => a.occurrenceDate))] }
+      }
+    });
+
     const formattedData = attendanceRecords.map(a => {
+      const occ = occList.find(o => o.sessionId === a.sessionId && new Date(o.occurrenceDate).getTime() === new Date(a.occurrenceDate).getTime());
+      const calcTotalSecs = getDurationSeconds(a, occ);
       let finalStatus = a.status === 'joined' ? 'present' : a.status;
       return {
         id: a.id,
@@ -2703,8 +2714,8 @@ const getStudentAttendanceHistory = async (req, res) => {
         firstJoinedAt: a.firstJoinedAt,
         lastJoinedAt: a.lastJoinedAt,
         joinCount: a.joinCount,
-        totalDurationSeconds: a.totalDurationSeconds,
-        attendedMinutes: a.totalDurationSeconds ? Math.round(a.totalDurationSeconds / 60) : 0,
+        totalDurationSeconds: calcTotalSecs,
+        attendedMinutes: Math.round(calcTotalSecs / 60),
         status: finalStatus,
         sessionTitle: a.session?.title || "Unknown Session",
         courseId: a.session?.courseId || null,
