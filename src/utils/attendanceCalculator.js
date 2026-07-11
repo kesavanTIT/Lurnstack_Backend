@@ -10,31 +10,30 @@ const getDurationSeconds = (attendance, occurrence) => {
       let leftAt = event.leftAt;
       
       if (joinedAt) {
+        let calcEnd = leftAt ? new Date(leftAt) : new Date();
+        
         if (!leftAt) {
-          let calcEnd = new Date();
-          
           // Heartbeat timeout check: 3 minutes
           const lastActiveTime = event.updatedAt ? new Date(event.updatedAt) : new Date(event.joinedAt);
           if (calcEnd.getTime() - lastActiveTime.getTime() > 3 * 60 * 1000) {
             calcEnd = lastActiveTime;
           }
-          
-          // CRITICAL FIX: ALWAYS cap at occurrence endsAt if applicable
-          if (occurrence?.endsAt && calcEnd > new Date(occurrence.endsAt)) {
-            calcEnd = new Date(occurrence.endsAt);
-          }
-          
-          leftAt = calcEnd;
+        }
+        
+        // ALWAYS cap at occurrence endsAt if applicable
+        if (occurrence?.endsAt && calcEnd > new Date(occurrence.endsAt)) {
+          calcEnd = new Date(occurrence.endsAt);
         }
         
         const start = new Date(joinedAt);
-        const end = new Date(leftAt);
+        const end = new Date(calcEnd);
         if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start) {
           return sum + Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
         }
       }
       return sum;
     }, 0);
+    return dynamicTotalSeconds;
   } else {
     // If no events tracked yet, try to infer from single Attendance record
     let joinedAt = attendance.firstJoinedAt || attendance.joinedAt;
@@ -63,8 +62,15 @@ const getDurationSeconds = (attendance, occurrence) => {
     }
   }
 
-  // Fallback to static stored totalDurationSeconds if calculated is lower
-  return Math.max(attendance.totalDurationSeconds || 0, dynamicTotalSeconds);
+  // Fallback to static stored totalDurationSeconds if no events are tracked (capped at max class length)
+  let storedSeconds = attendance.totalDurationSeconds || 0;
+  if (occurrence?.endsAt && occurrence?.startsAt) {
+    const maxPossible = Math.ceil((new Date(occurrence.endsAt) - new Date(occurrence.startsAt)) / 1000);
+    if (storedSeconds > maxPossible) {
+      storedSeconds = maxPossible;
+    }
+  }
+  return storedSeconds;
 };
 
 module.exports = {

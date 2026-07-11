@@ -1607,9 +1607,18 @@ const heartbeatSession = async (req, res) => {
       return res.status(400).json({ success: false, message: "No attendance record found for this session and date." });
     }
 
-    const heartbeatTime = clientHeartbeatAt ? new Date(clientHeartbeatAt) : new Date();
+    const occurrence = await prisma.sessionOccurrence.findFirst({
+       where: { sessionId, occurrenceDate: targetDate }
+    });
+
+    let heartbeatTime = clientHeartbeatAt ? new Date(clientHeartbeatAt) : new Date();
     if (isNaN(heartbeatTime.getTime())) {
       return res.status(400).json({ success: false, message: "Invalid clientHeartbeatAt format." });
+    }
+
+    // ALWAYS cap heartbeatTime at occurrence endsAt if applicable
+    if (occurrence && occurrence.endsAt && heartbeatTime > new Date(occurrence.endsAt)) {
+      heartbeatTime = new Date(occurrence.endsAt);
     }
 
     let latestEvent = await prisma.attendanceEvent.findFirst({
@@ -1641,10 +1650,6 @@ const heartbeatSession = async (req, res) => {
     });
     
     const totalSeconds = allEvents.reduce((sum, e) => sum + e.durationSeconds, 0);
-
-    const occurrence = await prisma.sessionOccurrence.findFirst({
-       where: { sessionId, occurrenceDate: targetDate }
-    });
     let requiredSeconds = 600;
     if (occurrence && occurrence.startsAt && occurrence.endsAt) {
        const sessionDurationSec = Math.max(60, Math.floor((occurrence.endsAt.getTime() - occurrence.startsAt.getTime()) / 1000));
@@ -1746,9 +1751,18 @@ const leaveSession = async (req, res) => {
       return res.status(400).json({ success: false, message: "No attendance record found for this session and date." });
     }
 
-    const leaveTime = clientLeftAt ? new Date(clientLeftAt) : new Date();
+    const occurrence = await prisma.sessionOccurrence.findFirst({
+       where: { sessionId, occurrenceDate: targetDate }
+    });
+
+    let leaveTime = clientLeftAt ? new Date(clientLeftAt) : new Date();
     if (isNaN(leaveTime.getTime())) {
       return res.status(400).json({ success: false, message: "Invalid clientLeftAt format." });
+    }
+
+    // ALWAYS cap leaveTime at occurrence endsAt if applicable
+    if (occurrence && occurrence.endsAt && leaveTime > new Date(occurrence.endsAt)) {
+      leaveTime = new Date(occurrence.endsAt);
     }
 
     const latestEvent = await prisma.attendanceEvent.findFirst({
@@ -1771,10 +1785,6 @@ const leaveSession = async (req, res) => {
       where: { attendanceId: attendance.id }
     });
     const totalSeconds = allEvents.reduce((sum, e) => sum + e.durationSeconds, 0);
-
-    const occurrence = await prisma.sessionOccurrence.findFirst({
-       where: { sessionId, occurrenceDate: targetDate }
-    });
     let requiredSeconds = 600;
     if (occurrence && occurrence.startsAt && occurrence.endsAt) {
        const sessionDurationSec = Math.max(60, Math.floor((occurrence.endsAt.getTime() - occurrence.startsAt.getTime()) / 1000));

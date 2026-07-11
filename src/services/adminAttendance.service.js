@@ -69,21 +69,7 @@ const resolveFinalStatus = ({ studentAttendance, attendance, occurrence }) => {
   }
 
   if (!isOccurrenceEnded(occurrence)) {
-    if (isOccurrenceLive(occurrence)) {
-      const joined = Boolean(studentAttendance || attendance);
-      if (joined) {
-        const firstJoined = studentAttendance?.firstJoinedAt || attendance?.firstJoinedAt || attendance?.joinedAt;
-        if (firstJoined) {
-          const graceEndTime = occurrence.startsAt ? new Date(new Date(occurrence.startsAt).getTime() + 15 * 60 * 1000) : null;
-          if (graceEndTime && new Date(firstJoined) <= graceEndTime) {
-            return "present";
-          } else {
-            return "late";
-          }
-        }
-        return "present";
-      }
-    }
+    // Return actual database status. Heartbeat API updates database status to 'present'/'late' when threshold is met.
     return status;
   }
 
@@ -93,8 +79,18 @@ const resolveFinalStatus = ({ studentAttendance, attendance, occurrence }) => {
 
   if (joined && requiredSeconds > 0) {
     if (durationSeconds >= requiredSeconds) {
+      // Determine if they were present or late based on first joined time
+      const firstJoined = studentAttendance?.firstJoinedAt || attendance?.firstJoinedAt || attendance?.joinedAt;
+      if (firstJoined) {
+        const graceEndTime = occurrence.startsAt ? new Date(new Date(occurrence.startsAt).getTime() + 15 * 60 * 1000) : null;
+        if (graceEndTime && new Date(firstJoined) <= graceEndTime) {
+          return "present";
+        } else {
+          return "late";
+        }
+      }
       return "present";
-    } else if (durationSeconds > 0 && durationSeconds < requiredSeconds) {
+    } else {
       return "absent";
     }
   }
