@@ -887,8 +887,12 @@ const updateTrainerSession = async (req, res) => {
     const oldScheduledAt = existing.scheduledAt;
 
     // Cancel/delete/mark inactive any existing pending WhatsApp reminder jobs for that session.
+    // Only delete future/upcoming occurrences to preserve past occurrences and attendance history.
     await prisma.sessionOccurrence.deleteMany({
-      where: { sessionId }
+      where: {
+        sessionId,
+        endsAt: { gte: new Date() }
+      }
     });
 
     await prisma.whatsAppReminder.deleteMany({

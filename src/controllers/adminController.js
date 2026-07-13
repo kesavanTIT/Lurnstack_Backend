@@ -875,8 +875,12 @@ const updateLiveClass = async (req, res) => {
       }
 
       // Cleanup existing pending reminder occurrences/jobs
+      // Only delete future/upcoming occurrences to preserve past occurrences and attendance history.
       await prisma.sessionOccurrence.deleteMany({
-        where: { sessionId: rawId }
+        where: {
+          sessionId: rawId,
+          endsAt: { gte: new Date() }
+        }
       });
 
       await prisma.whatsAppReminder.deleteMany({
