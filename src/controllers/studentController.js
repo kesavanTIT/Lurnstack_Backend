@@ -926,6 +926,7 @@ const getStudentSessions = async (req, res) => {
     let whereClause = {
       AND: [
         { status: { not: "deleted" } },
+        { publishState: "PUBLISHED" },
         {
           OR: [
             { status: { not: "ended" } },

@@ -891,7 +891,7 @@ const updateTrainerSession = async (req, res) => {
     await prisma.sessionOccurrence.deleteMany({
       where: {
         sessionId,
-        endsAt: { gte: new Date() }
+        startsAt: { gt: new Date() }
       }
     });
 

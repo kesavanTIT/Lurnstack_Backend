@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const prisma = require('../config/db');
+const { getDurationSeconds } = require('../utils/attendanceCalculator');
 
 const syncLegacyAttendance = async ({ occurrence, studentId, status, firstJoinedAt, lastJoinedAt, joinCount = 0, totalDurationSeconds = 0 }) => {
   const existing = await prisma.attendance.findFirst({
@@ -130,15 +131,7 @@ cron.schedule('*/5 * * * *', async () => {
       });
 
       const actualAttMap = new Map(actualAttendances.map(a => {
-        let totalSecs = a.totalDurationSeconds || 0;
-        // If student joined but never left, backend duration is 0. Cap it to session end time.
-        if (totalSecs === 0 && a.joinedAt) {
-          const start = new Date(a.joinedAt).getTime();
-          const end = occurrence.endsAt ? new Date(occurrence.endsAt).getTime() : start + 3600000; // default 1h
-          if (end > start) {
-            totalSecs = Math.round((end - start) / 1000);
-          }
-        }
+        const totalSecs = getDurationSeconds(a, occurrence);
         return [a.studentId, { totalSecs, status: a.status }];
       }));
 

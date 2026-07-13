@@ -879,7 +879,7 @@ const updateLiveClass = async (req, res) => {
       await prisma.sessionOccurrence.deleteMany({
         where: {
           sessionId: rawId,
-          endsAt: { gte: new Date() }
+          startsAt: { gt: new Date() }
         }
       });
 
