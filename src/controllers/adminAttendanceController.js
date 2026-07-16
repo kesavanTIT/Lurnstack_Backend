@@ -88,11 +88,18 @@ const buildSessionFilter = (extra = {}) => ({
 
 const getCourseKey = (session) => session?.courseId || `${COURSE_KEY_PREFIX}${session?.id}`;
 
+const getTITCourseKey = (session) => `${COURSE_KEY_PREFIX}${session?.id}`;
+
 const isStandaloneCourseKey = (courseKey) => String(courseKey || "").startsWith(COURSE_KEY_PREFIX);
 
 const getSessionIdFromCourseKey = (courseKey) => String(courseKey || "").replace(COURSE_KEY_PREFIX, "");
 
-const getCourseTitle = (session) => session?.courseTitle || session?.title || "Standalone Session";
+const getCourseTitle = (session) => {
+  if (session?.sectionType === "TIT" || session?.sessionType === "TIT" || session?.source === "admin_tit_classes") {
+    return session?.title || session?.courseTitle || "Standalone Class";
+  }
+  return session?.courseTitle || session?.title || "Standalone Session";
+};
 
 const getOccurrenceRuntimeStatus = (occurrence, now = new Date()) => {
   if (!occurrence) return "pending";
@@ -1634,7 +1641,7 @@ const getGroupedAttendanceTIT = async (req, res) => {
 
     const grouped = new Map();
     sessions.forEach((session) => {
-      const key = getCourseKey(session);
+      const key = getTITCourseKey(session);
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(session);
     });
@@ -1788,7 +1795,7 @@ const getGroupedTITCourseDateAttendance = async (req, res) => {
       success: true,
       data: {
         course: {
-          courseKey: getCourseKey(firstSession),
+          courseKey: getTITCourseKey(firstSession),
           courseId: firstSession.courseId || null,
           courseTitle: getCourseTitle(firstSession),
           trainerId: firstSession.trainerId,
