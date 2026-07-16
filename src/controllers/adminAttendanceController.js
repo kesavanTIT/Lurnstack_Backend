@@ -1588,6 +1588,235 @@ const getGroupedTrainerAttendance = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to fetch grouped trainer attendance." });
   }
 };
+
+const buildTITSessionFilter = (extra = {}) => ({
+  status: { not: "deleted" },
+  OR: [
+    { sectionType: "TIT" },
+    { sessionType: "TIT" },
+    { source: "admin_tit_classes" },
+  ],
+  ...extra,
+});
+
+const getTITSessionsForCourseKey = async (courseKey) => {
+  if (!courseKey) return [];
+
+  const where = isStandaloneCourseKey(courseKey)
+    ? buildTITSessionFilter({ id: getSessionIdFromCourseKey(courseKey) })
+    : buildTITSessionFilter({ courseId: courseKey });
+
+  return prisma.liveSession.findMany({
+    where,
+    include: {
+      trainer: { select: { id: true, fullName: true, email: true } },
+      occurrences: {
+        orderBy: { occurrenceDate: "desc" },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+// @desc    Grouped TIT-first admin attendance list
+// @route   GET /api/admin/attendance/tit/grouped
+const getGroupedAttendanceTIT = async (req, res) => {
+  try {
+    const { search, status } = req.query;
+    const sessions = await prisma.liveSession.findMany({
+      where: buildTITSessionFilter(),
+      include: {
+        trainer: { select: { id: true, fullName: true, email: true } },
+        occurrences: { orderBy: { occurrenceDate: "desc" } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const grouped = new Map();
+    sessions.forEach((session) => {
+      const key = getCourseKey(session);
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(session);
+    });
+
+    let courses = [];
+    for (const groupedSessions of grouped.values()) {
+      courses.push(await buildCourseSummaryFromSessions(groupedSessions));
+    }
+
+    if (search) {
+      const needle = String(search).toLowerCase();
+      courses = courses.filter((course) =>
+        [course.courseTitle, course.trainerName, course.trainerEmail]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(needle))
+      );
+    }
+
+    if (status) {
+      courses = courses.filter((course) => course.status === status);
+    }
+
+    const responseSummary = buildSummary({
+      totalStudents: courses.reduce((sum, course) => sum + (course.totalStudents || 0), 0),
+      totalTrainers: new Set(courses.map((course) => course.trainerId).filter(Boolean)).size,
+      totalSessions: courses.reduce((sum, course) => sum + (course.totalSessions || 0), 0),
+      presentCount: courses.reduce((sum, course) => sum + (course.presentCount || 0), 0),
+      lateCount: courses.reduce((sum, course) => sum + (course.lateCount || 0), 0),
+      absentCount: courses.reduce((sum, course) => sum + (course.absentCount || 0), 0),
+      pendingCount: courses.reduce((sum, course) => sum + (course.pendingCount || 0), 0),
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        summary: responseSummary,
+        courses,
+        items: courses,
+      },
+    });
+  } catch (error) {
+    console.error("Grouped Admin Attendance TIT Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch grouped TIT attendance." });
+  }
+};
+
+// @desc    Grouped one-TIT-class attendance with date/occurrence rows
+// @route   GET /api/admin/attendance/tit/:courseKey/grouped
+const getGroupedTITCourseAttendance = async (req, res) => {
+  try {
+    const { courseKey } = req.params;
+    const sessions = await getTITSessionsForCourseKey(courseKey);
+
+    if (sessions.length === 0) {
+      return res.status(404).json({ success: false, message: "TIT Class not found." });
+    }
+
+    const course = await buildCourseSummaryFromSessions(sessions);
+    return res.status(200).json({
+      success: true,
+      data: {
+        course: { ...course, occurrences: undefined },
+        occurrences: course.occurrences,
+        items: course.occurrences,
+      },
+    });
+  } catch (error) {
+    console.error("Grouped Admin TIT Class Attendance Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch grouped TIT class attendance detail." });
+  }
+};
+
+// @desc    Grouped one-TIT-class one-date attendance split into student and trainer sections
+// @route   GET /api/admin/attendance/tit/:courseKey/dates/:date
+const getGroupedTITCourseDateAttendance = async (req, res) => {
+  try {
+    const { courseKey, date } = req.params;
+    const range = getDayRange(date);
+
+    if (!range) {
+      return res.status(400).json({ success: false, message: "Invalid date format. Use YYYY-MM-DD." });
+    }
+
+    const sessions = await getTITSessionsForCourseKey(courseKey);
+    if (sessions.length === 0) {
+      return res.status(404).json({ success: false, message: "TIT Class not found." });
+    }
+
+    const sessionIds = sessions.map((session) => session.id);
+    const occurrences = await prisma.sessionOccurrence.findMany({
+      where: {
+        sessionId: { in: sessionIds },
+        occurrenceDate: { gte: range.start, lte: range.end },
+      },
+      include: {
+        trainer: { select: { id: true, fullName: true, email: true } },
+        session: { include: { trainer: { select: { id: true, fullName: true, email: true } } } },
+      },
+      orderBy: { startsAt: "asc" },
+    });
+
+    const studentAttendance = [];
+    const trainerAttendance = [];
+    let presentCount = 0;
+    let lateCount = 0;
+    let absentCount = 0;
+    let pendingCount = 0;
+    const studentSet = new Set();
+
+    for (const occurrence of occurrences) {
+      const session = occurrence.session || sessions.find((item) => item.id === occurrence.sessionId);
+      const roster = await buildRosterForOccurrence({ session, occurrence, date });
+      presentCount += roster.presentCount;
+      lateCount += roster.lateCount;
+      absentCount += roster.absentCount;
+      pendingCount += countPending(roster);
+      roster.students.forEach((row) => {
+        studentSet.add(row.studentId);
+        studentAttendance.push({
+          ...formatStudentRow({ row, session, occurrence }),
+          occurrenceId: occurrence.id,
+          sessionTitle: session?.title || "Unknown Session",
+          courseTitle: getCourseTitle(session),
+          source: row.source || null,
+        });
+      });
+      trainerAttendance.push({
+        occurrenceId: occurrence.id,
+        sessionId: occurrence.sessionId,
+        sessionTitle: session?.title || "Unknown Session",
+        courseTitle: getCourseTitle(session),
+        date: getDateKey(occurrence.occurrenceDate),
+        startsAt: occurrence.startsAt,
+        endsAt: occurrence.endsAt,
+        runtimeStatus: getOccurrenceRuntimeStatus(occurrence),
+        ...buildTrainerAttendanceFromOccurrence(occurrence, session),
+      });
+    }
+
+    const firstSession = sessions[0];
+    const summary = buildSummary({
+      totalStudents: studentSet.size,
+      totalSessions: occurrences.length,
+      presentCount,
+      lateCount,
+      absentCount,
+      pendingCount,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        course: {
+          courseKey: getCourseKey(firstSession),
+          courseId: firstSession.courseId || null,
+          courseTitle: getCourseTitle(firstSession),
+          trainerId: firstSession.trainerId,
+          trainerName: firstSession.trainer?.fullName || "Unassigned",
+          trainerEmail: firstSession.trainer?.email || null,
+        },
+        date: getDateKey(range.start),
+        summary,
+        occurrences: occurrences.map((occurrence) => ({
+          id: occurrence.id,
+          occurrenceId: occurrence.id,
+          sessionId: occurrence.sessionId,
+          sessionTitle: occurrence.session?.title || "Unknown Session",
+          date: getDateKey(occurrence.occurrenceDate),
+          startsAt: occurrence.startsAt,
+          endsAt: occurrence.endsAt,
+          runtimeStatus: getOccurrenceRuntimeStatus(occurrence),
+        })),
+        studentAttendance,
+        trainerAttendance,
+      },
+    });
+  } catch (error) {
+    console.error("Grouped Admin TIT Course Date Attendance Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch grouped TIT course attendance date details." });
+  }
+};
+
 module.exports = {
   getAttendanceOverview,
   getAllAttendanceRecords,
@@ -1603,5 +1832,8 @@ module.exports = {
   getGroupedCourseAttendance,
   getGroupedCourseDateAttendance,
   getGroupedStudentAttendance,
-  getGroupedTrainerAttendance
+  getGroupedTrainerAttendance,
+  getGroupedAttendanceTIT,
+  getGroupedTITCourseAttendance,
+  getGroupedTITCourseDateAttendance,
 };

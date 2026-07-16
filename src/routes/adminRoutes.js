@@ -71,7 +71,10 @@ const {
   getGroupedCourseAttendance,
   getGroupedCourseDateAttendance,
   getGroupedStudentAttendance,
-  getGroupedTrainerAttendance
+  getGroupedTrainerAttendance,
+  getGroupedAttendanceTIT,
+  getGroupedTITCourseAttendance,
+  getGroupedTITCourseDateAttendance,
 } = require("../controllers/adminAttendanceController");
 
 const { protect, isAdmin } = require("../middleware/authMiddleware");
@@ -167,6 +170,9 @@ router.get("/attendance/overview", getAttendanceOverview);
 router.get("/attendance/courses/grouped", getGroupedAttendanceCourses);
 router.get("/attendance/courses/:courseKey/grouped", getGroupedCourseAttendance);
 router.get("/attendance/courses/:courseKey/dates/:date", getGroupedCourseDateAttendance);
+router.get("/attendance/tit/grouped", getGroupedAttendanceTIT);
+router.get("/attendance/tit/:courseKey/grouped", getGroupedTITCourseAttendance);
+router.get("/attendance/tit/:courseKey/dates/:date", getGroupedTITCourseDateAttendance);
 router.get("/attendance/students/:studentId/grouped", getGroupedStudentAttendance);
 router.get("/attendance/trainers/:trainerId/grouped", getGroupedTrainerAttendance);
 router.get("/attendance/courses", getAllCoursesAttendance);
