@@ -31,6 +31,42 @@ const getKolkataDateTime = (dateStr, timeStr) => {
   return new Date(`${dateStr}T${timeStr}:00+05:30`);
 };
 
+const formatTime = (t) => {
+  if (!t) return t;
+  let normalized = String(t).trim().toUpperCase().replace(/\s+/g, " ");
+  normalized = normalized.replace(".", ":");
+
+  const isPM = normalized.includes("PM");
+  const isAM = normalized.includes("AM");
+
+  if (isPM || isAM) {
+    let cleanTime = normalized.replace("PM", "").replace("AM", "").trim();
+    if (!cleanTime.includes(":")) {
+      cleanTime = `${cleanTime}:00`;
+    }
+    let [hours, minutes] = cleanTime.split(":").map(Number);
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return t;
+
+    if (isPM && hours < 12) hours += 12;
+    if (isAM && hours === 12) hours = 0;
+
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  } else {
+    if (!normalized.includes(":")) {
+      const hours = Number(normalized);
+      if (!Number.isNaN(hours) && hours >= 0 && hours < 24) {
+        return `${String(hours).padStart(2, "0")}:00`;
+      }
+    } else {
+      let [hours, minutes] = normalized.split(":").map(Number);
+      if (!Number.isNaN(hours) && !Number.isNaN(minutes) && hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
+        return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+      }
+    }
+  }
+  return normalized;
+};
+
 const matchesRecurringDays = (session, date) => {
   if (!session.isRecurring) return true;
   
@@ -204,7 +240,14 @@ const validateRecurrenceEndDate = (recurrenceEndDate) => {
   if (recurrenceEndDate === undefined || recurrenceEndDate === null || recurrenceEndDate === "") {
     return { isValid: true, parsed: null };
   }
-  const dateStr = String(recurrenceEndDate).trim();
+  let dateStr = String(recurrenceEndDate).trim();
+  
+  // Convert DD-MM-YYYY to YYYY-MM-DD automatically
+  const dmyMatch = dateStr.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (dmyMatch) {
+    dateStr = `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
+  }
+  
   const match = dateStr.match(/^\d{4}-\d{2}-\d{2}$/);
   if (!match) {
     return { isValid: false, message: "recurrenceEndDate must be in YYYY-MM-DD format." };
@@ -568,8 +611,8 @@ const createSession = async (req, res) => {
         title,
         subtitle: subtitle || null,
         description: description || null,
-        startTime,
-        endTime,
+        startTime: formatTime(startTime),
+        endTime: formatTime(endTime),
         timezone: timezone || "Asia/Kolkata",
         meetingLink,
         isRecurring,
@@ -842,19 +885,6 @@ const updateTrainerSession = async (req, res) => {
     const checkDate = req.body.scheduledDate || req.body.date || existing.scheduledDate || (existing.createdAt ? getKolkataDateString(new Date(existing.createdAt)) : getKolkataDateString());
     const checkStartTime = startTime !== undefined ? startTime : existing.startTime;
     const checkEndTime = endTime !== undefined ? endTime : existing.endTime;
-
-    const formatTime = (t) => {
-      if (!t) return t;
-      const normalized = t.replace(".", ":");
-      if (normalized.includes("AM") || normalized.includes("PM")) {
-        let [timePart, modifier] = normalized.split(" ");
-        let [hours, minutes] = timePart.split(":").map(Number);
-        if (modifier === "PM" && hours < 12) hours += 12;
-        if (modifier === "AM" && hours === 12) hours = 0;
-        return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
-      }
-      return normalized;
-    };
 
     const finalStartTime = checkStartTime ? formatTime(checkStartTime) : null;
     const finalEndTime = checkEndTime ? formatTime(checkEndTime) : null;
