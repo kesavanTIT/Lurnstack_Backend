@@ -74,7 +74,7 @@ app.use("/api/webhooks", express.raw({ type: "application/json" }), webhookRoute
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use("/uploads", express.static("uploads", {
+app.use("/uploads", express.static(require("path").join(__dirname, "../uploads"), {
   setHeaders: (res) => {
     res.set("Access-Control-Allow-Origin", "*");
   }
