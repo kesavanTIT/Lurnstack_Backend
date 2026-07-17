@@ -3,7 +3,7 @@ const path = require("path");
 const fs = require("fs");
 
 // Ensure promo uploads directory exists under uploads/promos
-const promoUploadDir = "uploads/promos";
+const promoUploadDir = path.join(__dirname, "../../uploads/promos");
 if (!fs.existsSync(promoUploadDir)) {
   fs.mkdirSync(promoUploadDir, { recursive: true });
 }
