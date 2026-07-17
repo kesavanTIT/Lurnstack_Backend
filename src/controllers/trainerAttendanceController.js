@@ -206,7 +206,7 @@ const getStudentAttendanceInCourse = async (req, res) => {
           const sessionDurationMins = (occ?.startsAt && occ?.endsAt)
             ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000))
             : 60;
-          const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.30);
+          const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.25);
 
           if (totalSecs >= requiredSeconds) {
             finalStatus = 'present';

@@ -1458,6 +1458,8 @@ const joinSession = async (req, res) => {
         }
       });
     } else {
+      const userAgent = req.headers["user-agent"] || "";
+      const isMobileUser = /mobile|android|iphone|ipad|phone/i.test(userAgent);
       studentAttendance = await prisma.studentAttendance.create({
         data: {
           courseId: session.courseId || session.id || "default",
@@ -1470,7 +1472,7 @@ const joinSession = async (req, res) => {
           lastJoinedAt: joinedAtTime,
           joinCount: 1,
           status: resolvedStatus,
-          source: "join_button"
+          source: isMobileUser ? "mobile_join" : "join_button"
         }
       });
     }
@@ -1654,7 +1656,7 @@ const heartbeatSession = async (req, res) => {
     let requiredSeconds = 600;
     if (occurrence && occurrence.startsAt && occurrence.endsAt) {
        const sessionDurationSec = Math.max(60, Math.floor((occurrence.endsAt.getTime() - occurrence.startsAt.getTime()) / 1000));
-       requiredSeconds = Math.ceil(sessionDurationSec * 0.30);
+       requiredSeconds = Math.ceil(sessionDurationSec * 0.25);
     }
 
     let newStatus = attendance.status;
@@ -1789,7 +1791,7 @@ const leaveSession = async (req, res) => {
     let requiredSeconds = 600;
     if (occurrence && occurrence.startsAt && occurrence.endsAt) {
        const sessionDurationSec = Math.max(60, Math.floor((occurrence.endsAt.getTime() - occurrence.startsAt.getTime()) / 1000));
-       requiredSeconds = Math.ceil(sessionDurationSec * 0.30);
+       requiredSeconds = Math.ceil(sessionDurationSec * 0.25);
     }
 
     let newStatus = attendance.status;
@@ -2443,7 +2445,7 @@ const getCourseAttendance = async (req, res) => {
         const sessionDurationMins = (occ?.startsAt && occ?.endsAt)
           ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000))
           : 60;
-        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.30);
+        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.25);
 
         if (totalSecs >= requiredSeconds) {
           finalStatus = 'present';
@@ -2508,7 +2510,7 @@ const getSessionAttendance = async (req, res) => {
         const sessionDurationMins = (occ?.startsAt && occ?.endsAt)
           ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000))
           : 60;
-        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.30);
+        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.25);
 
         if (totalSecs >= requiredSeconds) {
           finalStatus = 'present';
@@ -2566,7 +2568,7 @@ const getStudentAttendance = async (req, res) => {
         const sessionDurationMins = (occ?.startsAt && occ?.endsAt)
           ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000))
           : 60;
-        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.30);
+        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.25);
 
         if (totalSecs >= requiredSeconds) {
           finalStatus = 'present';

@@ -4,7 +4,7 @@ const prisma = require("../config/db");
 const { getDurationSeconds } = require("../utils/attendanceCalculator");
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STUDENT_THRESHOLD_PCT = 0.30;
+const STUDENT_THRESHOLD_PCT = 0.25;
 const TRAINER_THRESHOLD_PCT = 0.85;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

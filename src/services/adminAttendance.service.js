@@ -2,7 +2,7 @@ const prisma = require("../config/db");
 const { getDurationSeconds } = require("../utils/attendanceCalculator");
 const ACTIVE_BOOKING_STATUSES = ["paid", "joined", "completed"];
 const PRESENT_STATUSES = ["present", "joined", "completed"];
-const ATTENDANCE_THRESHOLD_RATIO = 0.3;
+const ATTENDANCE_THRESHOLD_RATIO = 0.25;
 
 const normalizeStatus = (status) => {
   if (!status) return "pending";
@@ -74,8 +74,24 @@ const resolveFinalStatus = ({ studentAttendance, attendance, occurrence }) => {
   }
 
   const requiredSeconds = getRequiredSeconds(occurrence);
-  const durationSeconds = getDurationSeconds(attendance, occurrence);
+  let durationSeconds = getDurationSeconds(attendance, occurrence);
   const joined = Boolean(studentAttendance || attendance);
+
+  // If mobile user and occurrence ended, we auto-estimate duration from firstJoinedAt to endsAt
+  const isMobile = studentAttendance?.source === "mobile_join";
+  if (joined && isMobile && isOccurrenceEnded(occurrence) && occurrence.endsAt) {
+    const firstJoined = studentAttendance?.firstJoinedAt || attendance?.firstJoinedAt || attendance?.joinedAt;
+    if (firstJoined) {
+      const ends = new Date(occurrence.endsAt);
+      const joinedDate = new Date(firstJoined);
+      
+      // Calculate duration from joinedDate to ends
+      const estimatedSeconds = Math.max(0, Math.floor((ends.getTime() - joinedDate.getTime()) / 1000));
+      if (estimatedSeconds > durationSeconds) {
+        durationSeconds = estimatedSeconds;
+      }
+    }
+  }
 
   if (joined && requiredSeconds > 0) {
     if (durationSeconds >= requiredSeconds) {

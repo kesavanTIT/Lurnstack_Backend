@@ -116,11 +116,11 @@ cron.schedule('*/5 * * * *', async () => {
         }
       }
 
-      // ENFORCE 30% RULE FOR STUDENTS WHO JOINED
+      // ENFORCE 25% RULE FOR STUDENTS WHO JOINED
       const sessionDurationMins = (occurrence.startsAt && occurrence.endsAt)
         ? Math.max(1, Math.round((new Date(occurrence.endsAt) - new Date(occurrence.startsAt)) / 60000))
         : 60;
-      const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.30);
+      const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.25);
 
       // Fetch actual duration from main Attendance model
       const actualAttendances = await prisma.attendance.findMany({
@@ -137,10 +137,25 @@ cron.schedule('*/5 * * * *', async () => {
 
       for (const sa of existingAttendances) {
         const actualInfo = actualAttMap.get(sa.studentId);
-        const totalSecs = actualInfo?.totalSecs || 0;
+        let totalSecs = actualInfo?.totalSecs || 0;
+        
+        // If mobile user, auto-estimate duration from firstJoinedAt to endsAt
+        const isMobile = sa.source === "mobile_join";
+        if (isMobile && occurrence.endsAt) {
+          const firstJoined = sa.firstJoinedAt;
+          if (firstJoined) {
+            const ends = new Date(occurrence.endsAt);
+            const joinedDate = new Date(firstJoined);
+            const estimatedSeconds = Math.max(0, Math.floor((ends.getTime() - joinedDate.getTime()) / 1000));
+            if (estimatedSeconds > totalSecs) {
+              totalSecs = estimatedSeconds;
+            }
+          }
+        }
+
         let newStatus = sa.status;
         
-        // If they didn't meet the 30% threshold, mark them as absent (even if they clicked join)
+        // If they didn't meet the 25% threshold, mark them as absent (even if they clicked join)
         if (totalSecs < requiredSeconds) {
           newStatus = "absent";
         } else if (newStatus === "joined" || newStatus === "pending") {

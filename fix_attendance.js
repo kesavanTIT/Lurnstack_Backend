@@ -23,18 +23,25 @@ async function fix() {
 
       if (actualAtt) {
         let totalSecs = actualAtt.totalDurationSeconds || 0;
-        if (totalSecs === 0 && actualAtt.joinedAt) {
-          const start = new Date(actualAtt.joinedAt).getTime();
-          const end = sa.occurrence.endsAt ? new Date(sa.occurrence.endsAt).getTime() : start + 3600000;
-          if (end > start) {
-            totalSecs = Math.round((end - start) / 1000);
+
+        // If mobile user, auto-estimate duration
+        const isMobile = sa.source === "mobile_join";
+        if (isMobile && sa.occurrence.endsAt) {
+          const firstJoined = sa.firstJoinedAt;
+          if (firstJoined) {
+            const ends = new Date(sa.occurrence.endsAt);
+            const joinedDate = new Date(firstJoined);
+            const estimatedSeconds = Math.max(0, Math.floor((ends.getTime() - joinedDate.getTime()) / 1000));
+            if (estimatedSeconds > totalSecs) {
+              totalSecs = estimatedSeconds;
+            }
           }
         }
 
         const sessionDurationMins = (sa.occurrence.startsAt && sa.occurrence.endsAt)
           ? Math.max(1, Math.round((new Date(sa.occurrence.endsAt) - new Date(sa.occurrence.startsAt)) / 60000))
           : 60;
-        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.30);
+        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.25);
 
         if (totalSecs >= requiredSeconds) {
           console.log(`Updating ${sa.student.fullName} to present. Duration: ${totalSecs}s >= Required: ${requiredSeconds}s`);

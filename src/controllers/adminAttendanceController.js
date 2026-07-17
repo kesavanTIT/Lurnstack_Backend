@@ -261,7 +261,22 @@ const buildCourseSummaryFromSessions = async (sessions) => {
 
 const formatStudentRow = ({ row, session, occurrence }) => {
   const date = getDateKey(row.occurrenceDate || occurrence?.occurrenceDate);
-  const durationSeconds = row.totalDurationSeconds || 0;
+  let durationSeconds = row.totalDurationSeconds || 0;
+
+  // If mobile user and occurrence ended, auto-estimate duration for display
+  const isMobile = row.source === "mobile_join";
+  if (isMobile && isOccurrenceEnded(occurrence) && occurrence.endsAt) {
+    const firstJoined = row.firstJoinedAt;
+    if (firstJoined) {
+      const ends = new Date(occurrence.endsAt);
+      const joinedDate = new Date(firstJoined);
+      const estimatedSeconds = Math.max(0, Math.floor((ends.getTime() - joinedDate.getTime()) / 1000));
+      if (estimatedSeconds > durationSeconds) {
+        durationSeconds = estimatedSeconds;
+      }
+    }
+  }
+
   return {
     attendanceId: row.attendanceId || row.studentAttendanceId || null,
     studentAttendanceId: row.studentAttendanceId || null,
