@@ -71,19 +71,33 @@ const matchesRecurringDays = (session, date) => {
 
 // Helper to calculate occurrences
 const getSessionOccurrences = (session, now = new Date()) => {
-  if (!matchesRecurringDays(session, now)) {
-    return { scheduledAt: null, endsAt: null };
+  // If today matches the schedule, return today's timing
+  if (matchesRecurringDays(session, now)) {
+    const todayStr = getKolkataDateString(now);
+    const createdDateStr = getKolkataDateString(new Date(session.createdAt));
+    const dateStr = session.isRecurring ? todayStr : createdDateStr;
+    const scheduledAt = session.startTime ? getKolkataDateTime(dateStr, session.startTime) : null;
+    const endsAt = session.endTime ? getKolkataDateTime(dateStr, session.endTime) : null;
+    return { scheduledAt, endsAt };
   }
 
-  const todayStr = getKolkataDateString(now);
-  const createdDateStr = getKolkataDateString(new Date(session.createdAt));
+  // Today is not a scheduled day (e.g. Saturday for Mon-Fri classes).
+  // Roll forward up to 7 days to find the next valid occurrence so the
+  // frontend can still display these sessions in upcoming tickers/lists.
+  if (session.isRecurring) {
+    for (let i = 1; i <= 7; i++) {
+      const nextDate = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
+      if (matchesRecurringDays(session, nextDate)) {
+        const nextDateStr = getKolkataDateString(nextDate);
+        const scheduledAt = session.startTime ? getKolkataDateTime(nextDateStr, session.startTime) : null;
+        const endsAt = session.endTime ? getKolkataDateTime(nextDateStr, session.endTime) : null;
+        return { scheduledAt, endsAt };
+      }
+    }
+  }
 
-  const dateStr = session.isRecurring ? todayStr : createdDateStr;
-
-  const scheduledAt = session.startTime ? getKolkataDateTime(dateStr, session.startTime) : null;
-  const endsAt = session.endTime ? getKolkataDateTime(dateStr, session.endTime) : null;
-
-  return { scheduledAt, endsAt };
+  // No valid upcoming occurrence found — return null
+  return { scheduledAt: null, endsAt: null };
 };
 
 // Helper to calculate session status dynamically based on current server time
