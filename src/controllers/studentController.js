@@ -640,12 +640,7 @@ const getAllLiveClasses = async (req, res) => {
       };
     });
 
-    const activeSessionMappedClasses = sessionMappedClasses.filter(cls => {
-      if (cls.isRecurring && cls.todayStatus === "not_scheduled") {
-        return false;
-      }
-      return true;
-    });
+    const activeSessionMappedClasses = sessionMappedClasses;
 
     res.status(200).json({
       success: true,
