@@ -2,6 +2,7 @@ const { Prisma } = require("@prisma/client");
 const prisma = require("../config/db");
 const { sendWhatsAppReminder, sendSessionReminderWhatsApp } = require("../services/whatsappService");
 const { generateOccurrences } = require("../services/occurrenceService");
+const { getRelativeUploadPath } = require("../utils/pathUtils");
 
 const dashboardUserSelect = {
   id: true,
@@ -510,7 +511,7 @@ const createLiveClass = async (req, res) => {
     const resolvedCourseId = courseId || course_id || null;
     const resolvedEndTimeInput = endTime || endsAt || end_time;
 
-    const thumbnail = req.file ? req.file.path : null;
+    const thumbnail = req.file ? getRelativeUploadPath(req.file.path) : null;
 
     if (!courseName || (!classTitle && !title) || !resolvedInstructor || !date || (!time && !startTime) || !duration || (!meetLink && !meetingLink)) {
       return res.status(400).json({
@@ -611,7 +612,7 @@ const createLiveClass = async (req, res) => {
 
     let thumbnailResponse = newSession.thumbnail;
     if (thumbnailResponse && !thumbnailResponse.startsWith("http")) {
-      thumbnailResponse = `${req.protocol}://${req.get("host")}/${thumbnailResponse.replace(/\\/g, "/")}`;
+      thumbnailResponse = `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(thumbnailResponse)}`;
     }
 
     return res.status(201).json({
@@ -742,14 +743,14 @@ const updateLiveClass = async (req, res) => {
           scheduledAt,
           durationMinutes,
           meetLink: meetLink || existingClass.meetLink,
-          thumbnail: req.file ? req.file.path : existingClass.thumbnail,
+          thumbnail: req.file ? getRelativeUploadPath(req.file.path) : existingClass.thumbnail,
           sectionType: sectionType !== undefined ? sectionType : existingClass.sectionType,
           source: source !== undefined ? source : existingClass.source,
         },
       });
 
       if (updatedClass.thumbnail) {
-        updatedClass.thumbnail = `${req.protocol}://${req.get("host")}/${updatedClass.thumbnail.replace(/\\/g, "/")}`;
+        updatedClass.thumbnail = `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(updatedClass.thumbnail)}`;
       }
 
       return res.status(200).json({
@@ -844,7 +845,7 @@ const updateLiveClass = async (req, res) => {
       }
 
       if (req.file) {
-        updateData.thumbnail = req.file.path;
+        updateData.thumbnail = getRelativeUploadPath(req.file.path);
       }
 
       if (time !== undefined || date !== undefined || duration !== undefined) {
@@ -916,7 +917,7 @@ const updateLiveClass = async (req, res) => {
         time: updatedSession.startTime || "",
         duration: `${updatedSession.durationMinutes || 60} mins`,
         meetLink: updatedSession.meetingLink || "",
-        thumbnail: updatedSession.thumbnail ? `${req.protocol}://${req.get("host")}/${updatedSession.thumbnail.replace(/\\/g, "/")}` : null,
+        thumbnail: updatedSession.thumbnail ? `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(updatedSession.thumbnail)}` : null,
         isRecurring: updatedSession.isRecurring,
         recurrenceType: updatedSession.recurrenceType,
         recurringDays: serializeRecurringDays(updatedSession.recurringDays),
@@ -1200,7 +1201,7 @@ const getLiveClasses = async (req, res) => {
     const formatted = classes.map((c) => {
       let thumbnail = c.thumbnail;
       if (thumbnail && !thumbnail.startsWith("http")) {
-        thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+        thumbnail = `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(thumbnail)}`;
       }
       return {
         id: c.id,
@@ -1261,7 +1262,7 @@ const getLiveClass = async (req, res) => {
         if (legacyClass) {
           let thumbnail = legacyClass.thumbnail;
           if (thumbnail && !thumbnail.startsWith("http")) {
-            thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+            thumbnail = `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(thumbnail)}`;
           }
           return res.status(200).json({
             success: true,
@@ -1279,7 +1280,7 @@ const getLiveClass = async (req, res) => {
 
     let thumbnail = c.thumbnail;
     if (thumbnail && !thumbnail.startsWith("http")) {
-      thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+      thumbnail = `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(thumbnail)}`;
     }
 
     return res.status(200).json({

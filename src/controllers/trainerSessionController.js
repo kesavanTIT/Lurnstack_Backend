@@ -1,5 +1,6 @@
 const prisma = require("../config/db");
 const { generateOccurrences } = require("../services/occurrenceService");
+const { getRelativeUploadPath } = require("../utils/pathUtils");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TIMEZONE & STATUS HELPERS (Asia/Kolkata)
@@ -323,7 +324,8 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
 
   let thumbnail = session.thumbnail || null;
   if (thumbnail && req && !thumbnail.startsWith("http://") && !thumbnail.startsWith("https://")) {
-    thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+    const relativePath = getRelativeUploadPath(thumbnail);
+    thumbnail = `${req.protocol}://${req.get("host")}/${relativePath}`;
   }
 
   return {
@@ -590,9 +592,9 @@ const createSession = async (req, res) => {
 
     let thumbnail = null;
     if (req.file) {
-      thumbnail = req.file.path;
+      thumbnail = getRelativeUploadPath(req.file.path);
     } else if (req.body.thumbnail && req.body.thumbnail !== "null" && req.body.thumbnail !== "undefined") {
-      thumbnail = req.body.thumbnail;
+      thumbnail = getRelativeUploadPath(req.body.thumbnail);
     }
 
     let enableWhatsAppValue = true;
@@ -846,11 +848,11 @@ const updateTrainerSession = async (req, res) => {
     }
 
     if (req.file) {
-      updateData.thumbnail = req.file.path;
+      updateData.thumbnail = getRelativeUploadPath(req.file.path);
     } else if (req.body.thumbnail !== undefined) {
       updateData.thumbnail = (req.body.thumbnail === "null" || req.body.thumbnail === "undefined") 
         ? null 
-        : req.body.thumbnail;
+        : getRelativeUploadPath(req.body.thumbnail);
     }
 
     if (courseId !== undefined || courseTitle !== undefined || category !== undefined) {

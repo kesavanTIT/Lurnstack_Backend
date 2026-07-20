@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { getRelativeUploadPath } = require("../utils/pathUtils");
 
 // Helper to get today's date string in Asia/Kolkata timezone (format: YYYY-MM-DD)
 const getKolkataDateString = (date = new Date()) => {
@@ -149,7 +150,7 @@ const formatPublicSession = (session, categoryMap = new Map(), req = null) => {
 
   let thumbnail = session.thumbnail || null;
   if (thumbnail && req && !thumbnail.startsWith("http://") && !thumbnail.startsWith("https://")) {
-    thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+    thumbnail = `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(thumbnail)}`;
   }
 
   // Pricing calculations

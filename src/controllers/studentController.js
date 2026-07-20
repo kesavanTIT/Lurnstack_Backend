@@ -2,6 +2,7 @@ const prisma = require("../config/db");
 const razorpay = require("../config/razorpay");
 const crypto = require("crypto");
 const { getDurationSeconds } = require("../utils/attendanceCalculator");
+const { getRelativeUploadPath } = require("../utils/pathUtils");
 // ─────────────────────────────────────────────────────────────────────────────
 // TIMEZONE & STATUS HELPERS (Asia/Kolkata)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -266,7 +267,7 @@ const formatSession = (session, categoryMap = new Map(), studentId = null, req =
 
   let thumbnail = session.thumbnail || null;
   if (thumbnail && req && !thumbnail.startsWith("http://") && !thumbnail.startsWith("https://")) {
-    thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+    thumbnail = `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(thumbnail)}`;
   }
 
   // Pricing calculations
@@ -444,7 +445,7 @@ const getAllLiveClasses = async (req, res) => {
 
       return {
         ...cls,
-        thumbnail: cls.thumbnail ? (cls.thumbnail.startsWith("http://") || cls.thumbnail.startsWith("https://") ? cls.thumbnail : `${req.protocol}://${req.get("host")}/${cls.thumbnail.replace(/\\/g, "/")}`) : null,
+        thumbnail: cls.thumbnail ? (cls.thumbnail.startsWith("http://") || cls.thumbnail.startsWith("https://") ? cls.thumbnail : `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(cls.thumbnail)}`) : null,
         status,
         isRecurring: cls.isRecurring,
         recurrenceType: cls.recurrenceType
@@ -605,7 +606,7 @@ const getAllLiveClasses = async (req, res) => {
         duration: `${durationMinutes} mins`,
         meetLink: session.meetingLink || "",
         meetingLink: session.meetingLink || "",
-        thumbnail: session.thumbnail ? (session.thumbnail.startsWith("http://") || session.thumbnail.startsWith("https://") ? session.thumbnail : `${req.protocol}://${req.get("host")}/${session.thumbnail.replace(/\\/g, "/")}`) : null,
+        thumbnail: session.thumbnail ? (session.thumbnail.startsWith("http://") || session.thumbnail.startsWith("https://") ? session.thumbnail : `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(session.thumbnail)}`) : null,
         status: legacyStatus,
         isRecurring: session.isRecurring,
         recurrenceType: session.recurrenceType,
@@ -676,7 +677,7 @@ const getLiveClassById = async (req, res) => {
 
     if (dbLiveClass) {
       if (dbLiveClass.thumbnail) {
-        dbLiveClass.thumbnail = dbLiveClass.thumbnail.startsWith("http://") || dbLiveClass.thumbnail.startsWith("https://") ? dbLiveClass.thumbnail : `${req.protocol}://${req.get("host")}/${dbLiveClass.thumbnail.replace(/\\/g, "/")}`;
+        dbLiveClass.thumbnail = dbLiveClass.thumbnail.startsWith("http://") || dbLiveClass.thumbnail.startsWith("https://") ? dbLiveClass.thumbnail : `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(dbLiveClass.thumbnail)}`;
       }
       return res.status(200).json({
         success: true,
@@ -840,7 +841,7 @@ const getLiveClassById = async (req, res) => {
         duration: `${durationMinutes} mins`,
         meetLink: session.meetingLink || "",
         meetingLink: session.meetingLink || "",
-        thumbnail: session.thumbnail ? (session.thumbnail.startsWith("http://") || session.thumbnail.startsWith("https://") ? session.thumbnail : `${req.protocol}://${req.get("host")}/${session.thumbnail.replace(/\\/g, "/")}`) : null,
+        thumbnail: session.thumbnail ? (session.thumbnail.startsWith("http://") || session.thumbnail.startsWith("https://") ? session.thumbnail : `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(session.thumbnail)}`) : null,
         status: legacyStatus,
         isRecurring: session.isRecurring,
         recurrenceType: session.recurrenceType,
@@ -2629,7 +2630,7 @@ const getStudentTITClasses = async (req, res) => {
     const formatted = classes.map((cls) => {
       let thumbnail = cls.thumbnail;
       if (thumbnail && !thumbnail.startsWith("http")) {
-        thumbnail = `${req.protocol}://${req.get("host")}/${thumbnail.replace(/\\/g, "/")}`;
+        thumbnail = `${req.protocol}://${req.get("host")}/${getRelativeUploadPath(thumbnail)}`;
       }
 
       const isFree = cls.pricingState === "FREE" || cls.priceInPaise === 0 || !cls.priceInPaise;
