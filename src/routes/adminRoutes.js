@@ -91,6 +91,11 @@ const {
   getAdminPromoPosters,
   deleteAdminPromoPoster,
 } = require("../controllers/promoController");
+const {
+  getAdminReels,
+  createAdminReel,
+  deleteAdminReel,
+} = require("../controllers/reelController");
 
 // Public Admin Routes
 router.post("/register", registerAdmin);
@@ -195,5 +200,11 @@ router.delete("/offers/:id", deleteAdminOffer);
 router.get("/promos/posters", getAdminPromoPosters);
 router.post("/promos/posters", promoUpload.single("image"), createAdminPromoPoster);
 router.delete("/promos/posters/:id", deleteAdminPromoPoster);
+
+// Admin Video Reels Management
+const reelUpload = require("../middleware/reelUploadMiddleware");
+router.get("/reels", getAdminReels);
+router.post("/reels", reelUpload.fields([{ name: "video", maxCount: 1 }, { name: "logo", maxCount: 1 }]), createAdminReel);
+router.delete("/reels/:id", deleteAdminReel);
 
 module.exports = router;

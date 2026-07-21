@@ -842,3 +842,18 @@ model PromoPoster {
   updatedAt DateTime @updatedAt
 }
 
+model VideoReel {
+  id           String   @id @default(uuid())
+  videoSrc     String   
+  avatarUrl    String?  
+  courseName   String
+  trainerName  String
+  caption      String   @db.Text
+  audioTitle   String
+  ctaText      String   @default("Register")
+  isLive       Boolean  @default(true)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
