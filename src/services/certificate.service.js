@@ -67,9 +67,10 @@ const getSettings = async () => {
   });
 
   if (!settings) {
-    throw new Error(
-      "CertificateSettings not configured. An admin must create settings first."
-    );
+    return {
+      freeThreshold: 75,
+      certificatePricePaise: 50000,
+    };
   }
 
   return {
@@ -1075,6 +1076,7 @@ const trackPurchase = async (certificateId, paymentRef) => {
 module.exports = {
   checkEligibility,
   calculateAttendance,
+  getCourseDates,
   generateCertificateId,
   generateCertificatePDF,
   generateMockCertificatePDF,
