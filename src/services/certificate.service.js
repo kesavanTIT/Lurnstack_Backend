@@ -769,32 +769,38 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
     }
   }
 
-  // 7. Signature (Bottom Right)
-  const signatureImagePath = path.join(process.cwd(), "src", "assets", "image", "signature.png");
-  
-  if (fs.existsSync(signatureImagePath)) {
+  // 7. Signature Block (Bottom Right)
+  const possibleSigPaths = [
+    path.join(process.cwd(), "src", "assets", "image", "signature.png"),
+    path.join(process.cwd(), "templates", "signature.png"),
+    path.join(__dirname, "..", "..", "src", "assets", "image", "signature.png"),
+    path.join(__dirname, "..", "templates", "signature.png")
+  ];
+  const sigPath = possibleSigPaths.find((p) => fs.existsSync(p));
+
+  // Layer 1: Signature image (Handwritten Signature)
+  if (sigPath) {
     try {
-      doc.image(signatureImagePath, pageW - 238, bottomY - 48, { width: 135 });
+      doc.image(sigPath, pageW - 238, bottomY - 60, { width: 135, height: 40 });
     } catch (e) {
       console.error("Failed to load signature image", e);
     }
-  } else {
-    const cursiveFontPath = path.join(process.cwd(), "uploads", "DancingScript.ttf");
-    if (fs.existsSync(cursiveFontPath)) {
-      doc.registerFont("CursiveSignature", cursiveFontPath);
-    }
-    const signatureFont = fs.existsSync(cursiveFontPath) ? "CursiveSignature" : "Times-Italic";
-    doc.font(signatureFont)
-       .fontSize(44)
-       .fillColor("#111827")
-       .text("Priya. P", pageW - 260, bottomY - 50, { width: 180, align: "center" });
   }
 
+  // Layer 2: Authorized Person Name
+  doc.font("Helvetica-Bold")
+     .fontSize(13)
+     .fillColor("#111827")
+     .text("Priya. P", pageW - 260, bottomY - 18, { width: 180, align: "center" });
+
+  // Layer 3: Divider Line
   doc.moveTo(pageW - 260, bottomY).lineTo(pageW - 80, bottomY).lineWidth(1).strokeColor("#94a3b8").stroke();
+
+  // Layer 4: Signature Label
   doc.font("Helvetica-Bold")
      .fontSize(10)
      .fillColor("#64748b")
-     .text("AUTHORIZED SIGNATURE", pageW - 260, bottomY + 10, { width: 180, align: "center", characterSpacing: 1.5 });
+     .text("AUTHORIZED SIGNATURE", pageW - 260, bottomY + 8, { width: 180, align: "center", characterSpacing: 1.5 });
 
   doc.end();
 
@@ -1016,19 +1022,38 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
     }
   } catch (err) {}
 
-  // Signature
-  const signatureImagePath = path.join(process.cwd(), "src", "assets", "image", "signature.png");
-  if (fs.existsSync(signatureImagePath)) {
+  // Signature Block (Bottom Right)
+  const possibleSigPaths = [
+    path.join(process.cwd(), "src", "assets", "image", "signature.png"),
+    path.join(process.cwd(), "templates", "signature.png"),
+    path.join(__dirname, "..", "..", "src", "assets", "image", "signature.png"),
+    path.join(__dirname, "..", "templates", "signature.png")
+  ];
+  const sigPath = possibleSigPaths.find((p) => fs.existsSync(p));
+
+  // Layer 1: Signature image (Handwritten Signature)
+  if (sigPath) {
     try {
-      doc.image(signatureImagePath, pageW - 238, bottomY - 48, { width: 135 });
+      doc.image(sigPath, pageW - 238, bottomY - 60, { width: 135, height: 40 });
     } catch (e) {
       console.error("Failed to load signature image", e);
     }
-  } else {
-    doc.font("Times-Italic").fontSize(44).fillColor("#111827").text("Priya. P", pageW - 260, bottomY - 50, { width: 180, align: "center" });
   }
+
+  // Layer 2: Authorized Person Name
+  doc.font("Helvetica-Bold")
+     .fontSize(13)
+     .fillColor("#111827")
+     .text("Priya. P", pageW - 260, bottomY - 18, { width: 180, align: "center" });
+
+  // Layer 3: Divider Line
   doc.moveTo(pageW - 260, bottomY).lineTo(pageW - 80, bottomY).lineWidth(1).strokeColor("#94a3b8").stroke();
-  doc.font("Helvetica-Bold").fontSize(10).fillColor("#64748b").text("AUTHORIZED SIGNATURE", pageW - 260, bottomY + 10, { width: 180, align: "center", characterSpacing: 1.5 });
+
+  // Layer 4: Signature Label
+  doc.font("Helvetica-Bold")
+     .fontSize(10)
+     .fillColor("#64748b")
+     .text("AUTHORIZED SIGNATURE", pageW - 260, bottomY + 8, { width: 180, align: "center", characterSpacing: 1.5 });
 
   doc.end();
   const pdfBuffer = await pdfReady;
