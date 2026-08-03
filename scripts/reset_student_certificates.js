@@ -1,14 +1,18 @@
 const prisma = require('../src/config/db');
 
-const emails = [
+const defaultEmails = [
   'sharveshgukanv2007@gmail.com',
   'anulubbie17@gmail.com',
   'msnegamothilal@gmail.com',
   'sanjaysiva0829@gmail.com'
 ];
 
+const cliEmail = process.argv[2];
+const emails = cliEmail ? [cliEmail] : defaultEmails;
+
 async function resetStudentCertificates() {
   console.log("=== Resetting Stored Certificates for Students ===");
+  console.log("Target emails:", emails);
 
   const users = await prisma.user.findMany({
     where: {

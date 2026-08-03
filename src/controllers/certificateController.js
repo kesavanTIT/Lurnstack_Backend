@@ -63,6 +63,15 @@ const generateCertificate = async (req, res) => {
         .json({ success: false, message: "courseId is required in body." });
     }
 
+    if (customStartDate || customEndDate) {
+      if (!customStartDate || !customEndDate || isNaN(new Date(customStartDate).getTime()) || isNaN(new Date(customEndDate).getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: "Both startDate and endDate are mandatory and must be valid dates for certificate generation."
+        });
+      }
+    }
+
     if (courseId.startsWith("mock-")) {
       const studentName = customStudentName || "Demo Student";
       const startDate = customStartDate ? new Date(customStartDate) : new Date("2026-05-05T10:00:00Z");

@@ -447,12 +447,12 @@ const getCourseDates = async (courseId) => {
     startDate = occurrences[0].startsAt;
     endDate = occurrences[occurrences.length - 1].endsAt || occurrences[occurrences.length - 1].startsAt;
   } else if (session) {
-    startDate = session.scheduledDate || session.startsAt || new Date();
+    startDate = session.scheduledDate || session.startsAt;
     endDate = session.recurrenceEndDate || session.endsAt || startDate;
-  } else {
-    const now = new Date();
-    startDate = now;
-    endDate = now;
+  }
+
+  if (!startDate || !endDate || isNaN(new Date(startDate).getTime()) || isNaN(new Date(endDate).getTime())) {
+    throw new Error("Start date and end date are mandatory for certificate generation. Course dates could not be determined.");
   }
 
   // Calculate duration in days (inclusive)
@@ -544,6 +544,10 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   const { startDate: dbStart, endDate: dbEnd } = await getCourseDates(courseId);
   const startDate = customOptions.startDate ? new Date(customOptions.startDate) : dbStart;
   const endDate = customOptions.endDate ? new Date(customOptions.endDate) : dbEnd;
+
+  if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    throw new Error("Start date and end date are mandatory for certificate generation.");
+  }
 
   // Recalculate duration in days based on the actual start and end dates used for the certificate (inclusive)
   const diffTime = Math.abs(endDate - startDate);
@@ -877,16 +881,20 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
   const fs = require("fs");
   const path = require("path");
   
+  if (!startDate || !endDate || isNaN(new Date(startDate).getTime()) || isNaN(new Date(endDate).getTime())) {
+    throw new Error("Start date and end date are mandatory for certificate generation.");
+  }
+
   // Format dates e.g., "05 May 2026"
   const formatDate = (dateObj) => {
     return dateObj.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).replace(/ /g, " ");
   };
 
-  const formattedStartDate = startDate ? formatDate(startDate) : "01 Jan 2026";
-  const formattedEndDate = endDate ? formatDate(endDate) : "15 Jan 2026";
+  const formattedStartDate = formatDate(startDate);
+  const formattedEndDate = formatDate(endDate);
   
   // Calculate duration in days
-  const diffTime = Math.abs((endDate || new Date()) - (startDate || new Date()));
+  const diffTime = Math.abs(endDate - startDate);
   const durationDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
   const issuedDate = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }).replace(/\//g, ".");
