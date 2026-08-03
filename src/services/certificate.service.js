@@ -414,7 +414,7 @@ const getCourseDates = async (courseId) => {
   const resolvedCourseId = session ? (session.courseId || session.id) : courseId;
   const isFallbackId = session ? (resolvedCourseId === session.id) : false;
 
-  const occurrences = await prisma.sessionOccurrence.findMany({
+  let occurrences = await prisma.sessionOccurrence.findMany({
     where: {
       status: COMPLETED_OCCURRENCE_STATUS,
       OR: [
@@ -428,15 +428,35 @@ const getCourseDates = async (courseId) => {
   });
 
   if (!occurrences.length) {
-    const now = new Date();
-    return { startDate: now, endDate: now, durationDays: 1 };
+    occurrences = await prisma.sessionOccurrence.findMany({
+      where: {
+        OR: [
+          { courseId: resolvedCourseId },
+          isFallbackId ? { sessionId: session.id } : null,
+          isFallbackId ? { courseId: "default", sessionId: session.id } : null
+        ].filter(Boolean)
+      },
+      orderBy: { startsAt: "asc" },
+      select: { startsAt: true, endsAt: true },
+    });
   }
 
-  const startDate = occurrences[0].startsAt;
-  const endDate = occurrences[occurrences.length - 1].endsAt || occurrences[occurrences.length - 1].startsAt;
+  let startDate, endDate;
+
+  if (occurrences.length > 0) {
+    startDate = occurrences[0].startsAt;
+    endDate = occurrences[occurrences.length - 1].endsAt || occurrences[occurrences.length - 1].startsAt;
+  } else if (session) {
+    startDate = session.scheduledDate || session.startsAt || new Date();
+    endDate = session.recurrenceEndDate || session.endsAt || startDate;
+  } else {
+    const now = new Date();
+    startDate = now;
+    endDate = now;
+  }
 
   // Calculate duration in days (inclusive)
-  const diffTime = Math.abs(endDate - startDate);
+  const diffTime = Math.abs(new Date(endDate) - new Date(startDate));
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
   return { startDate, endDate, durationDays: diffDays };
@@ -521,9 +541,13 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   }
 
   // Fetch dates and calculate duration
-  const { startDate: dbStart, endDate: dbEnd, durationDays } = await getCourseDates(courseId);
+  const { startDate: dbStart, endDate: dbEnd } = await getCourseDates(courseId);
   const startDate = customOptions.startDate ? new Date(customOptions.startDate) : dbStart;
   const endDate = customOptions.endDate ? new Date(customOptions.endDate) : dbEnd;
+
+  // Recalculate duration in days based on the actual start and end dates used for the certificate (inclusive)
+  const diffTime = Math.abs(endDate - startDate);
+  const durationDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
   // Format dates e.g., "05 May 2026"
   const formatDate = (dateObj) => {
