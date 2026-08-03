@@ -63,23 +63,10 @@ const generateCertificate = async (req, res) => {
         .json({ success: false, message: "courseId is required in body." });
     }
 
-    let parsedStartDate = customStartDate ? new Date(customStartDate) : null;
-    let parsedEndDate = customEndDate ? new Date(customEndDate) : null;
-
-    if (!parsedStartDate || isNaN(parsedStartDate.getTime()) || !parsedEndDate || isNaN(parsedEndDate.getTime())) {
-      try {
-        const dbDates = await certificateService.getCourseDates(courseId);
-        if (!parsedStartDate || isNaN(parsedStartDate.getTime())) parsedStartDate = dbDates.startDate ? new Date(dbDates.startDate) : null;
-        if (!parsedEndDate || isNaN(parsedEndDate.getTime())) parsedEndDate = dbDates.endDate ? new Date(dbDates.endDate) : null;
-      } catch (e) {
-        // Fallback check below will handle missing dates
-      }
-    }
-
-    if (!parsedStartDate || isNaN(parsedStartDate.getTime()) || !parsedEndDate || isNaN(parsedEndDate.getTime())) {
+    if ((customStartDate && !customEndDate) || (!customStartDate && customEndDate)) {
       return res.status(400).json({
         success: false,
-        message: "Both startDate and endDate are mandatory for certificate generation. Please provide valid start and end dates."
+        message: "When providing custom dates, both startDate and endDate are mandatory."
       });
     }
 

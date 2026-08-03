@@ -447,16 +447,26 @@ const getCourseDates = async (courseId) => {
     startDate = occurrences[0].startsAt;
     endDate = occurrences[occurrences.length - 1].endsAt || occurrences[occurrences.length - 1].startsAt;
   } else if (session) {
-    startDate = session.scheduledDate || session.startsAt;
-    endDate = session.recurrenceEndDate || session.endsAt || startDate;
+    startDate = session.scheduledDate || session.startsAt || session.scheduledAt || session.createdAt || new Date();
+    endDate = session.recurrenceEndDate || session.endedAt || session.endsAt || session.updatedAt || startDate || new Date();
+  } else {
+    const now = new Date();
+    startDate = now;
+    endDate = now;
   }
 
-  if (!startDate || !endDate || isNaN(new Date(startDate).getTime()) || isNaN(new Date(endDate).getTime())) {
-    throw new Error("Start date and end date are mandatory for certificate generation. Course dates could not be determined.");
+  // Ensure valid date objects
+  startDate = new Date(startDate);
+  endDate = new Date(endDate);
+
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    const now = new Date();
+    startDate = now;
+    endDate = now;
   }
 
   // Calculate duration in days (inclusive)
-  const diffTime = Math.abs(new Date(endDate) - new Date(startDate));
+  const diffTime = Math.abs(endDate - startDate);
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
   return { startDate, endDate, durationDays: diffDays };
