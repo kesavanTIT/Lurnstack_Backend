@@ -5,6 +5,14 @@ const path = require('path');
 
 const students = [
   {
+    studentName: "Sanjay S",
+    courseTitle: "Database",
+    categoryName: "Database",
+    startDate: new Date("2026-06-30T00:00:00Z"),
+    endDate: new Date("2026-07-31T00:00:00Z"),
+    issueDate: new Date("2026-08-01T00:00:00Z")
+  },
+  {
     studentName: "Sharvesh V",
     courseTitle: "Oracle SQL",
     categoryName: "Database",
@@ -31,7 +39,7 @@ const students = [
 ];
 
 async function generateAllVerified() {
-  console.log("=== Generating Verified Official Manual Certificates for All 3 Students ===");
+  console.log("=== Generating Verified Official Manual Certificates ===");
 
   const results = [];
 
@@ -46,7 +54,7 @@ async function generateAllVerified() {
     const userId = user ? user.id : 1;
     const courseId = `manual-${student.courseTitle.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`;
 
-    // 1. Generate official unique Credential ID (e.g., LS-OR-260803-0001)
+    // 1. Generate official unique Credential ID (e.g., LS-DA-260803-0001)
     const credentialId = await certificateService.generateCertificateId(student.courseTitle);
     const verificationUrl = `https://lurnstack.com/verify/${credentialId}`;
 
@@ -110,11 +118,9 @@ async function generateAllVerified() {
     const safeName = student.studentName.replace(/[^a-zA-Z0-9]/g, '_');
     const localPdfPath = path.join(process.cwd(), "uploads", "certificates", blobName);
     const friendlyPdfPath = path.join(process.cwd(), "uploads", "certificates", `${safeName}_Certificate.pdf`);
-    const brainPdfPath = path.join("C:\\Users\\DELL\\.gemini\\antigravity-ide\\brain\\acce10e2-2af3-4f3b-a70c-93d6f1910b2b", `${safeName}_Certificate.pdf`);
 
     if (fs.existsSync(localPdfPath)) {
       fs.copyFileSync(localPdfPath, friendlyPdfPath);
-      fs.copyFileSync(localPdfPath, brainPdfPath);
     }
 
     results.push({
@@ -132,7 +138,7 @@ async function generateAllVerified() {
   }
 
   console.log("\n==========================================");
-  console.log("All 3 certificates generated & registered in DB!");
+  console.log("All certificates generated & registered in DB!");
   console.log(JSON.stringify(results, null, 2));
   console.log("==========================================");
 }

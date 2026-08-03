@@ -3,11 +3,12 @@ const prisma = require('../src/config/db');
 const emails = [
   'sharveshgukanv2007@gmail.com',
   'anulubbie17@gmail.com',
-  'msnegamothilal@gmail.com'
+  'msnegamothilal@gmail.com',
+  'sanjaysiva0829@gmail.com'
 ];
 
 async function resetStudentCertificates() {
-  console.log("=== Resetting Stored Certificates for 3 Students ===");
+  console.log("=== Resetting Stored Certificates for Students ===");
 
   const users = await prisma.user.findMany({
     where: {
