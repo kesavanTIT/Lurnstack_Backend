@@ -87,7 +87,7 @@ async function generateAllVerified() {
       update: {
         studentName: student.studentName,
         courseName: student.courseTitle,
-        collegeName: "LurnStack Learner",
+        collegeName: "Tamil Info Technology Pvt. Ltd.",
         issueDate: student.issueDate,
         completionDate: student.endDate,
         verificationUrl,
@@ -102,7 +102,7 @@ async function generateAllVerified() {
         certificateId: credentialId,
         studentName: student.studentName,
         courseName: student.courseTitle,
-        collegeName: "LurnStack Learner",
+        collegeName: "Tamil Info Technology Pvt. Ltd.",
         issueDate: student.issueDate,
         completionDate: student.endDate,
         verificationUrl,

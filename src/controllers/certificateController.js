@@ -845,12 +845,16 @@ const verifyCertificate = async (req, res) => {
       });
     }
 
+    const collegeName = (cert.collegeName && cert.collegeName !== "Not Specified") 
+      ? cert.collegeName 
+      : "Tamil Info Technology Pvt. Ltd.";
+
     return res.status(200).json({
       status: "VALID",
       certificateId: cert.certificateId,
       studentName: cert.studentName || cert.user?.fullName,
       courseName: cert.courseName,
-      collegeName: cert.collegeName || "Not Specified",
+      collegeName: collegeName,
       issueDate: cert.issueDate ? cert.issueDate.toISOString().split("T")[0] : null,
       completionDate: cert.completionDate ? cert.completionDate.toISOString().split("T")[0] : (cert.issueDate ? cert.issueDate.toISOString().split("T")[0] : null)
     });

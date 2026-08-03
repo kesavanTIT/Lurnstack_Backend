@@ -702,16 +702,15 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
      .fillColor("#0f172a")
      .text(studentNameText.toUpperCase(), 0, 205, { align: "center" });
 
-  // 4. Category Name (Center, Bold Green)
-  if (categoryName) {
-    doc.font("Helvetica-Bold")
-       .fontSize(12)
-       .fillColor("#10b981") // Premium green color
-       .text(`CATEGORY: ${categoryName.toUpperCase()}`, 0, 270, { align: "center", characterSpacing: 1.5 });
-  }
+  // 4. Course Title Badge (Center, Bold Green)
+  const displayCourseLabel = courseTitle ? courseTitle.toUpperCase() : (categoryName ? categoryName.toUpperCase() : "COURSE COMPLETION");
+  doc.font("Helvetica-Bold")
+     .fontSize(12)
+     .fillColor("#10b981") // Premium green color
+     .text(`COURSE: ${displayCourseLabel}`, 0, 270, { align: "center", characterSpacing: 1.5 });
 
   // 5. Description Paragraph
-  const descText = `This is to certify that ${studentNameText} has successfully completed the ${courseTitle} course${categoryName ? ` in the category of ${categoryName}` : ""} offered by Lurnstack (Tamil Info Technology Pvt. Ltd.). The course was conducted for a duration of ${durationDays} days, from ${formattedStartDate} to ${formattedEndDate}.`;
+  const descText = `This is to certify that ${studentNameText} has successfully completed the ${courseTitle} course offered by Lurnstack (Tamil Info Technology Pvt. Ltd.). The course was conducted for a duration of ${durationDays} days, from ${formattedStartDate} to ${formattedEndDate}.`;
 
   const descText2 = `During the period, they gained comprehensive knowledge in ${courseTitle} concepts, including fundamentals, application development, data processing, and problem-solving, demonstrating strong technical aptitude and dedication. We congratulate the learner on this achievement and wish them continued success in their future endeavors.`;
 
@@ -989,13 +988,12 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
   // Student Name
   doc.font("Helvetica-Bold").fontSize(48).fillColor("#0f172a").text((studentName || "Student").toUpperCase(), 0, 205, { align: "center" });
 
-  // Category Name
-  if (categoryName) {
-    doc.font("Helvetica-Bold")
-       .fontSize(12)
-       .fillColor("#10b981") // Premium green color
-       .text(`CATEGORY: ${categoryName.toUpperCase()}`, 0, 270, { align: "center", characterSpacing: 1.5 });
-  }
+  // Course Title Badge (Center, Bold Green)
+  const displayCourseLabel = courseTitle ? courseTitle.toUpperCase() : (categoryName ? categoryName.toUpperCase() : "COURSE COMPLETION");
+  doc.font("Helvetica-Bold")
+     .fontSize(12)
+     .fillColor("#10b981") // Premium green color
+     .text(`COURSE: ${displayCourseLabel}`, 0, 270, { align: "center", characterSpacing: 1.5 });
 
   // Descriptions
   const descText = `This is to certify that ${studentName} has successfully completed the ${courseTitle} course offered by Lurnstack (Tamil Info Technology Pvt. Ltd.). The course was conducted for a duration of ${durationDays} days, from ${formattedStartDate} to ${formattedEndDate}.`;
