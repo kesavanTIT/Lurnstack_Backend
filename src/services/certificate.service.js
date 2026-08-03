@@ -643,14 +643,18 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   ).fill();
   
   // 5. Logo
-  let logoPath = path.join(process.cwd(), "templates", "Logo4.png");
-  if (!fs.existsSync(logoPath)) {
-    logoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
-  }
+  const possibleLogoPaths = [
+    path.join(process.cwd(), "templates", "Logo4.png"),
+    path.join(process.cwd(), "src", "assets", "Logo", "Logo4.png"),
+    path.join(__dirname, "..", "..", "templates", "Logo4.png"),
+    path.join(__dirname, "..", "assets", "Logo", "Logo4.png")
+  ];
+  const logoPath = possibleLogoPaths.find((p) => fs.existsSync(p));
   let logoDrawn = false;
-  if (fs.existsSync(logoPath)) {
+
+  if (logoPath) {
     try { 
-      doc.image(logoPath, 80, 70, { width: 140 }); 
+      doc.image(logoPath, 70, 55, { width: 110 }); 
       logoDrawn = true; 
     } catch (e) {
       console.error("Failed to load logo image", e);
@@ -926,14 +930,18 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
   doc.fillColor("#65a30d").polygon([pageW - 20, pageH - 20], [pageW - 20, pageH - 250], [pageW - 250, pageH - 20]).fill();
   
   // 5. Logo
-  let logoPath = path.join(process.cwd(), "templates", "Logo4.png");
-  if (!fs.existsSync(logoPath)) {
-    logoPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
-  }
+  const possibleLogoPaths = [
+    path.join(process.cwd(), "templates", "Logo4.png"),
+    path.join(process.cwd(), "src", "assets", "Logo", "Logo4.png"),
+    path.join(__dirname, "..", "..", "templates", "Logo4.png"),
+    path.join(__dirname, "..", "assets", "Logo", "Logo4.png")
+  ];
+  const logoPath = possibleLogoPaths.find((p) => fs.existsSync(p));
   let logoDrawn = false;
-  if (fs.existsSync(logoPath)) {
+
+  if (logoPath) {
     try { 
-      doc.image(logoPath, 80, 70, { width: 140 }); 
+      doc.image(logoPath, 70, 55, { width: 110 }); 
       logoDrawn = true; 
     } catch (e) {
       console.error("Failed to load logo image", e);
