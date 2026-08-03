@@ -845,13 +845,27 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   }
 
   // Store the blob name (not a signed URL) in DB
-  await prisma.certificate.update({
-    where: { id: certificate.id },
-    data: {
-      certificateUrl: blobName,
-      issuedAt: new Date(),
-    },
-  });
+  try {
+    const existingCert = await prisma.certificate.findFirst({
+      where: {
+        OR: [
+          { id: certificate.id },
+          certificate.certificateId ? { certificateId: certificate.certificateId } : null
+        ].filter(Boolean)
+      }
+    });
+    if (existingCert) {
+      await prisma.certificate.update({
+        where: { id: existingCert.id },
+        data: {
+          certificateUrl: blobName,
+          issuedAt: new Date(),
+        },
+      });
+    }
+  } catch (dbErr) {
+    console.warn("Could not update certificateUrl in DB:", dbErr.message);
+  }
 
   // Return a signed download URL
   return getSignedDownloadUrl(blobName, saveLocally);
