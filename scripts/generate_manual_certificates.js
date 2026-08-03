@@ -11,11 +11,29 @@ const students = [
     startDate: new Date("2026-07-01T00:00:00Z"),
     endDate: new Date("2026-07-31T00:00:00Z"),
     issueDate: new Date("2026-08-01T00:00:00Z")
+  },
+  {
+    studentName: "ANUSA.S",
+    courseTitle: "Oracle SQL",
+    categoryName: "Database",
+    startDate: new Date("2026-06-30T00:00:00Z"),
+    endDate: new Date("2026-07-31T00:00:00Z"),
+    issueDate: new Date("2026-08-01T00:00:00Z")
+  },
+  {
+    studentName: "SNEGA M",
+    courseTitle: "Oracle SQL",
+    categoryName: "Database",
+    startDate: new Date("2026-07-20T00:00:00Z"),
+    endDate: new Date("2026-07-31T00:00:00Z"),
+    issueDate: new Date("2026-08-01T00:00:00Z")
   }
 ];
 
 async function generateAllVerified() {
-  console.log("=== Generating Verified Official Manual Certificates ===");
+  console.log("=== Generating Verified Official Manual Certificates for All 3 Students ===");
+
+  const results = [];
 
   for (const student of students) {
     console.log(`\nGenerating verified certificate for: ${student.studentName}...`);
@@ -92,9 +110,20 @@ async function generateAllVerified() {
     const safeName = student.studentName.replace(/[^a-zA-Z0-9]/g, '_');
     const localPdfPath = path.join(process.cwd(), "uploads", "certificates", blobName);
     const friendlyPdfPath = path.join(process.cwd(), "uploads", "certificates", `${safeName}_Certificate.pdf`);
+    const brainPdfPath = path.join("C:\\Users\\DELL\\.gemini\\antigravity-ide\\brain\\acce10e2-2af3-4f3b-a70c-93d6f1910b2b", `${safeName}_Certificate.pdf`);
+
     if (fs.existsSync(localPdfPath)) {
       fs.copyFileSync(localPdfPath, friendlyPdfPath);
+      fs.copyFileSync(localPdfPath, brainPdfPath);
     }
+
+    results.push({
+      studentName: student.studentName,
+      credentialId,
+      verificationUrl,
+      friendlyPdfPath,
+      fileName: `${safeName}_Certificate.pdf`
+    });
 
     console.log(`✅ Success for ${student.studentName}!`);
     console.log(`   Credential ID : ${credentialId}`);
@@ -102,7 +131,10 @@ async function generateAllVerified() {
     console.log(`   Local File    : ${friendlyPdfPath}`);
   }
 
-  console.log("\nAll certificates generated & registered in DB successfully!");
+  console.log("\n==========================================");
+  console.log("All 3 certificates generated & registered in DB!");
+  console.log(JSON.stringify(results, null, 2));
+  console.log("==========================================");
 }
 
 generateAllVerified()
