@@ -126,9 +126,12 @@ const mergeStudent = (map, student) => {
 };
 
 const getEnrolledStudentsForSession = async (session) => {
+  if (!session) return [];
   const studentMap = new Map();
 
-  const [sessionBookings, billingBookings, cards] = await Promise.all([
+  const isTIT = session.sectionType === "TIT" || session.sessionType === "TIT" || session.source === "admin_tit_classes";
+
+  const [sessionBookings, billingBookings, cards, titStudents] = await Promise.all([
     prisma.sessionBooking.findMany({
       where: { sessionId: session.id },
       include: { student: { select: { id: true, fullName: true, email: true } } },
@@ -152,11 +155,18 @@ const getEnrolledStudentsForSession = async (session) => {
       where: { sessionId: session.id },
       include: { student: { select: { id: true, fullName: true, email: true } } },
     }),
+    isTIT
+      ? prisma.user.findMany({
+          where: { role: "STUDENT" },
+          select: { id: true, fullName: true, email: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   sessionBookings.forEach((booking) => mergeStudent(studentMap, booking.student));
   billingBookings.forEach((booking) => mergeStudent(studentMap, booking.student));
   cards.forEach((card) => mergeStudent(studentMap, card.student));
+  titStudents.forEach((student) => mergeStudent(studentMap, student));
 
   return Array.from(studentMap.values());
 };

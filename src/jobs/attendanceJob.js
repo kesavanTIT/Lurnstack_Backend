@@ -52,27 +52,40 @@ cron.schedule('*/5 * * * *', async () => {
         endsAt: { lt: now },
         finalizedAt: null,
       },
+      include: {
+        session: true,
+      },
     });
 
     for (const occurrence of unfinalizedOccurrences) {
       // 2. After occurrence ends, get enrolled students
-      // We check SessionCard and Booking to find enrolled students
-      const cards = await prisma.sessionCard.findMany({
-        where: { sessionId: occurrence.sessionId },
-        select: { studentId: true },
-      });
+      const session = occurrence.session;
+      const isTIT = session && (session.sectionType === "TIT" || session.sessionType === "TIT" || session.source === "admin_tit_classes");
 
-      const bookings = await prisma.booking.findMany({
-        where: { 
-          sessionId: occurrence.sessionId,
-          status: 'paid'
-        },
-        select: { studentId: true },
-      });
+      const [cards, bookings, titStudents] = await Promise.all([
+        prisma.sessionCard.findMany({
+          where: { sessionId: occurrence.sessionId },
+          select: { studentId: true },
+        }),
+        prisma.booking.findMany({
+          where: { 
+            sessionId: occurrence.sessionId,
+            status: 'paid'
+          },
+          select: { studentId: true },
+        }),
+        isTIT
+          ? prisma.user.findMany({
+              where: { role: "STUDENT" },
+              select: { id: true },
+            })
+          : Promise.resolve([]),
+      ]);
 
       const enrolledStudentIds = new Set([
         ...cards.map(c => c.studentId),
-        ...bookings.map(b => b.studentId)
+        ...bookings.map(b => b.studentId),
+        ...titStudents.map(s => s.id),
       ]);
 
       // 3. Get attendance records for occurrence

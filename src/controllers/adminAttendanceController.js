@@ -211,6 +211,9 @@ const buildCourseSummaryFromSessions = async (sessions) => {
   occurrenceRows.sort((a, b) => new Date(b.startsAt || b.date) - new Date(a.startsAt || a.date));
 
   const firstSession = sessions[0] || null;
+  const isTITCourse = firstSession && (firstSession.sectionType === "TIT" || firstSession.sessionType === "TIT" || firstSession.source === "admin_tit_classes");
+  const courseKey = firstSession ? (isTITCourse ? getTITCourseKey(firstSession) : getCourseKey(firstSession)) : null;
+
   const summary = buildSummary({
     totalStudents: studentSet.size,
     totalSessions: allOccurrences.length || sessions.length,
@@ -221,7 +224,7 @@ const buildCourseSummaryFromSessions = async (sessions) => {
   });
 
   return {
-    courseKey: firstSession ? getCourseKey(firstSession) : null,
+    courseKey,
     courseId: firstSession?.courseId || null,
     courseTitle: getCourseTitle(firstSession),
     trainerId: firstSession?.trainerId || null,
