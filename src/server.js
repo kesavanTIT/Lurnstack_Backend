@@ -150,6 +150,7 @@ const startServer = async () => {
     require("./jobs/occurrenceJob"); // Nightly occurrence generator
     require("./jobs/attendanceJob");
     require("./jobs/reminderJob");   // 10-min session reminder via ZeptoMail (email) + Fast2SMS (SMS)
+    require("./jobs/dailyStreakReminderJob");
     const { startSessionReminderWhatsappJob } = require("./jobs/sessionReminderWhatsappJob");
     startSessionReminderWhatsappJob();
 

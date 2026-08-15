@@ -2779,6 +2779,82 @@ const getCourseAttendanceEligibility = async (req, res) => {
   }
 };
 
+const updatePushToken = async (req, res) => {
+  try {
+    const userId = parseInt(req.user.id);
+    const { pushToken } = req.body;
+
+    if (!pushToken) {
+      return res.status(400).json({ success: false, message: "Push token is required." });
+    }
+
+    // Basic check for valid Expo push token format
+    if (!pushToken.includes("ExponentPushToken") && !pushToken.includes("ExpoPushToken")) {
+      return res.status(400).json({ success: false, message: "Invalid push token format." });
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { pushToken }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Push token updated successfully."
+    });
+  } catch (error) {
+    console.error("Update Push Token Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to update push token." });
+  }
+};
+
+const getStudentNotifications = async (req, res) => {
+  try {
+    const studentId = parseInt(req.user.id);
+    const notifications = await prisma.notification.findMany({
+      where: { studentId },
+      orderBy: { createdAt: "desc" },
+    });
+    return res.status(200).json({ success: true, data: notifications });
+  } catch (error) {
+    console.error("Get Student Notifications Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch notifications." });
+  }
+};
+
+const markNotificationAsRead = async (req, res) => {
+  try {
+    const studentId = parseInt(req.user.id);
+    const notiId = parseInt(req.params.id);
+
+    await prisma.notification.updateMany({
+      where: { id: notiId, studentId },
+      data: { isRead: true },
+    });
+
+    return res.status(200).json({ success: true, message: "Notification marked as read." });
+  } catch (error) {
+    console.error("Mark Notification Read Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to mark notification as read." });
+  }
+};
+
+const markAllNotificationsAsRead = async (req, res) => {
+  try {
+    const studentId = parseInt(req.user.id);
+
+    await prisma.notification.updateMany({
+      where: { studentId, isRead: false },
+      data: { isRead: true },
+    });
+
+    return res.status(200).json({ success: true, message: "All notifications marked as read." });
+  } catch (error) {
+    console.error("Mark All Notifications Read Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to mark all notifications as read." });
+  }
+};
+
 module.exports = {
   getAllLiveClasses,
   getLiveClassById,
@@ -2802,5 +2878,9 @@ module.exports = {
   getStudentTITClasses,
   getStudentAttendanceHistory,
   getCourseAttendanceEligibility,
+  updatePushToken,
+  getStudentNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
 };
 

@@ -867,6 +867,28 @@ const sendOfferCampaign = async (req, res) => {
 
     // Run the SMTP mail dispatch loop asynchronously in the background
     (async () => {
+      // Trigger Push Notifications in parallel
+      try {
+        const { sendPushToUsers } = require("../services/pushNotificationService");
+        const studentIds = [...new Set(deliveries.map(d => d.studentId))];
+        
+        let targetScreen = "Dashboard";
+        if (campaign.courseId) {
+          targetScreen = "Courses";
+        } else if (campaign.sessionId) {
+          targetScreen = "MyLearning";
+        }
+
+        const pushTitle = campaign.offerTitle || campaign.subject || "New Update!";
+        const pushBody = campaign.body || "Check out LurnStack for a new update.";
+        
+        sendPushToUsers(studentIds, pushTitle, pushBody, { screen: targetScreen })
+          .then(res => console.log(`[PUSH] Campaign push notifications sent: success=${res.successCount}, fail=${res.failureCount}`))
+          .catch(err => console.error("[PUSH] Error sending campaign push notifications:", err));
+      } catch (pushErr) {
+        console.error("[PUSH] Error setting up campaign push notifications:", pushErr);
+      }
+
       let sentCount = 0;
       let failedCount = 0;
       const BATCH_SIZE = 10;

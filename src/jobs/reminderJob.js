@@ -51,12 +51,7 @@ cron.schedule("* * * * *", async () => {
           status: {
             notIn: ["cancelled", "ended", "deleted"],
           },
-          // Exclude TIT classes from reminder emails/SMS
-          AND: [
-            { OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }] },
-            { OR: [{ sessionType: { not: "TIT" } }, { sessionType: null }] },
-            { OR: [{ source: { not: "admin_tit_classes" } }, { source: null }] }
-          ]
+          // TIT tuition classes are now fetched so we can send push notifications (they will skip email reminders).
         },
       },
       include: {
@@ -81,6 +76,7 @@ cron.schedule("* * * * *", async () => {
       try {
         let recipientEmails  = [];
         let recipientPhones  = [];
+        let pushTokens       = [];
 
         // ── 3. Recipient Selection Logic ──────────────────────────────────
         if (session.pricingState === "PRICED" && session.priceInPaise > 0) {
@@ -108,6 +104,7 @@ cron.schedule("* * * * *", async () => {
                   email:           true,
                   phoneNumber:     true,
                   isActive:        true,
+                  pushToken:       true,
                 },
               },
             },
@@ -135,6 +132,10 @@ cron.schedule("* * * * *", async () => {
               return b.student.phoneNumber.replace(/[^0-9]/g, '');
             });
 
+          pushTokens = uniqueActiveBookings
+            .map((b) => b.student?.pushToken)
+            .filter(Boolean);
+
           console.log(
             `[REMINDER]   → ${recipientEmails.length} unique email(s), ${recipientPhones.length} unique phone(s) for paid students.`
           );
@@ -148,8 +149,10 @@ cron.schedule("* * * * *", async () => {
               isActive: true,
             },
             select: {
+              id:              true,
               email:           true,
               phoneNumber:     true,
+              pushToken:       true,
             },
           });
 
@@ -163,15 +166,22 @@ cron.schedule("* * * * *", async () => {
               return u.phoneNumber.replace(/[^0-9]/g, '');
             });
 
+          pushTokens = allStudents
+            .map((u) => u.pushToken)
+            .filter(Boolean);
+
           console.log(
             `[REMINDER]   → ${recipientEmails.length} email(s), ${recipientPhones.length} phone(s) for all active students.`
           );
         }
 
-        // ── 4. Send reminders (email + SMS) in parallel ───────────────────
+        const isTIT = session.sectionType === "TIT" || session.sessionType === "TIT" || session.source === "admin_tit_classes";
+
+        // ── 4. Send reminders (email + Push) in parallel ───────────────────
         const notifyPromises = [];
 
-        if (recipientEmails.length > 0) {
+        // Only send email reminders for regular classes (not TIT tuition classes)
+        if (recipientEmails.length > 0 && !isTIT) {
           notifyPromises.push(
             sendSessionReminderEmail(recipientEmails, session, occurrence).catch((err) => {
               console.error(
@@ -180,8 +190,27 @@ cron.schedule("* * * * *", async () => {
               );
             })
           );
+        } else if (isTIT) {
+          console.log(`[REMINDER] ℹ️  Skipping email reminder for TIT tuition class "${session.title}".`);
         } else {
           console.log(`[REMINDER] ℹ️  No email recipients for occurrence "${occurrence.id}" — skipping email.`);
+        }
+
+        // Send Push Notifications for both regular and TIT classes
+        if (pushTokens.length > 0) {
+          const { sendPushNotification } = require("../services/pushNotificationService");
+          const targetScreen = isTIT ? "Dashboard" : "MyLearning";
+          const pushTitle = isTIT ? "⏰ TIT Tuition Class Starting Soon!" : "⏰ Class Starting Soon!";
+          const pushBody = `Your session "${session.title}" starts in 10 minutes.`;
+
+          notifyPromises.push(
+            sendPushNotification(pushTokens, pushTitle, pushBody, { screen: targetScreen }).catch((err) => {
+              console.error(
+                `[REMINDER] ❌ Push notification send failed for occurrence "${occurrence.id}":`,
+                err.message
+              );
+            })
+          );
         }
 
         // SMS reminders are disabled per user request (only OTP is sent via SMS)

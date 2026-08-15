@@ -15,6 +15,10 @@ const {
   verifyPayment,
   getStudentPayments,
   getStudentTITClasses,
+  updatePushToken,
+  getStudentNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
 } = require("../controllers/studentController");
 const { protect } = require("../middleware/authMiddleware");
 
@@ -85,5 +89,17 @@ router.post("/payments/razorpay/verify", verifyPayment);
 
 // @route   GET /api/student/payments
 router.get("/payments", getStudentPayments);
+
+// @route   PUT /api/student/push-token
+router.put("/push-token", updatePushToken);
+
+// @route   GET /api/student/notifications
+router.get("/notifications", getStudentNotifications);
+
+// @route   PATCH /api/student/notifications/:id/read
+router.patch("/notifications/:id/read", markNotificationAsRead);
+
+// @route   POST /api/student/notifications/read-all
+router.post("/notifications/read-all", markAllNotificationsAsRead);
 
 module.exports = router;
