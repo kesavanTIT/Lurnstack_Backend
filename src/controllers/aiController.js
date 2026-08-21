@@ -358,16 +358,25 @@ const handleAIChat = async (req, res) => {
     );
 
     // Grouping sessions for the model context
-    const paidSessions = formattedSessions.filter(s => s.isPaid === true);
+    // Helper to extract only the necessary context for the AI prompt
+    const slimSession = (s) => ({
+      title: s.title,
+      scheduledAt: s.scheduledAt,
+      trainerName: s.trainerName,
+      status: s.status,
+      canJoin: s.canJoin
+    });
+
+    const paidSessions = formattedSessions.filter(s => s.isPaid === true).map(slimSession).slice(0, 5);
     const upcomingSessions = formattedSessions.filter(
       s => s.todayStatus === "upcoming" || s.todayStatus === "join_open"
-    );
+    ).map(slimSession).slice(0, 5);
     const recentSessions = formattedSessions.filter(
       s => s.todayStatus === "live" || s.todayStatus === "completed_today" || s.isJoined === true
-    );
+    ).map(slimSession).slice(0, 5);
     const completedSessions = formattedSessions.filter(
       s => s.status === "ended" || s.status === "completed" || s.todayStatus === "completed_today"
-    );
+    ).map(slimSession).slice(0, 5);
 
     // 4. Compile Student Request Context
     const currentPage = context || {};
@@ -384,7 +393,7 @@ const handleAIChat = async (req, res) => {
       upcomingSessions,
       recentSessions,
       completedSessions,
-      enrolledCourses
+      enrolledCourses: enrolledCourses.map(c => ({ id: c.id, name: c.name })).slice(0, 5)
     };
 
     // 5. Convert history to Gemini API format
