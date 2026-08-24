@@ -885,9 +885,31 @@ const sendOfferCampaign = async (req, res) => {
         sendPushToUsers(studentIds, pushTitle, pushBody, { screen: targetScreen })
           .then(res => console.log(`[PUSH] Campaign push notifications sent: success=${res.successCount}, fail=${res.failureCount}`))
           .catch(err => console.error("[PUSH] Error sending campaign push notifications:", err));
+
+        // Save Campaign Notifications to Database for In-App Feed
+        if (studentIds.length > 0) {
+          const notificationRecords = studentIds.map(studentId => ({
+            studentId,
+            title: pushTitle,
+            message: pushBody,
+            type: "announcement",
+            isRead: false,
+            deepLinkUrl: campaign.courseId ? `/courses/${campaign.courseId}` : "/dashboard"
+          }));
+
+          prisma.notification.createMany({
+            data: notificationRecords,
+            skipDuplicates: true
+          }).then(() => {
+            console.log(`[PUSH] Logged campaign notifications in database for ${studentIds.length} users.`);
+          }).catch(err => {
+            console.error("[PUSH] Error saving campaign notifications to database:", err.message);
+          });
+        }
       } catch (pushErr) {
         console.error("[PUSH] Error setting up campaign push notifications:", pushErr);
       }
+
 
       let sentCount = 0;
       let failedCount = 0;

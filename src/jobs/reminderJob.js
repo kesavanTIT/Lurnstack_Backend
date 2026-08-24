@@ -77,6 +77,7 @@ cron.schedule("* * * * *", async () => {
         let recipientEmails  = [];
         let recipientPhones  = [];
         let pushTokens       = [];
+        let recipientStudentIds = [];
 
         // ── 3. Recipient Selection Logic ──────────────────────────────────
         if (session.pricingState === "PRICED" && session.priceInPaise > 0) {
@@ -136,6 +137,10 @@ cron.schedule("* * * * *", async () => {
             .map((b) => b.student?.pushToken)
             .filter(Boolean);
 
+          recipientStudentIds = uniqueActiveBookings
+            .map((b) => b.student?.id)
+            .filter(Boolean);
+
           console.log(
             `[REMINDER]   → ${recipientEmails.length} unique email(s), ${recipientPhones.length} unique phone(s) for paid students.`
           );
@@ -168,6 +173,10 @@ cron.schedule("* * * * *", async () => {
 
           pushTokens = allStudents
             .map((u) => u.pushToken)
+            .filter(Boolean);
+
+          recipientStudentIds = allStudents
+            .map((u) => u.id)
             .filter(Boolean);
 
           console.log(
@@ -212,6 +221,31 @@ cron.schedule("* * * * *", async () => {
             })
           );
         }
+
+        // Save Notifications to Database for In-App Feed
+        if (recipientStudentIds.length > 0) {
+          const pushTitle = isTIT ? "⏰ TIT Tuition Class Starting Soon!" : "⏰ Class Starting Soon!";
+          const pushBody = `Your session "${session.title}" starts in 10 minutes.`;
+
+          const notificationRecords = recipientStudentIds.map(studentId => ({
+            studentId,
+            title: pushTitle,
+            message: pushBody,
+            type: "class_reminder",
+            isRead: false,
+            deepLinkUrl: isTIT ? "/dashboard" : "/my-learning"
+          }));
+
+          notifyPromises.push(
+            prisma.notification.createMany({
+              data: notificationRecords,
+              skipDuplicates: true
+            }).catch(err => {
+              console.error(`[REMINDER] ❌ Database notification logging failed:`, err.message);
+            })
+          );
+        }
+
 
         // SMS reminders are disabled per user request (only OTP is sent via SMS)
         /*
