@@ -14,13 +14,13 @@ const storage = multer.diskStorage({
     cb(null, reelsUploadDir);
   },
   filename: (req, file, cb) => {
-    const prefix = file.fieldname === 'video' ? 'reel-video' : 'reel-logo';
+    const prefix = file.fieldname === 'video' ? 'reel-video' : (file.fieldname === 'posterImage' ? 'reel-poster' : 'reel-logo');
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     cb(null, prefix + "-" + uniqueSuffix + path.extname(file.originalname));
   },
 });
 
-// File filter (videos for 'video', images for 'logo')
+// File filter (videos for 'video', images for 'logo' / 'posterImage')
 const fileFilter = (req, file, cb) => {
   if (file.fieldname === "video") {
     if (file.mimetype.startsWith("video/")) {
@@ -28,11 +28,11 @@ const fileFilter = (req, file, cb) => {
     } else {
       cb(new Error("Invalid file type. Only video files are allowed for the reel."), false);
     }
-  } else if (file.fieldname === "logo") {
+  } else if (file.fieldname === "logo" || file.fieldname === "posterImage") {
     if (file.mimetype.startsWith("image/")) {
       cb(null, true);
     } else {
-      cb(new Error("Invalid file type. Only image files are allowed for the logo."), false);
+      cb(new Error("Invalid file type. Only image files are allowed."), false);
     }
   } else {
     cb(new Error("Unexpected file field."), false);

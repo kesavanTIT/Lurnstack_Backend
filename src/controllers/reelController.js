@@ -192,22 +192,23 @@ const updateAdminReel = async (req, res) => {
     if (isLive !== undefined) updateData.isLive = isLive === 'true' || isLive === true;
     if (isActive !== undefined) updateData.isActive = isActive === 'true' || isActive === true;
 
-    // Poster image upload (optional)
-    if (req.files && req.files.posterImage) {
-      const posterFile = req.files.posterImage;
-      const posterExt = path.extname(posterFile.name);
-      const posterFileName = `poster_${Date.now()}${posterExt}`;
-      const posterDir = path.join(__dirname, '../../uploads/reels');
-      if (!fs.existsSync(posterDir)) fs.mkdirSync(posterDir, { recursive: true });
-      const posterPath = path.join(posterDir, posterFileName);
-      await posterFile.mv(posterPath);
-
-      // Delete old poster if exists
+    // Poster image upload via Multer (optional)
+    if (req.files && req.files["posterImage"] && req.files["posterImage"][0]) {
+      const posterFile = req.files["posterImage"][0];
+      
+      // Delete old poster file if exists
       if (reel.posterUrl) {
-        const oldPath = path.join(__dirname, '../../', reel.posterUrl);
-        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        const oldPath = path.join(__dirname, "../../", reel.posterUrl);
+        if (fs.existsSync(oldPath)) {
+          try {
+            fs.unlinkSync(oldPath);
+          } catch (e) {
+            console.error("Failed to delete old poster file:", e);
+          }
+        }
       }
-      updateData.posterUrl = `uploads/reels/${posterFileName}`;
+
+      updateData.posterUrl = getRelativeUploadPath(posterFile.path);
     }
 
     const updated = await prisma.videoReel.update({
