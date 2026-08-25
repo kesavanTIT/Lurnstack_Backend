@@ -147,6 +147,7 @@ const deleteAdminReel = async (req, res) => {
     // Delete local files
     deleteDiskFile(reel.videoSrc);
     deleteDiskFile(reel.avatarUrl);
+    deleteDiskFile(reel.posterUrl);
 
     // Delete database record
     await prisma.videoReel.delete({
@@ -167,9 +168,73 @@ const deleteAdminReel = async (req, res) => {
   }
 };
 
+// @desc    Update a video reel (poster image, caption, etc)
+// @route   PATCH /api/admin/reels/:id
+// @access  Private/Admin
+const updateAdminReel = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { courseName, trainerName, caption, audioTitle, ctaText, isLive, isActive } = req.body;
+
+    const reel = await prisma.videoReel.findUnique({ where: { id } });
+    if (!reel) {
+      return res.status(404).json({ success: false, message: "Video reel not found." });
+    }
+
+    const updateData = {};
+
+    // Text fields
+    if (courseName !== undefined) updateData.courseName = courseName;
+    if (trainerName !== undefined) updateData.trainerName = trainerName;
+    if (caption !== undefined) updateData.caption = caption;
+    if (audioTitle !== undefined) updateData.audioTitle = audioTitle;
+    if (ctaText !== undefined) updateData.ctaText = ctaText;
+    if (isLive !== undefined) updateData.isLive = isLive === 'true' || isLive === true;
+    if (isActive !== undefined) updateData.isActive = isActive === 'true' || isActive === true;
+
+    // Poster image upload (optional)
+    if (req.files && req.files.posterImage) {
+      const posterFile = req.files.posterImage;
+      const posterExt = path.extname(posterFile.name);
+      const posterFileName = `poster_${Date.now()}${posterExt}`;
+      const posterDir = path.join(__dirname, '../../uploads/reels');
+      if (!fs.existsSync(posterDir)) fs.mkdirSync(posterDir, { recursive: true });
+      const posterPath = path.join(posterDir, posterFileName);
+      await posterFile.mv(posterPath);
+
+      // Delete old poster if exists
+      if (reel.posterUrl) {
+        const oldPath = path.join(__dirname, '../../', reel.posterUrl);
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      }
+      updateData.posterUrl = `uploads/reels/${posterFileName}`;
+    }
+
+    const updated = await prisma.videoReel.update({
+      where: { id },
+      data: updateData,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Video reel updated successfully.",
+      data: updated,
+    });
+  } catch (error) {
+    console.error("Update Admin Reel Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Failed to update video reel.",
+      error: error.message,
+    });
+  }
+};
+
+
 module.exports = {
   getActiveReels,
   getAdminReels,
   createAdminReel,
   deleteAdminReel,
+  updateAdminReel,
 };

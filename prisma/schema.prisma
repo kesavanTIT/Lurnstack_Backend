@@ -848,6 +848,7 @@ model VideoReel {
   id           String   @id @default(uuid())
   videoSrc     String   
   avatarUrl    String?  
+  posterUrl    String?  
   courseName   String
   trainerName  String
   caption      String   @db.Text

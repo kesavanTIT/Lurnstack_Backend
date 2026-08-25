@@ -95,6 +95,7 @@ const {
   getAdminReels,
   createAdminReel,
   deleteAdminReel,
+  updateAdminReel,
 } = require("../controllers/reelController");
 
 // Public Admin Routes
@@ -205,6 +206,7 @@ router.delete("/promos/posters/:id", deleteAdminPromoPoster);
 const reelUpload = require("../middleware/reelUploadMiddleware");
 router.get("/reels", getAdminReels);
 router.post("/reels", reelUpload.fields([{ name: "video", maxCount: 1 }, { name: "logo", maxCount: 1 }]), createAdminReel);
+router.patch("/reels/:id", reelUpload.fields([{ name: "posterImage", maxCount: 1 }]), updateAdminReel);
 router.delete("/reels/:id", deleteAdminReel);
 
 module.exports = router;
