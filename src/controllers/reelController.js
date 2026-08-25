@@ -196,6 +196,15 @@ const updateAdminReel = async (req, res) => {
     if (req.files && req.files["posterImage"] && req.files["posterImage"][0]) {
       const posterFile = req.files["posterImage"][0];
       
+      // Ensure file permissions are public readable on Linux VPS (755)
+      try {
+        if (posterFile.path && fs.existsSync(posterFile.path)) {
+          fs.chmodSync(posterFile.path, 0o755);
+        }
+      } catch (e) {
+        console.error("Chmod error:", e);
+      }
+
       // Delete old poster file if exists
       if (reel.posterUrl) {
         const oldPath = path.join(__dirname, "../../", reel.posterUrl);
