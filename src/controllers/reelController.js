@@ -220,6 +220,52 @@ const updateAdminReel = async (req, res) => {
       updateData.posterUrl = getRelativeUploadPath(posterFile.path);
     }
 
+    // Video file upload via Multer (optional)
+    if (req.files && req.files["video"] && req.files["video"][0]) {
+      const videoFile = req.files["video"][0];
+      try {
+        if (videoFile.path && fs.existsSync(videoFile.path)) {
+          fs.chmodSync(videoFile.path, 0o755);
+        }
+      } catch (e) {
+        console.error("Chmod error:", e);
+      }
+      if (reel.videoSrc) {
+        const oldVideoPath = path.join(__dirname, "../../", reel.videoSrc);
+        if (fs.existsSync(oldVideoPath)) {
+          try {
+            fs.unlinkSync(oldVideoPath);
+          } catch (e) {
+            console.error("Failed to delete old video file:", e);
+          }
+        }
+      }
+      updateData.videoSrc = getRelativeUploadPath(videoFile.path);
+    }
+
+    // Logo / Avatar image upload via Multer (optional)
+    if (req.files && req.files["logo"] && req.files["logo"][0]) {
+      const logoFile = req.files["logo"][0];
+      try {
+        if (logoFile.path && fs.existsSync(logoFile.path)) {
+          fs.chmodSync(logoFile.path, 0o755);
+        }
+      } catch (e) {
+        console.error("Chmod error:", e);
+      }
+      if (reel.avatarUrl) {
+        const oldLogoPath = path.join(__dirname, "../../", reel.avatarUrl);
+        if (fs.existsSync(oldLogoPath)) {
+          try {
+            fs.unlinkSync(oldLogoPath);
+          } catch (e) {
+            console.error("Failed to delete old logo file:", e);
+          }
+        }
+      }
+      updateData.avatarUrl = getRelativeUploadPath(logoFile.path);
+    }
+
     const updated = await prisma.videoReel.update({
       where: { id },
       data: updateData,
