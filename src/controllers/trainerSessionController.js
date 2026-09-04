@@ -1197,6 +1197,43 @@ const endSession = async (req, res) => {
 
     await populateSessionProgress(updated);
 
+    // Send Push Notifications in English to eligible students
+    (async () => {
+      try {
+        const pushNotificationService = require("../services/pushNotificationService");
+        const certificateService = require("../services/certificate.service");
+        
+        const attendances = await prisma.studentAttendance.findMany({
+          where: { sessionId: sessionId },
+          select: { studentId: true }
+        });
+        const bookings = await prisma.booking.findMany({
+          where: { sessionId: sessionId, status: { in: ["paid", "completed", "joined"] } },
+          select: { studentId: true }
+        });
+        
+        const studentIds = Array.from(new Set([
+          ...attendances.map(a => a.studentId),
+          ...bookings.map(b => b.studentId)
+        ]));
+
+        for (const sId of studentIds) {
+          const courseId = updated.courseId || updated.id;
+          const elig = await certificateService.checkEligibility(sId, courseId);
+          if (elig.status === "ELIGIBLE") {
+            await pushNotificationService.sendPushToUser(
+              sId,
+              "🎓 Achievement Unlocked!",
+              `Congratulations! You are now eligible to claim your completion certificate for ${updated.courseTitle || updated.title || 'your course'}. Tap to claim now!`,
+              { screen: "Certificates" }
+            );
+          }
+        }
+      } catch (err) {
+        console.error("Error sending cert eligibility push notifications:", err);
+      }
+    })();
+
     return res.status(200).json({
       success: true,
       message: "Session ended successfully.",

@@ -201,6 +201,19 @@ const generateCertificate = async (req, res) => {
       }
     );
 
+    // Send Push Notification in English
+    try {
+      const pushNotificationService = require("../services/pushNotificationService");
+      await pushNotificationService.sendPushToUser(
+        userId,
+        "🎉 Certificate Issued!",
+        `Your official certificate for "${courseName}" has been generated successfully. You can now view and download it.`,
+        { screen: "Certificates" }
+      );
+    } catch (pushErr) {
+      console.error("Failed to send certificate generated push:", pushErr);
+    }
+
     return res.status(201).json({
       success: true,
       certificateId: cert.certificateId,
