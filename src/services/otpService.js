@@ -90,10 +90,11 @@ const sendEmailOTP = async (email, otp) => {
 
   const mailOptions = {
     from: `"LurnStack" <${from}>`,
+    replyTo: from,
     to: email,
     subject: "Your LurnStack Verification Code",
     // Plain-text fallback
-    text: `Your LurnStack OTP is: ${otp}\n\nThis code expires in 1 minute. Do not share it with anyone.`,
+    text: `Your LurnStack OTP verification code is: ${otp}\n\nThis code expires in 1 minute. Please do not share it with anyone.\n\n© ${new Date().getFullYear()} LurnStack`,
     // HTML email body
     html: `
       <!DOCTYPE html>
@@ -113,8 +114,8 @@ const sendEmailOTP = async (email, otp) => {
                 <tr>
                   <td align="center"
                     style="background:#ffffff;padding:40px 40px 10px;border-bottom:1px solid #f1f5f9;">
-                    <img src="https://api.lurnstack.com/uploads/logo.png" alt="LurnStack Logo" width="130"
-                      style="display:block;margin:0 auto 12px;" />
+                    <img src="https://api.lurnstack.com/uploads/logo.png" alt="LurnStack" width="130"
+                      style="display:block;margin:0 auto 12px;max-width:130px;height:auto;" />
                     <p style="margin:4px 0 0;color:#64748b;font-size:14px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;">
                       Verification Code
                     </p>
@@ -124,7 +125,7 @@ const sendEmailOTP = async (email, otp) => {
                 <tr>
                   <td style="padding:40px;">
                     <p style="margin:0 0 24px;color:#334155;font-size:16px;line-height:1.6;">
-                      Use the code below to verify your identity. It expires in
+                      Use the code below to verify your account. It expires in
                       <strong style="color:#0f172a;">1 minute</strong>.
                     </p>
                     <!-- OTP box -->
@@ -136,7 +137,7 @@ const sendEmailOTP = async (email, otp) => {
                       </span>
                     </div>
                     <p style="margin:0 0 8px;color:#64748b;font-size:13px;line-height:1.5;">
-                      ⚠️ Never share this code with anyone. LurnStack will never ask for it.
+                      Please do not share this code with anyone for security reasons.
                     </p>
                     <p style="margin:0;color:#64748b;font-size:13px;line-height:1.5;">
                       If you didn't request this code, you can safely ignore this email.

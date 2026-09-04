@@ -179,19 +179,71 @@ const deleteStudent = async (req, res) => {
       });
     }
 
-    const result = await prisma.user.deleteMany({
+    const studentExists = await prisma.user.findFirst({
       where: {
         id,
         role: "STUDENT",
       },
+      select: { id: true },
     });
 
-    if (result.count === 0) {
+    if (!studentExists) {
       return res.status(404).json({
         success: false,
         message: "Student not found.",
       });
     }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete dependent notifications
+      await tx.notification.deleteMany({ where: { studentId: id } });
+
+      // 2. Delete password reset tokens
+      await tx.passwordResetToken.deleteMany({ where: { userId: id } });
+
+      // 3. Delete WhatsApp reminders
+      await tx.whatsAppReminder.deleteMany({ where: { userId: id } });
+
+      // 4. Delete offer campaign deliveries and clicks
+      await tx.offerCampaignDelivery.deleteMany({ where: { studentId: id } });
+      await tx.offerCampaignClick.deleteMany({ where: { studentId: id } });
+
+      // 5. Delete session cards and session bookings
+      await tx.sessionCard.deleteMany({ where: { studentId: id } });
+      await tx.sessionBooking.deleteMany({ where: { studentId: id } });
+
+      // 6. Delete attendance events and attendance records
+      await tx.attendanceEvent.deleteMany({ where: { studentId: id } });
+      await tx.attendance.deleteMany({ where: { studentId: id } });
+      await tx.studentAttendance.deleteMany({ where: { studentId: id } });
+
+      // 7. Delete certificate logs & certificates
+      const certificates = await tx.certificate.findMany({
+        where: { userId: id },
+        select: { id: true },
+      });
+      if (certificates.length > 0) {
+        const certIds = certificates.map((c) => c.id);
+        await tx.certificateLog.deleteMany({
+          where: { certificateId: { in: certIds } },
+        });
+        await tx.certificate.deleteMany({
+          where: { userId: id },
+        });
+      }
+
+      // 8. Delete payments and bookings
+      await tx.payment.deleteMany({ where: { studentId: id } });
+      await tx.booking.deleteMany({ where: { studentId: id } });
+
+      // 9. Finally, delete the student User record
+      await tx.user.deleteMany({
+        where: {
+          id,
+          role: "STUDENT",
+        },
+      });
+    });
 
     return res.status(200).json({
       success: true,
@@ -201,7 +253,7 @@ const deleteStudent = async (req, res) => {
     console.error("Delete Student Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal server error. Failed to delete student.",
+      message: error.message || "Internal server error. Failed to delete student.",
     });
   }
 };
@@ -211,22 +263,82 @@ const deleteStudent = async (req, res) => {
 // @access  Private/Admin
 const deleteAllStudents = async (req, res) => {
   try {
-    const result = await prisma.user.deleteMany({
-      where: {
-        role: "STUDENT",
-      },
+    const students = await prisma.user.findMany({
+      where: { role: "STUDENT" },
+      select: { id: true },
+    });
+
+    if (students.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "All students deleted successfully. Total deleted: 0",
+        count: 0,
+      });
+    }
+
+    const studentIds = students.map((s) => s.id);
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete dependent notifications
+      await tx.notification.deleteMany({ where: { studentId: { in: studentIds } } });
+
+      // 2. Delete password reset tokens
+      await tx.passwordResetToken.deleteMany({ where: { userId: { in: studentIds } } });
+
+      // 3. Delete WhatsApp reminders
+      await tx.whatsAppReminder.deleteMany({ where: { userId: { in: studentIds } } });
+
+      // 4. Delete offer campaign deliveries and clicks
+      await tx.offerCampaignDelivery.deleteMany({ where: { studentId: { in: studentIds } } });
+      await tx.offerCampaignClick.deleteMany({ where: { studentId: { in: studentIds } } });
+
+      // 5. Delete session cards and session bookings
+      await tx.sessionCard.deleteMany({ where: { studentId: { in: studentIds } } });
+      await tx.sessionBooking.deleteMany({ where: { studentId: { in: studentIds } } });
+
+      // 6. Delete attendance events and attendance records
+      await tx.attendanceEvent.deleteMany({ where: { studentId: { in: studentIds } } });
+      await tx.attendance.deleteMany({ where: { studentId: { in: studentIds } } });
+      await tx.studentAttendance.deleteMany({ where: { studentId: { in: studentIds } } });
+
+      // 7. Delete certificate logs & certificates
+      const certificates = await tx.certificate.findMany({
+        where: { userId: { in: studentIds } },
+        select: { id: true },
+      });
+      if (certificates.length > 0) {
+        const certIds = certificates.map((c) => c.id);
+        await tx.certificateLog.deleteMany({
+          where: { certificateId: { in: certIds } },
+        });
+        await tx.certificate.deleteMany({
+          where: { userId: { in: studentIds } },
+        });
+      }
+
+      // 8. Delete payments and bookings
+      await tx.payment.deleteMany({ where: { studentId: { in: studentIds } } });
+      await tx.booking.deleteMany({ where: { studentId: { in: studentIds } } });
+
+      // 9. Finally, delete the student User records
+      await tx.user.deleteMany({
+        where: {
+          id: { in: studentIds },
+          role: "STUDENT",
+        },
+      });
     });
 
     return res.status(200).json({
       success: true,
-      message: `All students deleted successfully. Total deleted: ${result.count}`,
-      count: result.count,
+      message: `All students deleted successfully. Total deleted: ${studentIds.length}`,
+      count: studentIds.length,
     });
   } catch (error) {
     console.error("Delete All Students Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal server error. Failed to delete all students.",
+      message: error.message || "Internal server error. Failed to delete all students.",
     });
   }
 };
