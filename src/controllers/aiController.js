@@ -454,25 +454,58 @@ Keep suggestions short, relevant, and actionable based on the query and context.
 
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-    // 8. Post to Gemini Flash API
-    const response = await axios.post(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
-      {
-        contents: geminiContents,
-        systemInstruction: {
-          parts: [{ text: systemPrompt }]
-        },
-        generationConfig: {
-          responseMimeType: "application/json"
+    if (!GEMINI_API_KEY) {
+      console.error("LurnStack AI Chat Error: GEMINI_API_KEY environment variable is not set.");
+      return res.status(500).json({
+        success: false,
+        message: "AI service configuration missing (API Key)."
+      });
+    }
+
+    // 8. Post to Gemini API with fallback models to handle 503 high demand / rate limits
+    const CANDIDATE_MODELS = [
+      "gemini-3.6-flash",
+      "gemini-2.5-flash",
+      "gemini-flash-latest"
+    ];
+
+    let response = null;
+    let lastError = null;
+
+    for (const model of CANDIDATE_MODELS) {
+      try {
+        response = await axios.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            contents: geminiContents,
+            systemInstruction: {
+              parts: [{ text: systemPrompt }]
+            },
+            generationConfig: {
+              responseMimeType: "application/json"
+            }
+          },
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "X-goog-api-key": GEMINI_API_KEY
+            },
+            timeout: 15000
+          }
+        );
+
+        if (response && response.data) {
+          break;
         }
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "X-goog-api-key": GEMINI_API_KEY
-        }
+      } catch (err) {
+        lastError = err;
+        console.warn(`[LurnStack AI Chat] Model '${model}' call failed:`, err.response?.data?.error?.message || err.message);
       }
-    );
+    }
+
+    if (!response || !response.data) {
+      throw lastError || new Error("All candidate AI models failed to respond.");
+    }
 
     const candidateText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     let parsedResult = { answer: "", suggestions: [] };
