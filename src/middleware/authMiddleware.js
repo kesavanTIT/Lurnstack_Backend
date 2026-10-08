@@ -81,11 +81,35 @@ const isAdmin = (req, res, next) => {
 // @desc    Restrict access to Tridin candidates only
 // @usage   Apply AFTER protect middleware
 // ─────────────────────────────────────────────
-const tridinOnly = (req, res, next) => {
-  const role = String(req.user?.role || "").toUpperCase();
-  if (role === "TRIDIN_CANDIDATE" || role === "TRIDIN" || role === "ADMIN") {
-    next();
-  } else {
+const tridinOnly = async (req, res, next) => {
+  try {
+    const role = String(req.user?.role || "").toUpperCase();
+    if (role === "TRIDIN_CANDIDATE" || role === "TRIDIN" || role === "ADMIN") {
+      return next();
+    }
+    if (req.user?.id) {
+      const prisma = require("../config/db");
+      const dbUser = await prisma.user.findUnique({
+        where: { id: Number(req.user.id) },
+        select: { role: true, email: true },
+      });
+      const dbRole = String(dbUser?.role || "").toUpperCase();
+      const dbEmail = String(dbUser?.email || "").toLowerCase();
+      if (
+        dbRole === "TRIDIN_CANDIDATE" ||
+        dbRole === "TRIDIN" ||
+        dbEmail.endsWith("@tridinsoftware.com") ||
+        dbRole === "ADMIN"
+      ) {
+        req.user.role = "tridin";
+        return next();
+      }
+    }
+    return res.status(403).json({
+      success: false,
+      message: "Access denied. Tridin Software candidates only.",
+    });
+  } catch (err) {
     return res.status(403).json({
       success: false,
       message: "Access denied. Tridin Software candidates only.",
