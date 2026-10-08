@@ -269,8 +269,8 @@ const getPublicSessionById = async (req, res) => {
       },
     });
 
-    // Make sure session exists and status is active (published)
-    if (!session || session.status !== "active") {
+    // Make sure session exists and status is active (published) and not Tridin-only
+    if (!session || session.status !== "active" || session.isTridinOnly === true) {
       return res.status(404).json({
         success: false,
         message: "Session not found.",

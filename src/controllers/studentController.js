@@ -712,7 +712,7 @@ const getLiveClassById = async (req, res) => {
       }
     });
 
-    if (!session) {
+    if (!session || session.isTridinOnly === true) {
       return res.status(404).json({
         success: false,
         message: "Live class or session not found.",
@@ -1045,7 +1045,7 @@ const getStudentSessionDetails = async (req, res) => {
       }
     });
 
-    if (!session) {
+    if (!session || session.isTridinOnly === true) {
       return res.status(404).json({ success: false, message: "Session not found." });
     }
 
