@@ -48,6 +48,7 @@ enum Role {
   STUDENT
   TRAINER
   ADMIN
+  TRIDIN_CANDIDATE
 }
 
 model LiveClass {
@@ -157,6 +158,9 @@ model LiveSession {
   recurrenceEndDate    String?
   totalHours           Float?
   totalDays            Int?
+
+  // ── Tridin Software Portal ──────────────────────────────────────────────────
+  isTridinOnly         Boolean @default(false)
 }
 
 model SessionCard {

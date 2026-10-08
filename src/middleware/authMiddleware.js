@@ -77,4 +77,19 @@ const isAdmin = (req, res, next) => {
   }
 };
 
-module.exports = { protect, adminOnly, isAdmin };
+// ─────────────────────────────────────────────
+// @desc    Restrict access to Tridin candidates only
+// @usage   Apply AFTER protect middleware
+// ─────────────────────────────────────────────
+const tridinOnly = (req, res, next) => {
+  if (req.user && req.user.role === "TRIDIN_CANDIDATE") {
+    next();
+  } else {
+    return res.status(403).json({
+      success: false,
+      message: "Access denied. Tridin Software candidates only.",
+    });
+  }
+};
+
+module.exports = { protect, adminOnly, isAdmin, tridinOnly };

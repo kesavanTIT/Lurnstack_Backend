@@ -17,6 +17,7 @@ const trainerAttendanceRoutes = require("./routes/trainerAttendance.routes");
 const attendanceRoutes = require("./routes/attendance.routes");
 const offerRoutes = require("./routes/offerRoutes");
 const promoRoutes = require("./routes/promoRoutes");
+const tridinRoutes = require("./routes/tridinRoutes");
 
 // ── Background Jobs ──────────────────────────
 require("./jobs/attendanceJob");
@@ -37,6 +38,7 @@ const allowedOrigins = [
   "https://lurnstack.com",
   "https://admin.lurnstack.com",
   "https://trainers.lurnstack.com",
+  "https://tridin.lurnstack.com",
   "http://localhost:3000",
   "https://localhost:3000",
   "http://localhost:3001",
@@ -119,6 +121,9 @@ app.use("/api/promos", promoRoutes);
 // Attendance / Trainer Modules
 app.use("/api/v1", trainerAttendanceRoutes);
 app.use("/api/v1", attendanceRoutes);
+
+// Tridin Software Portal
+app.use("/api/tridin", tridinRoutes);
 
 // ── 404 Handler ──────────────────────────────
 app.use((req, res) => {
