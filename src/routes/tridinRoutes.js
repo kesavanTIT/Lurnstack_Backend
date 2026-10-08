@@ -17,7 +17,7 @@ const {
 router.post("/login", loginUser);
 
 // GET /api/tridin/courses  → list all Tridin-only courses
-router.get("/courses", protect, tridinOnly, getTridinCourses);
+router.get("/courses", protect, getTridinCourses);
 
 // GET /api/tridin/me       → get own profile
 router.get("/me", protect, tridinOnly, getTridinProfile);
