@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { protect, adminOnly } = require("../middleware/authMiddleware");
 const { tridinOnly } = require("../middleware/authMiddleware");
+const { loginUser } = require("../controllers/authController");
 const {
   getTridinCourses,
   getTridinProfile,
@@ -12,6 +13,9 @@ const {
 } = require("../controllers/tridinController");
 
 // ── Tridin Candidate Routes ───────────────────────────
+// POST /api/tridin/login   → login endpoint
+router.post("/login", loginUser);
+
 // GET /api/tridin/courses  → list all Tridin-only courses
 router.get("/courses", protect, tridinOnly, getTridinCourses);
 
