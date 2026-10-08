@@ -602,6 +602,8 @@ const createSession = async (req, res) => {
       enableWhatsAppValue = req.body.enableWhatsApp === true || req.body.enableWhatsApp === "true";
     }
 
+    const isTridinOnlyVal = req.body.isTridinOnly === true || req.body.isTridinOnly === "true" || req.body.isTridinOnly === 1 || req.body.isTridinOnly === "1";
+
     const parsedRecurringDays = validation.parsed;
 
     const session = await prisma.liveSession.create({
@@ -623,7 +625,8 @@ const createSession = async (req, res) => {
         cancelledDates: [],
         thumbnail,
         pricingState: "PENDING_PRICE",
-        publishState: "DRAFT",
+        publishState: isTridinOnlyVal ? "PUBLISHED" : "DRAFT",
+        isTridinOnly: isTridinOnlyVal,
         enableWhatsApp: enableWhatsAppValue,
         whatsappTemplateName: req.body.whatsappTemplateName || null,
         whatsappCustomTitle: req.body.whatsappCustomTitle || null,
@@ -821,6 +824,14 @@ const updateTrainerSession = async (req, res) => {
 
     if (updateData.isRecurring === false) {
       updateData.recurrenceType = null;
+    }
+
+    if (req.body.isTridinOnly !== undefined) {
+      const isTridinOnlyVal = req.body.isTridinOnly === true || req.body.isTridinOnly === "true" || req.body.isTridinOnly === 1 || req.body.isTridinOnly === "1";
+      updateData.isTridinOnly = isTridinOnlyVal;
+      if (isTridinOnlyVal) {
+        updateData.publishState = "PUBLISHED";
+      }
     }
 
     if (req.body.enableWhatsApp !== undefined) {
