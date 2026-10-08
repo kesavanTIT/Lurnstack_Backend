@@ -1,5 +1,6 @@
 const prisma = require("../config/db");
 const bcrypt = require("bcryptjs");
+const { getRelativeUploadPath } = require("../utils/pathUtils");
 
 // ─────────────────────────────────────────────
 // @desc    Get all Tridin-only courses/sessions
@@ -50,12 +51,21 @@ const getTridinCourses = async (req, res) => {
       },
     });
 
-    const formattedCourses = sessions.map((s) => ({
-      ...s,
-      meetUrl: s.meetingLink || "",
-      instructorName: s.trainer?.fullName || "LurnStack Trainer",
-      instructor: s.trainer?.fullName || "LurnStack Trainer",
-    }));
+    const formattedCourses = sessions.map((s) => {
+      let thumbnail = s.thumbnail || null;
+      if (thumbnail && !thumbnail.startsWith("http://") && !thumbnail.startsWith("https://") && !thumbnail.startsWith("data:")) {
+        const relative = getRelativeUploadPath(thumbnail);
+        thumbnail = `${req.protocol}://${req.get("host")}/${relative}`;
+      }
+
+      return {
+        ...s,
+        thumbnail,
+        meetUrl: s.meetingLink || "",
+        instructorName: s.trainer?.fullName || "LurnStack Trainer",
+        instructor: s.trainer?.fullName || "LurnStack Trainer",
+      };
+    });
 
     return res.status(200).json({
       success: true,
