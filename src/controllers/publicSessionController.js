@@ -210,9 +210,10 @@ const getPublicSessions = async (req, res) => {
       where: {
         status: "active",
         deleteRequested: false,
+        isTridinOnly: false,
         AND: [
           { OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }] },
-          { OR: [{ sessionType: { not: "TIT" } }, { sessionType: null }] },
+          { OR: [{ sessionType: { not: "TIT" } }, { sectionType: null }] },
           { OR: [{ source: { not: "admin_tit_classes" } }, { source: null }] }
         ]
       },

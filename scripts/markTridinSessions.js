@@ -1,23 +1,52 @@
 const prisma = require("../src/config/db");
 
 async function main() {
-  // Find all active live sessions or sessions with "react" in title or all sessions
-  const sessions = await prisma.liveSession.findMany();
-  console.log("Total sessions found:", sessions.length);
+  console.log("Resetting all non-Tridin sessions to isTridinOnly: false...");
 
-  for (const s of sessions) {
-    console.log(`Session ID: ${s.id}, Title: "${s.title}", isTridinOnly: ${s.isTridinOnly}, publishState: ${s.publishState}`);
-  }
-
-  // Update all sessions to be isTridinOnly: true so candidates see them immediately
-  const updateResult = await prisma.liveSession.updateMany({
+  // 1. Reset all sessions to isTridinOnly: false
+  const resetResult = await prisma.liveSession.updateMany({
     data: {
-      isTridinOnly: true,
-      publishState: "PUBLISHED",
+      isTridinOnly: false,
+    },
+  });
+  console.log("Reset count:", resetResult.count);
+
+  // 2. Find sessions that were uploaded specifically for Tridin (e.g. title contains "react", "tridin", "daily", or recent candidate sessions)
+  const tridinSessions = await prisma.liveSession.findMany({
+    where: {
+      OR: [
+        { title: { contains: "react", mode: "insensitive" } },
+        { title: { contains: "tridin", mode: "insensitive" } },
+        { description: { contains: "tridin", mode: "insensitive" } },
+      ],
     },
   });
 
-  console.log("Updated sessions result:", updateResult);
+  console.log("Found Tridin target sessions:", tridinSessions.map(s => ({ id: s.id, title: s.title })));
+
+  if (tridinSessions.length > 0) {
+    const ids = tridinSessions.map(s => s.id);
+    const setTridinResult = await prisma.liveSession.updateMany({
+      where: {
+        id: { in: ids },
+      },
+      data: {
+        isTridinOnly: true,
+        publishState: "PUBLISHED",
+      },
+    });
+    console.log("Set isTridinOnly: true for:", setTridinResult.count, "sessions.");
+  } else {
+    // If no session matched keyword, set the latest session to isTridinOnly: true
+    const latest = await prisma.liveSession.findFirst({ orderBy: { createdAt: "desc" } });
+    if (latest) {
+      await prisma.liveSession.update({
+        where: { id: latest.id },
+        data: { isTridinOnly: true, publishState: "PUBLISHED" },
+      });
+      console.log(`Set latest session (${latest.title}) to isTridinOnly: true`);
+    }
+  }
 }
 
 main()
