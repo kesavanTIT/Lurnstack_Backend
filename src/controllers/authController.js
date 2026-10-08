@@ -192,6 +192,8 @@ const loginUser = async (req, res) => {
     let finalRole = user.role;
     if (user.role === "TRAINER") {
       finalRole = "trainer";
+    } else if (user.role === "TRIDIN_CANDIDATE") {
+      finalRole = "tridin";
     }
 
     // 4. Generate JWT token containing id and role
