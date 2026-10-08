@@ -1,39 +1,54 @@
 const prisma = require("../src/config/db");
 
 async function main() {
-  console.log("Cleaning up Tridin sessions...");
+  console.log("Cleaning up Tridin candidate sessions...");
 
-  // 1. Reset ALL sessions to isTridinOnly: false
+  // 1. Reset EVERY single session in the database to isTridinOnly: false
   const resetResult = await prisma.liveSession.updateMany({
     data: {
       isTridinOnly: false,
     },
   });
-  console.log(`Reset ${resetResult.count} sessions to isTridinOnly: false.`);
+  console.log(`Reset all ${resetResult.count} sessions to isTridinOnly: false.`);
 
-  // 2. Set isTridinOnly: true ONLY for sessions intended for Tridin candidates
-  const keywords = ["react", "tridin", "daily", "practical", "training", "candidate"];
-  
-  const updateResult = await prisma.liveSession.updateMany({
+  // 2. Search strictly for sessions with 'react' or 'tridin' in title or description
+  const targetSessions = await prisma.liveSession.findMany({
     where: {
-      OR: keywords.map(kw => ({ title: { contains: kw, mode: "insensitive" } })),
-    },
-    data: {
-      isTridinOnly: true,
-      publishState: "PUBLISHED",
+      OR: [
+        { title: { contains: "react", mode: "insensitive" } },
+        { title: { contains: "tridin", mode: "insensitive" } },
+        { description: { contains: "tridin", mode: "insensitive" } },
+      ],
     },
   });
 
-  console.log(`Updated ${updateResult.count} sessions to isTridinOnly: true.`);
+  if (targetSessions.length > 0) {
+    const ids = targetSessions.map((s) => s.id);
+    await prisma.liveSession.updateMany({
+      where: { id: { in: ids } },
+      data: { isTridinOnly: true, publishState: "PUBLISHED" },
+    });
+    console.log(`Set isTridinOnly: true for ${targetSessions.length} matching sessions:`);
+    console.table(targetSessions.map((s) => ({ id: s.id, title: s.title })));
+  } else {
+    // Fallback: If no session matched 'react' or 'tridin', set ONLY the single most recently created session
+    const newest = await prisma.liveSession.findFirst({
+      orderBy: { createdAt: "desc" },
+    });
+    if (newest) {
+      await prisma.liveSession.update({
+        where: { id: newest.id },
+        data: { isTridinOnly: true, publishState: "PUBLISHED" },
+      });
+      console.log(`Fallback: Set ONLY 1 newest session (${newest.title}) to isTridinOnly: true.`);
+    }
+  }
 
-  // Verify resulting Tridin-only sessions
-  const tridinSessions = await prisma.liveSession.findMany({
+  // 3. Final verification print
+  const tridinOnlyCount = await prisma.liveSession.count({
     where: { isTridinOnly: true },
-    select: { id: true, title: true, isTridinOnly: true },
   });
-
-  console.log("Tridin-only sessions count:", tridinSessions.length);
-  console.log(tridinSessions);
+  console.log(`FINAL RESULT: Exactly ${tridinOnlyCount} session(s) marked as Tridin-Only.`);
 }
 
 main()
