@@ -82,7 +82,14 @@ const isAdmin = (req, res, next) => {
 // @usage   Apply AFTER protect middleware
 // ─────────────────────────────────────────────
 const tridinOnly = (req, res, next) => {
-  if (req.user) {
+  if (
+    req.user &&
+    (req.user.id ||
+      req.user.role === "TRIDIN_CANDIDATE" ||
+      req.user.role === "tridin" ||
+      req.user.role === "STUDENT" ||
+      req.user.role === "ADMIN")
+  ) {
     return next();
   }
   return res.status(403).json({
