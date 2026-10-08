@@ -464,6 +464,7 @@ const getAllLiveClasses = async (req, res) => {
       where: {
         status: { not: "deleted" },
         deleteRequested: false,
+        isTridinOnly: false,
         AND: [
           { OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }] },
           { OR: [{ sessionType: { not: "TIT" } }, { sessionType: null }] },
@@ -951,6 +952,7 @@ const getStudentSessions = async (req, res) => {
         },
         {
           AND: [
+            { isTridinOnly: false },
             { OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }] },
             { OR: [{ sessionType: { not: "TIT" } }, { sessionType: null }] },
             { OR: [{ source: { not: "admin_tit_classes" } }, { source: null }] }
