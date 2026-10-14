@@ -5,7 +5,7 @@ const jwt = require("jsonwebtoken");
 // ─────────────────────────────────────────────
 // @desc    Register a new admin (role hardcoded as 'admin')
 // @route   POST /api/admin/register
-// @access  Public (or semi-public for setup)
+// @access  Public (or semi-public for setup)))
 // ─────────────────────────────────────────────
 const registerAdmin = async (req, res) => {
   try {
