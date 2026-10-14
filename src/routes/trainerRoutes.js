@@ -40,8 +40,19 @@ const {
   getAttendanceEligibility
 } = require("../controllers/trainerAttendanceController");
 
+const {
+  getTrainerTridinCourses,
+  getTrainerCourseVideos,
+  addTrainerCourseVideo,
+  updateTrainerCourseVideo,
+  deleteTrainerCourseVideo,
+  setVideoAssessment,
+  getCourseCandidateAnalytics,
+} = require("../controllers/tridinLmsController");
+
 const { protect } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
+const videoUpload = require("../middleware/videoUploadMiddleware");
 
 // ── Protect all trainer routes ─────────────────
 router.use(protect);
@@ -111,5 +122,29 @@ router.get("/courses/:courseId/attendance-summary", getCourseAttendanceSummary);
 router.get("/sessions/:sessionId/attendance", getSessionAttendance);
 router.get("/courses/:courseId/student-attendance", getStudentAttendanceInCourse);
 router.get("/courses/:courseId/attendance-eligibility", getAttendanceEligibility);
+
+// ── Trainer Tridin YouTube-style Video Playlist & Assessments ──
+router.get("/tridin/courses", getTrainerTridinCourses);
+router.get("/tridin/courses/:sessionId/videos", getTrainerCourseVideos);
+// Accept both videoFile (direct upload) and thumbnail image
+router.post(
+  "/tridin/courses/:sessionId/videos",
+  videoUpload.fields([
+    { name: "videoFile", maxCount: 1 },
+    { name: "thumbnail", maxCount: 1 },
+  ]),
+  addTrainerCourseVideo
+);
+router.put(
+  "/tridin/videos/:videoId",
+  videoUpload.fields([
+    { name: "videoFile", maxCount: 1 },
+    { name: "thumbnail", maxCount: 1 },
+  ]),
+  updateTrainerCourseVideo
+);
+router.delete("/tridin/videos/:videoId", deleteTrainerCourseVideo);
+router.post("/tridin/videos/:videoId/assessment", setVideoAssessment);
+router.get("/tridin/courses/:sessionId/candidate-progress", getCourseCandidateAnalytics);
 
 module.exports = router;

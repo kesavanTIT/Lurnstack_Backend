@@ -11,6 +11,12 @@ const {
   deleteTridinCandidate,
   toggleTridinSession,
 } = require("../controllers/tridinController");
+const {
+  getCandidateCoursePlaylist,
+  recordVideoProgress,
+  getCandidateAssessment,
+  submitCandidateAssessment,
+} = require("../controllers/tridinLmsController");
 
 // ── Tridin Candidate Routes ───────────────────────────
 // POST /api/tridin/login   → login endpoint
@@ -21,6 +27,19 @@ router.get("/courses", protect, getTridinCourses);
 
 // GET /api/tridin/me       → get own profile
 router.get("/me", protect, tridinOnly, getTridinProfile);
+
+// ── Tridin Candidate 1-by-1 Video Playlist & Assessment ──────
+// GET  /api/tridin/courses/:sessionId/playlist  → 1-by-1 video playlist with lock states
+router.get("/courses/:sessionId/playlist", protect, tridinOnly, getCandidateCoursePlaylist);
+
+// POST /api/tridin/videos/:videoId/progress     → video watch progress heartbeat / completed
+router.post("/videos/:videoId/progress", protect, tridinOnly, recordVideoProgress);
+
+// GET  /api/tridin/videos/:videoId/assessment   → get quiz questions (excludes correctOption)
+router.get("/videos/:videoId/assessment", protect, tridinOnly, getCandidateAssessment);
+
+// POST /api/tridin/videos/:videoId/assessment/submit → submit test & evaluate pass/fail
+router.post("/videos/:videoId/assessment/submit", protect, tridinOnly, submitCandidateAssessment);
 
 // ── Admin: Tridin Candidate Management ───────────────
 // POST /api/tridin/admin/candidates        → create a candidate

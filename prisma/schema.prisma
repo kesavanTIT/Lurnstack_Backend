@@ -42,6 +42,8 @@ model User {
   certificates              Certificate[]           @relation(name: "UserCertificateRelation")
   pushToken                 String?
   notifications             Notification[]
+  tridinProgress            TridinCandidateProgress[]
+  tridinAttempts            TridinAssessmentAttempt[]
 }
 
 enum Role {
@@ -161,6 +163,7 @@ model LiveSession {
 
   // ── Tridin Software Portal ──────────────────────────────────────────────────
   isTridinOnly         Boolean @default(false)
+  tridinVideos         TridinVideo[]
 }
 
 model SessionCard {
@@ -875,5 +878,90 @@ model Notification {
   deepLinkUrl String?  // E.g., '/join/session-id' or '/courses/course-id'
   
   student     User     @relation(fields: [studentId], references: [id])
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// TRIDIN CANDIDATE LMS: YOUTUBE-STYLE 1-BY-1 PLAYLIST & STRICT ASSESSMENT GATEKEEPING
+// ════════════════════════════════════════════════════════════════════════════════
+
+model TridinVideo {
+  id                   String                     @id @default(uuid())
+  sessionId            String
+  session              LiveSession                @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  title                String
+  description          String?                    @db.Text
+  videoType            String                     @default("YOUTUBE") // "YOUTUBE" | "DIRECT_URL" | "UPLOAD"
+  videoUrl             String
+  youtubeId            String?
+  durationSeconds      Int                        @default(0)
+  orderIndex           Int                        @default(1)
+  thumbnailUrl         String?
+  assessment           TridinAssessment?
+  candidateProgress    TridinCandidateProgress[]
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+
+  @@index([sessionId, orderIndex])
+}
+
+model TridinAssessment {
+  id               String                     @id @default(uuid())
+  videoId          String                     @unique
+  video            TridinVideo                @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  title            String
+  passingScore     Int                        @default(70)
+  timeLimitMinutes Int                        @default(15)
+  questions        TridinQuestion[]
+  attempts         TridinAssessmentAttempt[]
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+}
+
+model TridinQuestion {
+  id             String           @id @default(uuid())
+  assessmentId   String
+  assessment     TridinAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  questionText   String           @db.Text
+  options        Json             // Array of options: ["Option A", "Option B", "Option C", "Option D"]
+  correctOption  Int              // 0, 1, 2, or 3
+  explanation    String?          @db.Text
+  orderIndex     Int              @default(1)
+}
+
+model TridinCandidateProgress {
+  id                   String        @id @default(uuid())
+  userId               Int
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videoId              String
+  video                TridinVideo   @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  
+  // Watch tracking (YouTube Player API / Heartbeat)
+  watchedSeconds       Int           @default(0)
+  watchCompleted       Boolean       @default(false)
+  
+  // Assessment Gatekeeping
+  canAttemptAssessment Boolean       @default(false)
+  isPassed             Boolean       @default(false)
+  lastScorePercentage  Float?
+  totalAttempts        Int           @default(0)
+  
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  @@unique([userId, videoId])
+}
+
+model TridinAssessmentAttempt {
+  id               String           @id @default(uuid())
+  userId           Int
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessmentId     String
+  assessment       TridinAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  score            Int
+  totalQuestions   Int
+  percentage       Float
+  isPassed         Boolean
+  answersSubmitted Json
+  createdAt        DateTime         @default(now())
 }
 
