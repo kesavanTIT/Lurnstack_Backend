@@ -11,7 +11,11 @@ const getTridinCourses = async (req, res) => {
   try {
     const sessions = await prisma.liveSession.findMany({
       where: {
-        isTridinOnly: true,
+        OR: [
+          { isTridinOnly: true },
+          { category: { contains: "tridin", mode: "insensitive" } },
+          { tridinVideos: { some: {} } },
+        ],
       },
       select: {
         id: true,

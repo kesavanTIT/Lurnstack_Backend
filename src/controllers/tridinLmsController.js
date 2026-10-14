@@ -472,13 +472,16 @@ const submitCandidateAssessment = async (req, res) => {
 // @access  Private (Trainer)
 const getTrainerTridinCourses = async (req, res) => {
   try {
-    const trainerId = req.user.id;
+    const trainerId = req.user?.id;
 
-    const sessions = await prisma.liveSession.findMany({
+    // First: Match Tridin specific or trainer's courses
+    let sessions = await prisma.liveSession.findMany({
       where: {
         OR: [
           { isTridinOnly: true },
           { category: { contains: "tridin", mode: "insensitive" } },
+          { tridinVideos: { some: {} } },
+          ...(trainerId ? [{ trainerId }] : []),
         ],
       },
       select: {
@@ -498,6 +501,29 @@ const getTrainerTridinCourses = async (req, res) => {
       },
       orderBy: { createdAt: "desc" },
     });
+
+    // Fallback: If still empty, return all live sessions so trainer can pick any course
+    if (!sessions || sessions.length === 0) {
+      sessions = await prisma.liveSession.findMany({
+        select: {
+          id: true,
+          title: true,
+          subtitle: true,
+          category: true,
+          courseTitle: true,
+          thumbnail: true,
+          totalHours: true,
+          totalDays: true,
+          status: true,
+          createdAt: true,
+          _count: {
+            select: { tridinVideos: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -636,6 +662,12 @@ const addTrainerCourseVideo = async (req, res) => {
         thumbnailUrl: finalThumbnail,
       },
     });
+
+    // Auto-mark session as isTridinOnly so it immediately shows up for Tridin candidates
+    await prisma.liveSession.update({
+      where: { id: sessionId },
+      data: { isTridinOnly: true },
+    }).catch((err) => console.warn("Failed to auto-mark session isTridinOnly:", err.message));
 
     return res.status(201).json({
       success: true,
