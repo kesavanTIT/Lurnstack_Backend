@@ -49,6 +49,9 @@ const getTridinCourses = async (req, res) => {
             profilePhotoUrl: true,
           },
         },
+        _count: {
+          select: { tridinVideos: true },
+        },
       },
       orderBy: {
         createdAt: "desc",
@@ -65,6 +68,7 @@ const getTridinCourses = async (req, res) => {
       return {
         ...s,
         thumbnail,
+        videoCount: s._count?.tridinVideos || 0,
         meetUrl: s.meetingLink || "",
         instructorName: s.trainer?.fullName || "LurnStack Trainer",
         instructor: s.trainer?.fullName || "LurnStack Trainer",
