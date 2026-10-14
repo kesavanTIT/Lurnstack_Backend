@@ -908,6 +908,45 @@ const getCourseCandidateAnalytics = async (req, res) => {
   }
 };
 
+// @desc    Update main course session thumbnail
+// @route   PATCH /api/trainer/tridin/courses/:sessionId/thumbnail
+// @access  Private (Trainer)
+const updateCourseThumbnail = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    let finalThumbnail = null;
+
+    if (req.file) {
+      const relative = getRelativeUploadPath(req.file.path);
+      finalThumbnail = `${req.protocol}://${req.get("host")}/${relative}`;
+    } else if (req.body.thumbnail) {
+      finalThumbnail = req.body.thumbnail.trim();
+    } else {
+      return res.status(400).json({ success: false, message: "No thumbnail image provided." });
+    }
+
+    const updated = await prisma.liveSession.update({
+      where: { id: sessionId },
+      data: { thumbnail: finalThumbnail },
+      select: { id: true, title: true, thumbnail: true },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Main course thumbnail updated successfully.",
+      course: updated,
+      thumbnail: finalThumbnail,
+    });
+  } catch (error) {
+    console.error("updateCourseThumbnail error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update course thumbnail.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   // Candidate
   getCandidateCoursePlaylist,
@@ -922,4 +961,5 @@ module.exports = {
   deleteTrainerCourseVideo,
   setVideoAssessment,
   getCourseCandidateAnalytics,
+  updateCourseThumbnail,
 };
