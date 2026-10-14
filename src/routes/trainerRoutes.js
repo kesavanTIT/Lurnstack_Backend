@@ -49,6 +49,8 @@ const {
   setVideoAssessment,
   getCourseCandidateAnalytics,
   updateCourseThumbnail,
+  createTrainerTridinCourse,
+  deleteTrainerTridinCourse,
 } = require("../controllers/tridinLmsController");
 
 const { protect } = require("../middleware/authMiddleware");
@@ -152,5 +154,11 @@ router.patch(
   upload.single("thumbnail"),
   updateCourseThumbnail
 );
+router.post(
+  "/tridin/courses",
+  upload.single("thumbnail"),
+  createTrainerTridinCourse
+);
+router.delete("/tridin/courses/:sessionId", deleteTrainerTridinCourse);
 
 module.exports = router;

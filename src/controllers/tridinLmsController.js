@@ -467,27 +467,20 @@ const submitCandidateAssessment = async (req, res) => {
 // TRAINER ENDPOINTS (Protected by protect / trainer)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// @desc    List all Tridin courses belonging to or available to trainer
+// @desc    List all Tridin courses belonging to or available to trainer (strictly Tridin-only)
 // @route   GET /api/trainer/tridin/courses
 // @access  Private (Trainer)
 const getTrainerTridinCourses = async (req, res) => {
   try {
-    const trainerId = req.user?.id;
-
-    // First: Match Tridin specific or trainer's courses
-    let sessions = await prisma.liveSession.findMany({
+    const sessions = await prisma.liveSession.findMany({
       where: {
-        OR: [
-          { isTridinOnly: true },
-          { category: { contains: "tridin", mode: "insensitive" } },
-          { tridinVideos: { some: {} } },
-          ...(trainerId ? [{ trainerId }] : []),
-        ],
+        isTridinOnly: true,
       },
       select: {
         id: true,
         title: true,
         subtitle: true,
+        description: true,
         category: true,
         courseTitle: true,
         thumbnail: true,
@@ -502,29 +495,6 @@ const getTrainerTridinCourses = async (req, res) => {
       orderBy: { createdAt: "desc" },
     });
 
-    // Fallback: If still empty, return all live sessions so trainer can pick any course
-    if (!sessions || sessions.length === 0) {
-      sessions = await prisma.liveSession.findMany({
-        select: {
-          id: true,
-          title: true,
-          subtitle: true,
-          category: true,
-          courseTitle: true,
-          thumbnail: true,
-          totalHours: true,
-          totalDays: true,
-          status: true,
-          createdAt: true,
-          _count: {
-            select: { tridinVideos: true },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-        take: 30,
-      });
-    }
-
     return res.status(200).json({
       success: true,
       courses: sessions,
@@ -533,7 +503,117 @@ const getTrainerTridinCourses = async (req, res) => {
     console.error("getTrainerTridinCourses error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch courses.",
+      message: "Failed to fetch Tridin courses.",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Create a dedicated Tridin course
+// @route   POST /api/trainer/tridin/courses
+// @access  Private (Trainer)
+const createTrainerTridinCourse = async (req, res) => {
+  try {
+    const { title, description, category } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Course title is required.",
+      });
+    }
+
+    let finalThumbnail = null;
+    if (req.file) {
+      const relative = getRelativeUploadPath(req.file.path);
+      finalThumbnail = `${req.protocol}://${req.get("host")}/${relative}`;
+    } else if (req.body.thumbnail) {
+      finalThumbnail = req.body.thumbnail.trim();
+    }
+
+    const newCourse = await prisma.liveSession.create({
+      data: {
+        title: title.trim(),
+        courseTitle: title.trim(),
+        description: description ? description.trim() : null,
+        category: category ? category.trim() : "Tridin Track",
+        thumbnail: finalThumbnail,
+        isTridinOnly: true,
+        status: "active",
+        publishState: "PUBLISHED",
+        trainerId: req.user?.id || null,
+      },
+      select: {
+        id: true,
+        title: true,
+        subtitle: true,
+        description: true,
+        category: true,
+        courseTitle: true,
+        thumbnail: true,
+        isTridinOnly: true,
+        createdAt: true,
+        _count: {
+          select: { tridinVideos: true },
+        },
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Tridin course created successfully.",
+      course: newCourse,
+    });
+  } catch (error) {
+    console.error("createTrainerTridinCourse error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create Tridin course.",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Delete a dedicated Tridin course & its videos/assessments
+// @route   DELETE /api/trainer/tridin/courses/:sessionId
+// @access  Private (Trainer)
+const deleteTrainerTridinCourse = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const existing = await prisma.liveSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, title: true, isTridinOnly: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: "Course not found.",
+      });
+    }
+
+    if (!existing.isTridinOnly) {
+      return res.status(403).json({
+        success: false,
+        message: "Security violation: Only dedicated Tridin courses can be deleted here.",
+      });
+    }
+
+    // Delete the Tridin course (cascade will delete its tridinVideos, questions, assessments)
+    await prisma.liveSession.delete({
+      where: { id: sessionId },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Tridin course '${existing.title}' deleted successfully.`,
+    });
+  } catch (error) {
+    console.error("deleteTrainerTridinCourse error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete Tridin course.",
       error: error.message,
     });
   }
@@ -962,4 +1042,6 @@ module.exports = {
   setVideoAssessment,
   getCourseCandidateAnalytics,
   updateCourseThumbnail,
+  createTrainerTridinCourse,
+  deleteTrainerTridinCourse,
 };
