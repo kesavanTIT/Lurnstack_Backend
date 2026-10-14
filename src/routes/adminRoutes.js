@@ -209,4 +209,15 @@ router.post("/reels", reelUpload.fields([{ name: "video", maxCount: 1 }, { name:
 router.patch("/reels/:id", reelUpload.fields([{ name: "posterImage", maxCount: 1 }, { name: "video", maxCount: 1 }, { name: "logo", maxCount: 1 }]), updateAdminReel);
 router.delete("/reels/:id", deleteAdminReel);
 
+// ── Admin: Tridin Candidate Management ──────────────────────
+const {
+  createTridinCandidate,
+  listTridinCandidates,
+  deleteTridinCandidate,
+} = require("../controllers/tridinController");
+
+router.get("/tridin/candidates", listTridinCandidates);
+router.post("/tridin/candidates", createTridinCandidate);
+router.delete("/tridin/candidates/:id", deleteTridinCandidate);
+
 module.exports = router;
