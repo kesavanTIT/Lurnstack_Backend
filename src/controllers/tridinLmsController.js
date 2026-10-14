@@ -476,8 +476,10 @@ const getTrainerTridinCourses = async (req, res) => {
 
     const sessions = await prisma.liveSession.findMany({
       where: {
-        isTridinOnly: true,
-        ...(req.user.role === "TRAINER" ? { trainerId } : {}),
+        OR: [
+          { isTridinOnly: true },
+          { category: { contains: "tridin", mode: "insensitive" } },
+        ],
       },
       select: {
         id: true,
