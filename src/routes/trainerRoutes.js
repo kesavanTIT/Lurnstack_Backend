@@ -47,6 +47,7 @@ const {
   updateTrainerCourseVideo,
   deleteTrainerCourseVideo,
   setVideoAssessment,
+  deleteVideoAssessment,
   getCourseCandidateAnalytics,
   updateCourseThumbnail,
   createTrainerTridinCourse,
@@ -148,6 +149,7 @@ router.put(
 );
 router.delete("/tridin/videos/:videoId", deleteTrainerCourseVideo);
 router.post("/tridin/videos/:videoId/assessment", setVideoAssessment);
+router.delete("/tridin/videos/:videoId/assessment", deleteVideoAssessment);
 router.get("/tridin/courses/:sessionId/candidate-progress", getCourseCandidateAnalytics);
 router.patch(
   "/tridin/courses/:sessionId/thumbnail",

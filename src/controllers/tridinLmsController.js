@@ -110,35 +110,49 @@ const getCandidateCoursePlaylist = async (req, res) => {
 
     const playlist = videos.map((video, idx) => {
       const progress = video.candidateProgress[0] || null;
-      const isPassed = progress?.isPassed || false;
-      const watchCompleted = progress?.watchCompleted || false;
       const watchedSeconds = progress?.watchedSeconds || 0;
+      const watchCompleted = progress?.watchCompleted || false;
       const totalAttempts = progress?.totalAttempts || 0;
       const lastScore = progress?.lastScorePercentage ?? null;
 
-      // Video is unlocked if previous video was passed (Video 0 always unlocked)
+      // Has active assessment configured?
+      const hasAssessment = Boolean(video.assessment && video.assessment._count?.questions > 0);
+
+      // A video module is considered cleared/passed if:
+      // - With assessment: Candidate took quiz and passed (progress.isPassed === true)
+      // - Watch-only (no assessment configured): Candidate watched >= 90% or completed (progress.watchCompleted === true)
+      const isPassed = hasAssessment ? (progress?.isPassed || false) : (watchCompleted || progress?.isPassed || false);
+
+      // Video is unlocked if previous video was passed/cleared (Video 0 always unlocked)
       const isVideoUnlocked = previousPassed;
 
       // Assessment is available ONLY if:
       // 1. Video itself is unlocked
       // 2. Video has been watched 100% (or progress.canAttemptAssessment === true)
       // 3. Has assessment questions configured
-      const hasAssessment = Boolean(video.assessment && video.assessment._count.questions > 0);
       const canAttemptAssessment = isVideoUnlocked && hasAssessment && (progress?.canAttemptAssessment || false);
 
       // Determine clean status badge for UI
       let statusBadge = "LOCKED";
-      if (isPassed) {
-        statusBadge = "PASSED";
-      } else if (totalAttempts > 0 && !watchCompleted) {
-        statusBadge = "REWATCH_REQUIRED"; // Failed quiz, must re-watch
-      } else if (canAttemptAssessment) {
-        statusBadge = "ASSESSMENT_READY";
-      } else if (isVideoUnlocked) {
-        statusBadge = watchCompleted ? "READY_FOR_ASSESSMENT" : "UNWATCHED";
+      if (!isVideoUnlocked) {
+        statusBadge = "LOCKED";
+      } else if (!hasAssessment) {
+        // Watch-only module (no quiz required - auto unlocks next video on complete)
+        statusBadge = (watchCompleted || isPassed) ? "COMPLETED" : "UNWATCHED";
+      } else {
+        // Checkpoint Assessment module
+        if (isPassed) {
+          statusBadge = "PASSED";
+        } else if (totalAttempts > 0 && !watchCompleted) {
+          statusBadge = "REWATCH_REQUIRED"; // Failed quiz, must re-watch
+        } else if (canAttemptAssessment) {
+          statusBadge = "ASSESSMENT_READY";
+        } else {
+          statusBadge = watchCompleted ? "READY_FOR_ASSESSMENT" : "UNWATCHED";
+        }
       }
 
-      // Next video can unlock ONLY if this video was passed
+      // Next video can unlock ONLY if this video was passed/cleared
       previousPassed = isPassed;
 
       return {
@@ -155,6 +169,7 @@ const getCandidateCoursePlaylist = async (req, res) => {
           (video.youtubeId ? `https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg` : session.thumbnail),
         isUnlocked: isVideoUnlocked,
         statusBadge,
+        hasAssessment,
         progress: {
           watchedSeconds,
           watchCompleted,
@@ -163,7 +178,7 @@ const getCandidateCoursePlaylist = async (req, res) => {
           lastScore,
           totalAttempts,
         },
-        assessment: video.assessment
+        assessment: video.assessment && hasAssessment
           ? {
               id: video.assessment.id,
               title: video.assessment.title,
@@ -204,7 +219,11 @@ const recordVideoProgress = async (req, res) => {
     const video = await prisma.tridinVideo.findUnique({
       where: { id: videoId },
       include: {
-        assessment: true,
+        assessment: {
+          include: {
+            _count: { select: { questions: true } },
+          },
+        },
       },
     });
 
@@ -214,6 +233,8 @@ const recordVideoProgress = async (req, res) => {
         message: "Video module not found.",
       });
     }
+
+    const hasAssessment = Boolean(video.assessment && video.assessment._count?.questions > 0);
 
     // Check if watch threshold reached (90% of duration or explicitly completed)
     const threshold = video.durationSeconds > 0 ? video.durationSeconds * 0.9 : 0;
@@ -228,10 +249,16 @@ const recordVideoProgress = async (req, res) => {
 
     let newWatchCompleted = currentProgress?.watchCompleted || false;
     let newCanAttemptAssessment = currentProgress?.canAttemptAssessment || false;
+    let newIsPassed = currentProgress?.isPassed || false;
 
     if (hasMetWatchThreshold) {
       newWatchCompleted = true;
-      newCanAttemptAssessment = true;
+      if (hasAssessment) {
+        newCanAttemptAssessment = true;
+      } else {
+        // Watch-only module (no assessment): watching it auto-completes and passes this module!
+        newIsPassed = true;
+      }
     }
 
     const progress = await prisma.tridinCandidateProgress.upsert({
@@ -242,6 +269,7 @@ const recordVideoProgress = async (req, res) => {
         watchedSeconds: Math.max(watchedSeconds, currentProgress?.watchedSeconds || 0),
         watchCompleted: newWatchCompleted,
         canAttemptAssessment: newCanAttemptAssessment,
+        isPassed: newIsPassed,
       },
       create: {
         userId,
@@ -249,13 +277,14 @@ const recordVideoProgress = async (req, res) => {
         watchedSeconds,
         watchCompleted: newWatchCompleted,
         canAttemptAssessment: newCanAttemptAssessment,
+        isPassed: newIsPassed,
       },
     });
 
     return res.status(200).json({
       success: true,
       message: newWatchCompleted
-        ? "Video completed! Assessment is now unlocked."
+        ? (hasAssessment ? "Video completed! Assessment is now unlocked." : "Video completed! Next video is now unlocked.")
         : "Progress updated.",
       progress: {
         watchedSeconds: progress.watchedSeconds,
@@ -1027,6 +1056,31 @@ const updateCourseThumbnail = async (req, res) => {
   }
 };
 
+
+// @desc    Delete/Remove assessment from a video (Trainer makes it watch-only)
+// @route   DELETE /api/trainer/tridin/videos/:videoId/assessment
+// @access  Private (Trainer)
+const deleteVideoAssessment = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    await prisma.tridinAssessment.deleteMany({
+      where: { videoId },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Assessment removed. This video is now watch-only.",
+    });
+  } catch (error) {
+    console.error("deleteVideoAssessment error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to remove assessment.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   // Candidate
   getCandidateCoursePlaylist,
@@ -1040,6 +1094,7 @@ module.exports = {
   updateTrainerCourseVideo,
   deleteTrainerCourseVideo,
   setVideoAssessment,
+  deleteVideoAssessment,
   getCourseCandidateAnalytics,
   updateCourseThumbnail,
   createTrainerTridinCourse,
