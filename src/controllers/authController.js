@@ -271,9 +271,9 @@ const sendOTP = async (req, res) => {
       });
     }
 
-    // 3. Generate OTP and calculate a 1-minute expiry window
+    // 3. Generate OTP and calculate a 5-minute expiry window
     const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + 1 * 60 * 1000); // now + 1 min
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // now + 5 min
 
     // 4. Deliver the OTP via the requested channel
     await sendEmailOTP(normalizedIdentifier, otp);

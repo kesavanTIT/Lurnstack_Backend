@@ -87,68 +87,71 @@ const sendEmailOTP = async (email, otp) => {
   }
 
   const transporter = getTransporter();
+  const currentYear = new Date().getFullYear();
+  const replyTo = process.env.SUPPORT_EMAIL || "support@lurnstack.com";
 
   const mailOptions = {
     from: `"LurnStack" <${from}>`,
-    replyTo: from,
+    replyTo: replyTo,
     to: email,
-    subject: "Your LurnStack Verification Code",
-    // Plain-text fallback
-    text: `Your LurnStack OTP verification code is: ${otp}\n\nThis code expires in 1 minute. Please do not share it with anyone.\n\n© ${new Date().getFullYear()} LurnStack`,
-    // HTML email body
+    subject: `${otp} is your LurnStack verification code`,
+    // Plain-text fallback for antispam & non-HTML clients
+    text: `Your LurnStack verification code is: ${otp}\n\nThis verification code is valid for 5 minutes. For your security, do not share this code with anyone.\n\nIf you did not request this code, you can safely ignore this email.\n\nSupport: support@lurnstack.com\nWebsite: https://lurnstack.com\n\n© ${currentYear} LurnStack. All rights reserved.`,
+    // Clean transactional HTML email body
     html: `
       <!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>LurnStack OTP</title>
+        <title>LurnStack Verification Code</title>
       </head>
-      <body style="margin:0;padding:0;background:#ffffff;font-family:'Helvetica Neue',Arial,sans-serif;">
-        <table width="100%" cellpadding="0" cellspacing="0">
+      <body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1e293b;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:36px 16px;">
           <tr>
-            <td align="center" style="padding:40px 20px;">
-              <table width="480" cellpadding="0" cellspacing="0"
-                style="background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
-                <!-- Header -->
+            <td align="center">
+              <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                <!-- Brand Header -->
                 <tr>
-                  <td align="center"
-                    style="background:#ffffff;padding:40px 40px 10px;border-bottom:1px solid #f1f5f9;">
-                    <img src="https://api.lurnstack.com/uploads/logo.png" alt="LurnStack" width="130"
-                      style="display:block;margin:0 auto 12px;max-width:130px;height:auto;" />
-                    <p style="margin:4px 0 0;color:#64748b;font-size:14px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;">
-                      Verification Code
-                    </p>
+                  <td align="center" style="background:#0f172a;padding:24px 20px;">
+                    <div style="font-size:22px;font-weight:800;letter-spacing:1px;color:#ffffff;">
+                      LurnStack
+                    </div>
                   </td>
                 </tr>
-                <!-- Body -->
+                <!-- Content Body -->
                 <tr>
-                  <td style="padding:40px;">
-                    <p style="margin:0 0 24px;color:#334155;font-size:16px;line-height:1.6;">
-                      Use the code below to verify your account. It expires in
-                      <strong style="color:#0f172a;">1 minute</strong>.
+                  <td style="padding:36px 32px 28px;">
+                    <h1 style="margin:0 0 12px;font-size:20px;font-weight:700;color:#0f172a;">
+                      Verify your account
+                    </h1>
+                    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#475569;">
+                      Please use the following 6-digit verification code to complete your verification on LurnStack:
                     </p>
-                    <!-- OTP box -->
-                    <div style="text-align:center;margin:32px 0;">
-                      <span style="display:inline-block;background:#f8fafc;border:2px dashed #cbd5e1;
-                        border-radius:12px;padding:20px 48px;font-size:36px;font-weight:800;
-                        letter-spacing:12px;color:#0f172a;">
+                    
+                    <!-- Clean Code Box -->
+                    <div style="text-align:center;margin:28px 0;">
+                      <div style="display:inline-block;background:#f1f5f9;border-radius:8px;padding:16px 36px;font-family:'Courier New',Courier,monospace,sans-serif;font-size:34px;font-weight:700;letter-spacing:10px;color:#0f172a;">
                         ${otp}
-                      </span>
+                      </div>
                     </div>
-                    <p style="margin:0 0 8px;color:#64748b;font-size:13px;line-height:1.5;">
-                      Please do not share this code with anyone for security reasons.
+
+                    <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#475569;">
+                      This code is valid for <strong>5 minutes</strong>. For your security, please do not share this code with anyone.
                     </p>
-                    <p style="margin:0;color:#64748b;font-size:13px;line-height:1.5;">
-                      If you didn't request this code, you can safely ignore this email.
+                    <p style="margin:0;font-size:13px;line-height:1.5;color:#94a3b8;">
+                      If you did not request this verification code, no further action is required and you can safely ignore this email.
                     </p>
                   </td>
                 </tr>
                 <!-- Footer -->
                 <tr>
-                  <td align="center" style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
-                    <p style="margin:0;color:#94a3b8;font-size:12px;">
-                      © ${new Date().getFullYear()} LurnStack. All rights reserved.
+                  <td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #f1f5f9;text-align:center;">
+                    <p style="margin:0 0 6px;font-size:12px;line-height:1.5;color:#64748b;">
+                      Need help? Contact us at <a href="mailto:support@lurnstack.com" style="color:#2563eb;text-decoration:none;">support@lurnstack.com</a>
+                    </p>
+                    <p style="margin:0;font-size:12px;line-height:1.5;color:#94a3b8;">
+                      © ${currentYear} LurnStack. <a href="https://lurnstack.com" style="color:#94a3b8;text-decoration:none;">lurnstack.com</a>
                     </p>
                   </td>
                 </tr>
@@ -159,6 +162,11 @@ const sendEmailOTP = async (email, otp) => {
       </body>
       </html>
     `,
+    headers: {
+      "X-Entity-Ref-ID": `otp-${Date.now()}-${otp}`,
+      "Auto-Submitted": "auto-generated",
+      "X-Auto-Response-Suppress": "All",
+    },
   };
 
   try {

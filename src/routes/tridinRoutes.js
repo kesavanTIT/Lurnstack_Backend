@@ -5,6 +5,8 @@ const { tridinOnly } = require("../middleware/authMiddleware");
 const { loginUser } = require("../controllers/authController");
 const {
   getTridinCourses,
+  getTridinLiveSessions,
+  joinTridinLiveSession,
   getTridinProfile,
   createTridinCandidate,
   listTridinCandidates,
@@ -24,6 +26,12 @@ router.post("/login", loginUser);
 
 // GET /api/tridin/courses  → list all Tridin-only courses
 router.get("/courses", protect, getTridinCourses);
+
+// GET /api/tridin/live-sessions → list all Tridin-only live meetings / sessions
+router.get("/live-sessions", protect, getTridinLiveSessions);
+
+// POST /api/tridin/sessions/:sessionId/join → candidate joins live meeting & records attendance
+router.post("/sessions/:sessionId/join", protect, joinTridinLiveSession);
 
 // GET /api/tridin/me       → get own profile
 router.get("/me", protect, tridinOnly, getTridinProfile);

@@ -282,9 +282,15 @@ const sendSessionReminderEmail = async (recipientEmails, session, occurrence) =>
         await transporter.sendMail({
           from: `"LurnStack" <${from}>`,
           to: email,
-          subject: `⏰ Starting in 10 min: ${sessionTitle}`,
-          text: `Your session "${sessionTitle}" with ${trainerName} starts in 10 minutes!\n\nJoin here: ${joinLink}\n\nStart Time: ${startTimeIST}`,
+          subject: `Session Reminder: ${sessionTitle} starts in 10 minutes`,
+          text: `Your session "${sessionTitle}" with ${trainerName} starts in 10 minutes!\n\nJoin here: ${joinLink}\n\nStart Time: ${startTimeIST}\n\nThis is an automated reminder from LurnStack. Please do not reply to this email.`,
           html: htmlBody,
+          headers: {
+            'X-Mailer': 'LurnStack Notification Service',
+            'Precedence': 'bulk',
+            'Auto-Submitted': 'auto-generated',
+            'List-Unsubscribe': `<mailto:${from}?subject=unsubscribe>`,
+          },
         });
         sent++;
       } catch (err) {
@@ -604,8 +610,14 @@ const sendCampaignEmail = async (email, campaign) => {
     from: `"LurnStack" <${from}>`,
     to: email,
     subject: campaign.subject,
-    text: `${campaign.offerTitle}\n\n${campaign.heading}\n\n${campaign.body}\n\nView Offer: ${resolvedLink}`,
+    text: `${campaign.offerTitle}\n\n${campaign.heading}\n\n${campaign.body}\n\nView Offer: ${resolvedLink}\n\nThis email was sent by LurnStack (Tamil Info Technology). To unsubscribe, reply with 'unsubscribe'.`,
     html: htmlBody,
+    headers: {
+      'X-Mailer': 'LurnStack Campaign Service',
+      'Precedence': 'bulk',
+      'Auto-Submitted': 'auto-generated',
+      'List-Unsubscribe': `<mailto:${from}?subject=unsubscribe>`,
+    },
   });
 };
 
