@@ -377,6 +377,8 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
     completedDays: session.completedDays !== undefined && session.completedDays !== null ? session.completedDays : 0,
     deleteRequested: session.deleteRequested || false,
     deleteRejectReason: session.deleteRejectReason || null,
+    isTridinOnly: Boolean(session.isTridinOnly),
+    targetAudience: session.targetAudience || (session.isTridinOnly ? "TRIDIN" : "LURNSTACK"),
   };
 };
 
@@ -602,7 +604,25 @@ const createSession = async (req, res) => {
       enableWhatsAppValue = req.body.enableWhatsApp === true || req.body.enableWhatsApp === "true";
     }
 
-    const isTridinOnlyVal = req.body.isTridinOnly === true || req.body.isTridinOnly === "true" || req.body.isTridinOnly === 1 || req.body.isTridinOnly === "1";
+    let targetAudience = "LURNSTACK";
+    if (req.body.targetAudience) {
+      const upper = String(req.body.targetAudience).trim().toUpperCase();
+      if (["LURNSTACK", "TRIDIN", "BOTH"].includes(upper)) {
+        targetAudience = upper;
+      }
+    } else {
+      const targetTridin = req.body.targetTridin === true || req.body.targetTridin === "true" || req.body.isTridinOnly === true || req.body.isTridinOnly === "true";
+      const targetLurnstack = req.body.targetLurnstack !== undefined ? (req.body.targetLurnstack === true || req.body.targetLurnstack === "true") : !targetTridin;
+      if (targetTridin && targetLurnstack) {
+        targetAudience = "BOTH";
+      } else if (targetTridin) {
+        targetAudience = "TRIDIN";
+      } else {
+        targetAudience = "LURNSTACK";
+      }
+    }
+
+    const isTridinOnlyVal = targetAudience === "TRIDIN";
 
     const parsedRecurringDays = validation.parsed;
 
@@ -625,8 +645,9 @@ const createSession = async (req, res) => {
         cancelledDates: [],
         thumbnail,
         pricingState: "PENDING_PRICE",
-        publishState: isTridinOnlyVal ? "PUBLISHED" : "DRAFT",
+        publishState: (isTridinOnlyVal || targetAudience === "BOTH") ? "PUBLISHED" : "DRAFT",
         isTridinOnly: isTridinOnlyVal,
+        targetAudience,
         enableWhatsApp: enableWhatsAppValue,
         whatsappTemplateName: req.body.whatsappTemplateName || null,
         whatsappCustomTitle: req.body.whatsappCustomTitle || null,
@@ -826,10 +847,23 @@ const updateTrainerSession = async (req, res) => {
       updateData.recurrenceType = null;
     }
 
-    if (req.body.isTridinOnly !== undefined) {
-      const isTridinOnlyVal = req.body.isTridinOnly === true || req.body.isTridinOnly === "true" || req.body.isTridinOnly === 1 || req.body.isTridinOnly === "1";
-      updateData.isTridinOnly = isTridinOnlyVal;
-      if (isTridinOnlyVal) {
+    if (req.body.targetAudience !== undefined || req.body.isTridinOnly !== undefined || req.body.targetTridin !== undefined || req.body.targetLurnstack !== undefined) {
+      let targetAudience = "LURNSTACK";
+      if (req.body.targetAudience) {
+        const upper = String(req.body.targetAudience).trim().toUpperCase();
+        if (["LURNSTACK", "TRIDIN", "BOTH"].includes(upper)) {
+          targetAudience = upper;
+        }
+      } else {
+        const targetTridin = req.body.targetTridin === true || req.body.targetTridin === "true" || req.body.isTridinOnly === true || req.body.isTridinOnly === "true";
+        const targetLurnstack = req.body.targetLurnstack !== undefined ? (req.body.targetLurnstack === true || req.body.targetLurnstack === "true") : !targetTridin;
+        if (targetTridin && targetLurnstack) targetAudience = "BOTH";
+        else if (targetTridin) targetAudience = "TRIDIN";
+        else targetAudience = "LURNSTACK";
+      }
+      updateData.targetAudience = targetAudience;
+      updateData.isTridinOnly = targetAudience === "TRIDIN";
+      if (targetAudience === "TRIDIN" || targetAudience === "BOTH") {
         updateData.publishState = "PUBLISHED";
       }
     }

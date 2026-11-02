@@ -11,9 +11,13 @@ const getTridinCourses = async (req, res) => {
   try {
     const sessions = await prisma.liveSession.findMany({
       where: {
-        isTridinOnly: true,
         status: { not: "deleted" },
         deleteRequested: false,
+        OR: [
+          { isTridinOnly: true },
+          { targetAudience: "TRIDIN" },
+          { targetAudience: "BOTH" },
+        ],
       },
       select: {
         id: true,
@@ -328,9 +332,13 @@ const getTridinLiveSessions = async (req, res) => {
 
     const sessions = await prisma.liveSession.findMany({
       where: {
-        isTridinOnly: true,
         status: { not: "deleted" },
         deleteRequested: false,
+        OR: [
+          { isTridinOnly: true },
+          { targetAudience: "TRIDIN" },
+          { targetAudience: "BOTH" },
+        ],
       },
       include: {
         trainer: {
@@ -463,6 +471,9 @@ const getTridinLiveSessions = async (req, res) => {
         totalDays: s.totalDays || null,
         status: s.status,
         publishState: s.publishState,
+        isTridinOnly: Boolean(s.isTridinOnly),
+        targetAudience: s.targetAudience || (s.isTridinOnly ? "TRIDIN" : "LURNSTACK"),
+        isShared: s.targetAudience === "BOTH",
         trainer: {
           id: s.trainer?.id,
           fullName: s.trainer?.fullName || "LurnStack Trainer",
@@ -516,8 +527,12 @@ const joinTridinLiveSession = async (req, res) => {
     const session = await prisma.liveSession.findFirst({
       where: {
         id: sessionId,
-        isTridinOnly: true,
         status: { not: "deleted" },
+        OR: [
+          { isTridinOnly: true },
+          { targetAudience: "TRIDIN" },
+          { targetAudience: "BOTH" },
+        ],
       },
       select: {
         id: true,

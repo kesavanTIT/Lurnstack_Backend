@@ -161,8 +161,9 @@ model LiveSession {
   totalHours           Float?
   totalDays            Int?
 
-  // ── Tridin Software Portal ──────────────────────────────────────────────────
+  // ── Tridin Software & Audience Targeting ──────────────────────────────────
   isTridinOnly         Boolean @default(false)
+  targetAudience       String  @default("LURNSTACK") // LURNSTACK | TRIDIN | BOTH
   tridinVideos         TridinVideo[]
 }
 
