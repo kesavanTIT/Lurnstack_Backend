@@ -18,6 +18,9 @@ const getTridinCourses = async (req, res) => {
           { targetAudience: "TRIDIN" },
           { targetAudience: "BOTH" },
         ],
+        tridinVideos: {
+          some: {},
+        },
       },
       select: {
         id: true,
@@ -338,6 +341,14 @@ const getTridinLiveSessions = async (req, res) => {
           { isTridinOnly: true },
           { targetAudience: "TRIDIN" },
           { targetAudience: "BOTH" },
+        ],
+        meetingLink: {
+          not: null,
+        },
+        NOT: [
+          { meetingLink: "" },
+          { meetingLink: "null" },
+          { meetingLink: "undefined" },
         ],
       },
       include: {
