@@ -342,14 +342,6 @@ const getTridinLiveSessions = async (req, res) => {
           { targetAudience: "TRIDIN" },
           { targetAudience: "BOTH" },
         ],
-        meetingLink: {
-          not: null,
-        },
-        NOT: [
-          { meetingLink: "" },
-          { meetingLink: "null" },
-          { meetingLink: "undefined" },
-        ],
       },
       include: {
         trainer: {
