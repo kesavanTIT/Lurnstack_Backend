@@ -605,8 +605,12 @@ const createSession = async (req, res) => {
     }
 
     let targetAudience = "LURNSTACK";
-    const hasTargetFlags = req.body.targetTridin !== undefined || req.body.targetLurnstack !== undefined;
-    if (hasTargetFlags) {
+    if (req.body.targetAudience) {
+      const upper = String(req.body.targetAudience).trim().toUpperCase();
+      if (["LURNSTACK", "TRIDIN", "BOTH"].includes(upper)) {
+        targetAudience = upper;
+      }
+    } else if (req.body.targetTridin !== undefined || req.body.targetLurnstack !== undefined) {
       const targetTridin = req.body.targetTridin === true || req.body.targetTridin === "true" || req.body.isTridinOnly === true || req.body.isTridinOnly === "true";
       const targetLurnstack = req.body.targetLurnstack !== undefined ? (req.body.targetLurnstack === true || req.body.targetLurnstack === "true") : !targetTridin;
       if (targetTridin && targetLurnstack) {
@@ -615,11 +619,6 @@ const createSession = async (req, res) => {
         targetAudience = "TRIDIN";
       } else {
         targetAudience = "LURNSTACK";
-      }
-    } else if (req.body.targetAudience) {
-      const upper = String(req.body.targetAudience).trim().toUpperCase();
-      if (["LURNSTACK", "TRIDIN", "BOTH"].includes(upper)) {
-        targetAudience = upper;
       }
     } else if (req.body.isTridinOnly === true || req.body.isTridinOnly === "true") {
       targetAudience = "TRIDIN";
@@ -852,18 +851,17 @@ const updateTrainerSession = async (req, res) => {
 
     if (req.body.targetAudience !== undefined || req.body.isTridinOnly !== undefined || req.body.targetTridin !== undefined || req.body.targetLurnstack !== undefined) {
       let targetAudience = "LURNSTACK";
-      const hasTargetFlags = req.body.targetTridin !== undefined || req.body.targetLurnstack !== undefined;
-      if (hasTargetFlags) {
+      if (req.body.targetAudience) {
+        const upper = String(req.body.targetAudience).trim().toUpperCase();
+        if (["LURNSTACK", "TRIDIN", "BOTH"].includes(upper)) {
+          targetAudience = upper;
+        }
+      } else if (req.body.targetTridin !== undefined || req.body.targetLurnstack !== undefined) {
         const targetTridin = req.body.targetTridin === true || req.body.targetTridin === "true" || req.body.isTridinOnly === true || req.body.isTridinOnly === "true";
         const targetLurnstack = req.body.targetLurnstack !== undefined ? (req.body.targetLurnstack === true || req.body.targetLurnstack === "true") : !targetTridin;
         if (targetTridin && targetLurnstack) targetAudience = "BOTH";
         else if (targetTridin) targetAudience = "TRIDIN";
         else targetAudience = "LURNSTACK";
-      } else if (req.body.targetAudience) {
-        const upper = String(req.body.targetAudience).trim().toUpperCase();
-        if (["LURNSTACK", "TRIDIN", "BOTH"].includes(upper)) {
-          targetAudience = upper;
-        }
       } else if (req.body.isTridinOnly === true || req.body.isTridinOnly === "true") {
         targetAudience = "TRIDIN";
       }

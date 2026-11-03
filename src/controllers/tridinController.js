@@ -18,9 +18,6 @@ const getTridinCourses = async (req, res) => {
           { targetAudience: "TRIDIN" },
           { targetAudience: "BOTH" },
         ],
-        tridinVideos: {
-          some: {},
-        },
       },
       select: {
         id: true,
@@ -46,6 +43,8 @@ const getTridinCourses = async (req, res) => {
         materials: true,
         pricingState: true,
         publishState: true,
+        isTridinOnly: true,
+        targetAudience: true,
         createdAt: true,
         trainer: {
           select: {
@@ -78,6 +77,9 @@ const getTridinCourses = async (req, res) => {
         hasVideos: videoCount > 0,
         hasMeeting: Boolean(s.meetingLink),
         meetUrl: s.meetingLink || "",
+        isTridinOnly: Boolean(s.isTridinOnly),
+        targetAudience: s.targetAudience || (s.isTridinOnly ? "TRIDIN" : "LURNSTACK"),
+        isShared: s.targetAudience === "BOTH",
         instructorName: s.trainer?.fullName || "LurnStack Trainer",
         instructor: s.trainer?.fullName || "LurnStack Trainer",
       };
