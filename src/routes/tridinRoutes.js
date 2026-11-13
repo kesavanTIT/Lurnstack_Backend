@@ -18,6 +18,8 @@ const {
   recordVideoProgress,
   getCandidateAssessment,
   submitCandidateAssessment,
+  getPublicTitCourses,
+  getPublicTitCourseVideos,
 } = require("../controllers/tridinLmsController");
 
 // ── Tridin Candidate Routes ───────────────────────────
@@ -61,5 +63,12 @@ router.delete("/admin/candidates/:id", protect, adminOnly, deleteTridinCandidate
 
 // PATCH /api/tridin/admin/sessions/:id     → toggle isTridinOnly on a session
 router.patch("/admin/sessions/:id", protect, adminOnly, toggleTridinSession);
+
+// ── Public Routes: TIT Lurnstack Menu (No auth required) ─────────────────────
+// GET /api/tridin/public/tit-lurnstack/courses         → list all Tridin courses (public)
+router.get("/public/tit-lurnstack/courses", getPublicTitCourses);
+
+// GET /api/tridin/public/tit-lurnstack/courses/:sessionId/videos → videos of a course (public)
+router.get("/public/tit-lurnstack/courses/:sessionId/videos", getPublicTitCourseVideos);
 
 module.exports = router;

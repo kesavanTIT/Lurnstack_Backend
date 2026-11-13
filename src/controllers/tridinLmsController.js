@@ -1099,6 +1099,180 @@ const deleteVideoAssessment = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC ENDPOINTS — TIT Lurnstack Menu Page (No login required)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// @desc    Get all Tridin courses (public) for Lurnstack "TIT Lurnstack" menu
+// @route   GET /api/public/tit-lurnstack/courses
+// @access  Public (No auth required)
+const getPublicTitCourses = async (req, res) => {
+  try {
+    const sessions = await prisma.liveSession.findMany({
+      where: {
+        isTridinOnly: true,
+        status: { not: "deleted" },
+      },
+      select: {
+        id: true,
+        title: true,
+        subtitle: true,
+        description: true,
+        courseTitle: true,
+        category: true,
+        thumbnail: true,
+        createdAt: true,
+        trainer: {
+          select: {
+            id: true,
+            fullName: true,
+            profilePhotoUrl: true,
+          },
+        },
+        _count: {
+          select: { tridinVideos: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const formatted = sessions.map((s) => {
+      let thumbnail = s.thumbnail || null;
+      if (
+        thumbnail &&
+        !thumbnail.startsWith("http://") &&
+        !thumbnail.startsWith("https://") &&
+        !thumbnail.startsWith("data:")
+      ) {
+        const { getRelativeUploadPath } = require("../utils/pathUtils");
+        const relative = getRelativeUploadPath(thumbnail);
+        thumbnail = relative ? `${process.env.BASE_URL || ""}/${relative}` : null;
+      }
+      return {
+        id: s.id,
+        title: s.courseTitle || s.title,
+        subtitle: s.subtitle || null,
+        description: s.description || null,
+        category: s.category || null,
+        thumbnail,
+        videoCount: s._count?.tridinVideos || 0,
+        trainer: s.trainer
+          ? { id: s.trainer.id, name: s.trainer.fullName, photo: s.trainer.profilePhotoUrl || null }
+          : null,
+        createdAt: s.createdAt,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      total: formatted.length,
+      courses: formatted,
+    });
+  } catch (error) {
+    console.error("getPublicTitCourses error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch TIT Lurnstack courses.",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get all videos of a specific Tridin course (public)
+// @route   GET /api/public/tit-lurnstack/courses/:sessionId/videos
+// @access  Public (No auth required)
+const getPublicTitCourseVideos = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    // Verify the course exists and is Tridin-only
+    const session = await prisma.liveSession.findFirst({
+      where: {
+        id: sessionId,
+        isTridinOnly: true,
+        status: { not: "deleted" },
+      },
+      select: {
+        id: true,
+        title: true,
+        courseTitle: true,
+        subtitle: true,
+        description: true,
+        category: true,
+        thumbnail: true,
+        trainer: {
+          select: {
+            id: true,
+            fullName: true,
+            profilePhotoUrl: true,
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: "Course not found.",
+      });
+    }
+
+    const videos = await prisma.tridinVideo.findMany({
+      where: { sessionId },
+      orderBy: { orderIndex: "asc" },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        videoType: true,
+        videoUrl: true,
+        youtubeId: true,
+        durationSeconds: true,
+        orderIndex: true,
+        thumbnailUrl: true,
+        createdAt: true,
+      },
+    });
+
+    // Format thumbnail for the course
+    let courseThumbnail = session.thumbnail || null;
+    if (
+      courseThumbnail &&
+      !courseThumbnail.startsWith("http://") &&
+      !courseThumbnail.startsWith("https://") &&
+      !courseThumbnail.startsWith("data:")
+    ) {
+      const { getRelativeUploadPath } = require("../utils/pathUtils");
+      const relative = getRelativeUploadPath(courseThumbnail);
+      courseThumbnail = relative ? `${process.env.BASE_URL || ""}/${relative}` : null;
+    }
+
+    return res.status(200).json({
+      success: true,
+      course: {
+        id: session.id,
+        title: session.courseTitle || session.title,
+        subtitle: session.subtitle || null,
+        description: session.description || null,
+        category: session.category || null,
+        thumbnail: courseThumbnail,
+        trainer: session.trainer
+          ? { id: session.trainer.id, name: session.trainer.fullName, photo: session.trainer.profilePhotoUrl || null }
+          : null,
+      },
+      videoCount: videos.length,
+      videos,
+    });
+  } catch (error) {
+    console.error("getPublicTitCourseVideos error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch course videos.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   // Candidate
   getCandidateCoursePlaylist,
@@ -1117,4 +1291,7 @@ module.exports = {
   updateCourseThumbnail,
   createTrainerTridinCourse,
   deleteTrainerTridinCourse,
+  // Public (TIT Lurnstack Menu)
+  getPublicTitCourses,
+  getPublicTitCourseVideos,
 };
