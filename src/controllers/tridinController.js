@@ -94,9 +94,7 @@ const getTridinCourses = async (req, res) => {
     const videoCoursesOnly = formattedCourses.filter((course) => {
       if (course.videoCount > 0) return true;
       if (course.sessionType === "RECORDED_COURSE" || course.sectionType === "TRIDIN_COURSE") return true;
-      const isLiveClass = Boolean(course.meetingLink) || course.isRecurring === true || Boolean(course.startTime);
-      if (isLiveClass) return false;
-      return true;
+      return false;
     });
 
     return res.status(200).json({

@@ -1250,13 +1250,13 @@ const getGroupedAttendanceCourses = async (req, res) => {
     });
 
     // Attendance tracking is strictly for live classes (sessions with meeting link, schedule, or occurrences).
-    // Exclude pure recorded video courses that have no live meeting details.
+    // Pure video courses (sessions that have uploaded videos) MUST NOT be in attendance!
     const liveSessionsOnly = sessions.filter((session) => {
       if (session.sessionType === "RECORDED_COURSE" || session.sectionType === "TRIDIN_COURSE" || session.source === "tridin_video_course") {
         return false;
       }
-      const isPureVideoCourse = (session._count?.tridinVideos > 0) && !session.isRecurring && !session.meetingLink && !session.startTime;
-      if (isPureVideoCourse) {
+      // If a session has videos, it is a recorded video playlist, NOT a live attendance class!
+      if ((session._count?.tridinVideos || 0) > 0) {
         return false;
       }
       return true;

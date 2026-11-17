@@ -716,8 +716,8 @@ const getTrainerSessions = async (req, res) => {
     // Exclude pure recorded video courses from the recurring/daily live sessions list
     const liveSessions = sessions.filter((s) => {
       if (s.sessionType === "RECORDED_COURSE" || s.sectionType === "TRIDIN_COURSE" || s.source === "tridin_video_course") return false;
-      const isPureVideoCourse = (s._count?.tridinVideos > 0) && !s.isRecurring && !s.meetingLink && !s.startTime;
-      if (isPureVideoCourse) return false;
+      // If a session has uploaded videos, it is a recorded video course, NOT a recurring live class!
+      if ((s._count?.tridinVideos || 0) > 0) return false;
       return true;
     });
 

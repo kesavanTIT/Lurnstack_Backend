@@ -538,18 +538,17 @@ const getTrainerTridinCourses = async (req, res) => {
       orderBy: { createdAt: "desc" },
     });
 
-    // Strictly filter out Live Recurring / Daily classes from this video courses dropdown
+    // ONLY video courses belong in this dropdown!
+    // Must either:
+    // 1. Have uploaded/linked videos (_count.tridinVideos > 0)
+    // 2. OR be explicitly created as a RECORDED_COURSE (from "+ New" in this section)
     const videoCourses = sessions.filter((s) => {
-      // 1. If it already has uploaded/linked videos, it's definitely a video course
-      if (s._count?.tridinVideos > 0) return true;
-      // 2. If explicitly marked as RECORDED_COURSE or TRIDIN_COURSE
+      if ((s._count?.tridinVideos || 0) > 0) return true;
       if (s.sessionType === "RECORDED_COURSE" || s.sectionType === "TRIDIN_COURSE" || s.source === "tridin_video_course") {
         return true;
       }
-      // 3. If it has meeting link, live schedule, or is recurring, it is a LIVE CLASS — exclude it!
-      const hasLiveDetails = Boolean(s.meetingLink && s.meetingLink.trim()) || s.isRecurring === true || Boolean(s.startTime && s.startTime.trim());
-      if (hasLiveDetails) return false;
-      return true;
+      // If 0 videos and not created as a recorded course container, it is a LIVE CLASS (e.g. Generative AI) -> EXCLUDE!
+      return false;
     });
 
     return res.status(200).json({
