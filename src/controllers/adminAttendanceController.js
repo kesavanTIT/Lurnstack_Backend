@@ -14,7 +14,11 @@ const buildGlobalFilters = (query) => {
   const { trainerId, courseId, studentId, sessionId, status, startDate, endDate, date } = query;
   const filter = {};
   const sessionFilter = {
-    OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }]
+    AND: [
+      { OR: [{ sectionType: { notIn: ["TIT", "TRIDIN_COURSE"] } }, { sectionType: null }] },
+      { OR: [{ sessionType: { notIn: ["TIT", "RECORDED_COURSE"] } }, { sessionType: null }] },
+      { OR: [{ source: { notIn: ["admin_tit_classes", "tridin_video_course"] } }, { source: null }] },
+    ],
   };
 
   if (trainerId) sessionFilter.trainerId = parseInt(trainerId);
@@ -79,9 +83,9 @@ const COURSE_KEY_PREFIX = "standalone-";
 const buildSessionFilter = (extra = {}) => ({
   status: { not: "deleted" },
   AND: [
-    { OR: [{ sectionType: { not: "TIT" } }, { sectionType: null }] },
-    { OR: [{ sessionType: { not: "TIT" } }, { sessionType: null }] },
-    { OR: [{ source: { not: "admin_tit_classes" } }, { source: null }] },
+    { OR: [{ sectionType: { notIn: ["TIT", "TRIDIN_COURSE"] } }, { sectionType: null }] },
+    { OR: [{ sessionType: { notIn: ["TIT", "RECORDED_COURSE"] } }, { sessionType: null }] },
+    { OR: [{ source: { notIn: ["admin_tit_classes", "tridin_video_course"] } }, { source: null }] },
   ],
   ...extra,
 });
@@ -1240,12 +1244,26 @@ const getGroupedAttendanceCourses = async (req, res) => {
       include: {
         trainer: { select: { id: true, fullName: true, email: true } },
         occurrences: { orderBy: { occurrenceDate: "desc" } },
+        _count: { select: { tridinVideos: true } },
       },
       orderBy: { createdAt: "desc" },
     });
 
+    // Attendance tracking is strictly for live classes (sessions with meeting link, schedule, or occurrences).
+    // Exclude pure recorded video courses that have no live meeting details.
+    const liveSessionsOnly = sessions.filter((session) => {
+      if (session.sessionType === "RECORDED_COURSE" || session.sectionType === "TRIDIN_COURSE" || session.source === "tridin_video_course") {
+        return false;
+      }
+      const isPureVideoCourse = (session._count?.tridinVideos > 0) && !session.isRecurring && !session.meetingLink && !session.startTime;
+      if (isPureVideoCourse) {
+        return false;
+      }
+      return true;
+    });
+
     const grouped = new Map();
-    sessions.forEach((session) => {
+    liveSessionsOnly.forEach((session) => {
       const key = getCourseKey(session);
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(session);

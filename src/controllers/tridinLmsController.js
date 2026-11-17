@@ -510,6 +510,8 @@ const getTrainerTridinCourses = async (req, res) => {
     const sessions = await prisma.liveSession.findMany({
       where: {
         isTridinOnly: true,
+        status: { not: "deleted" },
+        deleteRequested: false,
       },
       select: {
         id: true,
@@ -523,6 +525,12 @@ const getTrainerTridinCourses = async (req, res) => {
         totalDays: true,
         status: true,
         createdAt: true,
+        meetingLink: true,
+        startTime: true,
+        isRecurring: true,
+        sessionType: true,
+        sectionType: true,
+        source: true,
         _count: {
           select: { tridinVideos: true },
         },
@@ -530,9 +538,23 @@ const getTrainerTridinCourses = async (req, res) => {
       orderBy: { createdAt: "desc" },
     });
 
+    // Strictly filter out Live Recurring / Daily classes from this video courses dropdown
+    const videoCourses = sessions.filter((s) => {
+      // 1. If it already has uploaded/linked videos, it's definitely a video course
+      if (s._count?.tridinVideos > 0) return true;
+      // 2. If explicitly marked as RECORDED_COURSE or TRIDIN_COURSE
+      if (s.sessionType === "RECORDED_COURSE" || s.sectionType === "TRIDIN_COURSE" || s.source === "tridin_video_course") {
+        return true;
+      }
+      // 3. If it has meeting link, live schedule, or is recurring, it is a LIVE CLASS — exclude it!
+      const hasLiveDetails = Boolean(s.meetingLink && s.meetingLink.trim()) || s.isRecurring === true || Boolean(s.startTime && s.startTime.trim());
+      if (hasLiveDetails) return false;
+      return true;
+    });
+
     return res.status(200).json({
       success: true,
-      courses: sessions,
+      courses: videoCourses,
     });
   } catch (error) {
     console.error("getTrainerTridinCourses error:", error);
@@ -587,6 +609,10 @@ const createTrainerTridinCourse = async (req, res) => {
         status: "active",
         publishState: "PUBLISHED",
         trainerId,
+        sessionType: "RECORDED_COURSE",
+        sectionType: "TRIDIN_COURSE",
+        source: "tridin_video_course",
+        isRecurring: false,
       },
       select: {
         id: true,

@@ -43,6 +43,8 @@ const getTridinCourses = async (req, res) => {
         materials: true,
         pricingState: true,
         publishState: true,
+        sessionType: true,
+        sectionType: true,
         isTridinOnly: true,
         targetAudience: true,
         createdAt: true,
@@ -82,15 +84,27 @@ const getTridinCourses = async (req, res) => {
         isShared: s.targetAudience === "BOTH",
         instructorName: s.trainer?.fullName || "LurnStack Trainer",
         instructor: s.trainer?.fullName || "LurnStack Trainer",
+        sessionType: s.sessionType || null,
+        sectionType: s.sectionType || null,
       };
+    });
+
+    // Strictly show only video courses/playlists in Course Videos tab.
+    // Exclude live recurring / daily classes with 0 videos.
+    const videoCoursesOnly = formattedCourses.filter((course) => {
+      if (course.videoCount > 0) return true;
+      if (course.sessionType === "RECORDED_COURSE" || course.sectionType === "TRIDIN_COURSE") return true;
+      const isLiveClass = Boolean(course.meetingLink) || course.isRecurring === true || Boolean(course.startTime);
+      if (isLiveClass) return false;
+      return true;
     });
 
     return res.status(200).json({
       success: true,
       message: "Tridin courses fetched successfully",
-      courses: formattedCourses,
-      data: formattedCourses,
-      count: formattedCourses.length,
+      courses: videoCoursesOnly,
+      data: videoCoursesOnly,
+      count: videoCoursesOnly.length,
     });
   } catch (error) {
     console.error("getTridinCourses error:", error);
@@ -502,12 +516,22 @@ const getTridinLiveSessions = async (req, res) => {
       };
     });
 
+    // Strictly show only real live classes (with meet link, recurrence, or live occurrences).
+    // Exclude pure recorded video courses.
+    const liveSessionsOnly = formattedSessions.filter((s) => {
+      if (s.sessionType === "RECORDED_COURSE" || s.sectionType === "TRIDIN_COURSE") return false;
+      const isPureVideoCourse = (s.videoCount > 0) && !s.isRecurring && !s.meetUrl && !s.startTime;
+      if (isPureVideoCourse) return false;
+      const hasLiveDetails = Boolean(s.meetUrl && s.meetUrl.trim()) || s.isRecurring === true || Boolean(s.startTime && s.startTime.trim()) || Boolean(s.nextOccurrence);
+      return hasLiveDetails;
+    });
+
     return res.status(200).json({
       success: true,
       message: "Tridin live sessions fetched successfully",
-      sessions: formattedSessions,
-      data: formattedSessions,
-      count: formattedSessions.length,
+      sessions: liveSessionsOnly,
+      data: liveSessionsOnly,
+      count: liveSessionsOnly.length,
     });
   } catch (error) {
     console.error("getTridinLiveSessions error:", error);

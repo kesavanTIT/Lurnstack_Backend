@@ -694,20 +694,39 @@ const createSession = async (req, res) => {
 const getTrainerSessions = async (req, res) => {
   try {
     const sessions = await prisma.liveSession.findMany({
-      where: { trainerId: parseInt(req.user.id), status: { not: "deleted" } },
-      include: { trainer: true },
+      where: {
+        trainerId: parseInt(req.user.id),
+        status: { not: "deleted" },
+        AND: [
+          { OR: [{ sessionType: { notIn: ["RECORDED_COURSE", "TIT"] } }, { sessionType: null }] },
+          { OR: [{ sectionType: { notIn: ["TRIDIN_COURSE", "TIT"] } }, { sectionType: null }] },
+          { OR: [{ source: { notIn: ["tridin_video_course", "admin_tit_classes"] } }, { source: null }] },
+        ],
+      },
+      include: {
+        trainer: true,
+        _count: { select: { tridinVideos: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
 
     const categories = await prisma.category.findMany();
     const categoryMap = new Map(categories.map(c => [c.id, c]));
 
-    await populateSessionProgress(sessions);
+    // Exclude pure recorded video courses from the recurring/daily live sessions list
+    const liveSessions = sessions.filter((s) => {
+      if (s.sessionType === "RECORDED_COURSE" || s.sectionType === "TRIDIN_COURSE" || s.source === "tridin_video_course") return false;
+      const isPureVideoCourse = (s._count?.tridinVideos > 0) && !s.isRecurring && !s.meetingLink && !s.startTime;
+      if (isPureVideoCourse) return false;
+      return true;
+    });
+
+    await populateSessionProgress(liveSessions);
 
     return res.status(200).json({
       success: true,
       message: "Trainer sessions fetched successfully",
-      data: sessions.map(s => formatSession(s, categoryMap, req)),
+      data: liveSessions.map(s => formatSession(s, categoryMap, req)),
     });
   } catch (error) {
     console.error("getTrainerSessions Error:", error);
