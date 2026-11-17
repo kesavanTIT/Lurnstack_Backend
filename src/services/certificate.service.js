@@ -552,11 +552,14 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
 
   // Fetch dates and calculate duration
   const { startDate: dbStart, endDate: dbEnd } = await getCourseDates(courseId);
-  const startDate = customOptions.startDate ? new Date(customOptions.startDate) : dbStart;
-  const endDate = customOptions.endDate ? new Date(customOptions.endDate) : dbEnd;
+  let startDate = customOptions.startDate ? new Date(customOptions.startDate) : dbStart;
+  let endDate = customOptions.endDate ? new Date(customOptions.endDate) : dbEnd;
 
-  if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-    throw new Error("Start date and end date are mandatory for certificate generation.");
+  if (!startDate || isNaN(startDate.getTime())) {
+    startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  }
+  if (!endDate || isNaN(endDate.getTime())) {
+    endDate = new Date();
   }
 
   // Recalculate duration in days based on the actual start and end dates used for the certificate (inclusive)
@@ -615,7 +618,7 @@ const generateCertificatePDF = async (userId, courseId, certificate, customOptio
   // Watermark image
   let watermarkPath = path.join(process.cwd(), "templates", "Logo4.png");
   if (!fs.existsSync(watermarkPath)) {
-    watermarkPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
+    watermarkPath = path.join(__dirname, "..", "..", "templates", "Logo4.png");
   }
   if (fs.existsSync(watermarkPath)) {
     try {
@@ -936,7 +939,7 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
   // Watermark image
   let watermarkPath = path.join(process.cwd(), "templates", "Logo4.png");
   if (!fs.existsSync(watermarkPath)) {
-    watermarkPath = "B:\\Tamil Info\\lurn-stack\\src\\assets\\Logo\\Logo4.png";
+    watermarkPath = path.join(__dirname, "..", "..", "templates", "Logo4.png");
   }
   if (fs.existsSync(watermarkPath)) {
     try {
@@ -1101,7 +1104,8 @@ const generateMockCertificatePDF = async (studentName, courseTitle, startDate, e
 // ─────────────────────────────────────────────────────────────────
 const getSignedDownloadUrl = (blobName, isLocal = false) => {
   if (isLocal || !process.env.AZURE_STORAGE_CONNECTION_STRING) {
-    return `/api/certificates/download/local/${blobName}`;
+    const backendUrl = (process.env.BACKEND_URL || process.env.API_BASE_URL || "https://api.lurnstack.com").replace(/\/+$/, "");
+    return `${backendUrl}/api/certificates/download/local/${blobName}`;
   }
 
   try {

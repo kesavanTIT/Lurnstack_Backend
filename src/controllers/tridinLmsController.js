@@ -566,6 +566,15 @@ const createTrainerTridinCourse = async (req, res) => {
       finalThumbnail = req.body.thumbnail.trim();
     }
 
+    let trainerId = Number.parseInt(req.user?.id, 10);
+    if (!Number.isInteger(trainerId) || trainerId <= 0) {
+      const fallbackTrainer = await prisma.user.findFirst({
+        where: { role: { in: ["TRAINER", "ADMIN"] } },
+        select: { id: true },
+      });
+      trainerId = fallbackTrainer ? fallbackTrainer.id : 1;
+    }
+
     const newCourse = await prisma.liveSession.create({
       data: {
         title: title.trim(),
@@ -574,9 +583,10 @@ const createTrainerTridinCourse = async (req, res) => {
         category: category ? category.trim() : "Tridin Track",
         thumbnail: finalThumbnail,
         isTridinOnly: true,
+        targetAudience: "TRIDIN",
         status: "active",
         publishState: "PUBLISHED",
-        trainerId: req.user?.id || null,
+        trainerId,
       },
       select: {
         id: true,

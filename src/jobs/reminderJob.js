@@ -145,8 +145,9 @@ cron.schedule("* * * * *", async () => {
             `[REMINDER]   → ${recipientEmails.length} unique email(s), ${recipientPhones.length} unique phone(s) for paid students.`
           );
         } else {
-          // ── FREE / PENDING_PRICE SESSION → all active STUDENT-role users
-          console.log(`[REMINDER] 🆓 Free session "${session.title}" — fetching all active students.`);
+          // ── FREE / PENDING_PRICE SESSION ─────────────────────────────────
+          // Mobile push notifications continue to reach all active students (DO NOT EDIT mobile notification)
+          console.log(`[REMINDER] 🆓 Free session "${session.title}" — fetching attendees for email & active students for push.`);
 
           const allStudents = await prisma.user.findMany({
             where: {
@@ -161,9 +162,46 @@ cron.schedule("* * * * *", async () => {
             },
           });
 
-          recipientEmails = allStudents
-            .filter((u) => u.email)
-            .map((u) => u.email);
+          // Fetch only students enrolled, booked, or attending this specific session for EMAIL reminders
+          const [sessionCards, sessionBookings, attendances, directSessionBookings] = await Promise.all([
+            prisma.sessionCard.findMany({
+              where: { sessionId: session.id },
+              include: { student: { select: { id: true, email: true, isActive: true } } },
+            }),
+            prisma.booking.findMany({
+              where: {
+                OR: [
+                  { sessionId: session.id },
+                  session.courseId ? { courseId: session.courseId } : null,
+                ].filter(Boolean),
+                status: { in: ["paid", "joined", "confirmed"] },
+              },
+              include: { student: { select: { id: true, email: true, isActive: true } } },
+            }),
+            prisma.attendance.findMany({
+              where: { sessionId: session.id },
+              include: { student: { select: { id: true, email: true, isActive: true } } },
+            }),
+            prisma.sessionBooking.findMany({
+              where: { sessionId: session.id },
+              include: { student: { select: { id: true, email: true, isActive: true } } },
+            }),
+          ]);
+
+          const attendingEmailsSet = new Set();
+          const addStudentEmail = (student) => {
+            if (student && student.isActive && student.email) {
+              const clean = student.email.trim().toLowerCase();
+              if (clean) attendingEmailsSet.add(clean);
+            }
+          };
+
+          for (const card of sessionCards) addStudentEmail(card.student);
+          for (const booking of sessionBookings) addStudentEmail(booking.student);
+          for (const att of attendances) addStudentEmail(att.student);
+          for (const sb of directSessionBookings) addStudentEmail(sb.student);
+
+          recipientEmails = Array.from(attendingEmailsSet);
 
           recipientPhones = allStudents
             .filter((u) => u.phoneNumber)
@@ -180,7 +218,7 @@ cron.schedule("* * * * *", async () => {
             .filter(Boolean);
 
           console.log(
-            `[REMINDER]   → ${recipientEmails.length} email(s), ${recipientPhones.length} phone(s) for all active students.`
+            `[REMINDER]   → ${recipientEmails.length} attending student email(s) for email reminders, ${pushTokens.length} push token(s) for mobile notification.`
           );
         }
 
