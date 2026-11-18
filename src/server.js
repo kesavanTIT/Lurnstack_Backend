@@ -178,10 +178,38 @@ const startServer = async () => {
       `.catch(err => console.error("⚠️ DB Patch Warning (Postgres):", err.message));
     }
 
-    app.listen(PORT, "0.0.0.0", () => {
+    const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`✅ Server running on port ${PORT}`);
       console.log(`🚀 Health check: http://localhost:${PORT}/`);
     });
+
+    // Handle port already in use — exit cleanly so PM2 doesn't loop
+    server.on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(`❌ Port ${PORT} is already in use. Exiting so the OS can release it...`);
+        process.exit(1);
+      } else {
+        console.error("❌ Server error:", err);
+        process.exit(1);
+      }
+    });
+
+    // Graceful shutdown — release port before PM2 starts new instance
+    const shutdown = () => {
+      console.log("🛑 Graceful shutdown initiated...");
+      server.close(() => {
+        console.log("✅ Server closed. Port released.");
+        process.exit(0);
+      });
+      setTimeout(() => {
+        console.warn("⚠️ Forced shutdown after timeout.");
+        process.exit(1);
+      }, 8000);
+    };
+
+    process.on("SIGTERM", shutdown);
+    process.on("SIGINT", shutdown);
+
   } catch (error) {
     console.error("❌ Failed to start server:", error);
     process.exit(1);
