@@ -462,18 +462,22 @@ Keep suggestions short, relevant, and actionable based on the query and context.
       });
     }
 
-    // 8. Post to Gemini API with fallback models to handle 503 high demand / rate limits
+    // 8. Post to Gemini API with fallback models + retry delay
     const CANDIDATE_MODELS = [
       "gemini-3.8-flash",
       "gemini-2.5-flash",
-      "gemini-1.5-flash"
+      "gemini-2.0-flash-lite"
     ];
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     let response = null;
     let lastError = null;
 
-    for (const model of CANDIDATE_MODELS) {
+    for (let i = 0; i < CANDIDATE_MODELS.length; i++) {
+      const model = CANDIDATE_MODELS[i];
       try {
+        if (i > 0) await sleep(1000); // 1s delay before fallback model
         response = await axios.post(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
           {
@@ -495,15 +499,25 @@ Keep suggestions short, relevant, and actionable based on the query and context.
         );
 
         if (response && response.data) {
+          console.log(`[LurnStack AI Chat] Success with model: ${model}`);
           break;
         }
       } catch (err) {
         lastError = err;
-        console.warn(`[LurnStack AI Chat] Model '${model}' call failed:`, err.response?.data?.error?.message || err.message);
+        const errCode = err.response?.data?.error?.code;
+        const errMsg = err.response?.data?.error?.message || err.message;
+        console.warn(`[LurnStack AI Chat] Model '${model}' failed (${errCode}): ${errMsg}`);
       }
     }
 
     if (!response || !response.data) {
+      const errCode = lastError?.response?.data?.error?.code;
+      if (errCode === 429) {
+        return res.status(503).json({
+          success: false,
+          message: "AI is busy right now. Please try again in a few seconds."
+        });
+      }
       throw lastError || new Error("All candidate AI models failed to respond.");
     }
 
