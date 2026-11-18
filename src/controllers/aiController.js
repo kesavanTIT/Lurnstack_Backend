@@ -464,9 +464,9 @@ Keep suggestions short, relevant, and actionable based on the query and context.
 
     // 8. Post to Gemini API with fallback models to handle 503 high demand / rate limits
     const CANDIDATE_MODELS = [
-      "gemini-2.0-flash",
-      "gemini-1.5-flash",
-      "gemini-2.5-flash"
+      "gemini-3.8-flash",
+      "gemini-2.5-flash",
+      "gemini-1.5-flash"
     ];
 
     let response = null;
