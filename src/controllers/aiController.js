@@ -480,7 +480,7 @@ Keep suggestions short, relevant, and actionable based on the query and context.
     for (const model of CANDIDATE_MODELS) {
       for (let attempt = 0; attempt < MAX_RETRIES_PER_MODEL; attempt++) {
         try {
-          if (attempt > 0) await sleep(2000 * attempt); // 2s, 4s delay on retry
+          if (attempt > 0) await sleep(1500); // 1.5s flat delay on retry
           const result = await genAI.models.generateContent({
             model: model,
             contents: geminiContents,
