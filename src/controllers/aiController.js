@@ -464,9 +464,9 @@ Keep suggestions short, relevant, and actionable based on the query and context.
 
     // 8. Post to Gemini API with fallback models + retry delay
     const CANDIDATE_MODELS = [
-      "gemini-3.8-flash",
-      "gemini-2.5-flash",
-      "gemini-2.0-flash-lite"
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-lite",
+      "gemini-1.5-flash"
     ];
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -486,7 +486,8 @@ Keep suggestions short, relevant, and actionable based on the query and context.
               parts: [{ text: systemPrompt }]
             },
             generationConfig: {
-              responseMimeType: "application/json"
+              responseMimeType: "application/json",
+              maxOutputTokens: 800
             }
           },
           {
