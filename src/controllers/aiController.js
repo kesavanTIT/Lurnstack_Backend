@@ -463,43 +463,48 @@ Keep suggestions short, relevant, and actionable based on the query and context.
       });
     }
 
-    // 8. Post to Gemini API with fallback models + retry delay
+    // 8. Post to Gemini API with retry on 503 (high demand)
     const CANDIDATE_MODELS = [
       "gemini-3.8-flash",
-      "gemini-2.0-flash-lite",
-      "gemini-1.5-flash"
+      "gemini-2.0-flash-lite"
     ];
 
+    const MAX_RETRIES_PER_MODEL = 3;
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
     const genAI = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
     let rawText = null;
     let lastError = null;
 
-    for (let i = 0; i < CANDIDATE_MODELS.length; i++) {
-      const model = CANDIDATE_MODELS[i];
-      try {
-        if (i > 0) await sleep(1000); // 1s delay before fallback model
-        const result = await genAI.models.generateContent({
-          model: model,
-          contents: geminiContents,
-          config: {
-            systemInstruction: systemPrompt,
-            responseMimeType: "application/json",
-            maxOutputTokens: 800
+    outerLoop:
+    for (const model of CANDIDATE_MODELS) {
+      for (let attempt = 0; attempt < MAX_RETRIES_PER_MODEL; attempt++) {
+        try {
+          if (attempt > 0) await sleep(2000 * attempt); // 2s, 4s delay on retry
+          const result = await genAI.models.generateContent({
+            model: model,
+            contents: geminiContents,
+            config: {
+              systemInstruction: systemPrompt,
+              responseMimeType: "application/json",
+              maxOutputTokens: 800
+            }
+          });
+          if (result && result.text) {
+            rawText = result.text;
+            console.log(`[LurnStack AI Chat] Success with model: ${model} (attempt ${attempt + 1})`);
+            break outerLoop;
           }
-        });
-
-        if (result && result.text) {
-          rawText = result.text;
-          console.log(`[LurnStack AI Chat] Success with model: ${model}`);
-          break;
+        } catch (err) {
+          lastError = err;
+          const errMsg = err.message || "";
+          const is503 = errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("UNAVAILABLE");
+          const is429 = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED");
+          console.warn(`[LurnStack AI Chat] Model '${model}' attempt ${attempt + 1} failed: ${errMsg.substring(0, 100)}`);
+          if (!is503 && !is429) break; // Don't retry on 404 or other non-transient errors
         }
-      } catch (err) {
-        lastError = err;
-        console.warn(`[LurnStack AI Chat] Model '${model}' failed: ${err.message?.substring(0, 100)}`);
       }
+      if (rawText) break;
     }
 
     if (!rawText) {
