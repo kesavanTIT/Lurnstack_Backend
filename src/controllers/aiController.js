@@ -315,43 +315,39 @@ const handleAIChat = async (req, res) => {
       });
     }
 
-    // 2. Fetch Active Enrolled Courses (where scope is 'course' and status is 'paid')
-    const courseBookings = await prisma.booking.findMany({
-      where: {
-        studentId,
-        accessScope: "course",
-        status: "paid"
-      },
-      select: {
-        courseId: true
-      }
-    });
-    const activeCourseIds = new Set(courseBookings.map(b => b.courseId).filter(Boolean));
-
-    const enrolledCourses = await prisma.category.findMany({
-      where: {
-        id: { in: Array.from(activeCourseIds) }
-      }
-    });
-
-    // 3. Fetch Published sessions to calculate today's status & access
-    const sessions = await prisma.liveSession.findMany({
-      where: {
-        publishState: "PUBLISHED"
-      },
-      include: {
-        trainer: true,
-        cards: { where: { studentId } },
-        attendances: { where: { studentId } },
-        pricing: true,
-        billingBookings: {
-          where: { studentId },
-          orderBy: { createdAt: "desc" }
+    // 2. Fetch Active Enrolled Courses, Sessions, and Categories in Parallel
+    const [courseBookings, sessions, categories] = await Promise.all([
+      prisma.booking.findMany({
+        where: {
+          studentId,
+          accessScope: "course",
+          status: "paid"
+        },
+        select: {
+          courseId: true
         }
-      }
-    });
+      }),
+      prisma.liveSession.findMany({
+        where: {
+          publishState: "PUBLISHED"
+        },
+        take: 30,
+        include: {
+          trainer: true,
+          cards: { where: { studentId } },
+          attendances: { where: { studentId } },
+          pricing: true,
+          billingBookings: {
+            where: { studentId },
+            orderBy: { createdAt: "desc" }
+          }
+        }
+      }),
+      prisma.category.findMany()
+    ]);
 
-    const categories = await prisma.category.findMany();
+    const activeCourseIds = new Set(courseBookings.map(b => b.courseId).filter(Boolean));
+    const enrolledCourses = categories.filter(c => activeCourseIds.has(c.id));
     const categoryMap = new Map(categories.map(c => [c.id, c]));
 
     const formattedSessions = sessions.map(session =>
@@ -465,11 +461,11 @@ Keep suggestions short, relevant, and actionable based on the query and context.
 
     // 8. Post to Gemini API with retry on 503 (high demand)
     const CANDIDATE_MODELS = [
-      "gemini-3.8-flash",
-      "gemini-2.0-flash-lite"
+      "gemini-3.5-flash-lite",
+      "gemini-3.8-flash"
     ];
 
-    const MAX_RETRIES_PER_MODEL = 3;
+    const MAX_RETRIES_PER_MODEL = 2;
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     const genAI = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
@@ -480,7 +476,7 @@ Keep suggestions short, relevant, and actionable based on the query and context.
     for (const model of CANDIDATE_MODELS) {
       for (let attempt = 0; attempt < MAX_RETRIES_PER_MODEL; attempt++) {
         try {
-          if (attempt > 0) await sleep(1500); // 1.5s flat delay on retry
+          if (attempt > 0) await sleep(1000); // 1s delay on retry
           const result = await genAI.models.generateContent({
             model: model,
             contents: geminiContents,
@@ -508,14 +504,18 @@ Keep suggestions short, relevant, and actionable based on the query and context.
     }
 
     if (!rawText) {
-      const errMsg = lastError?.message || "";
-      if (errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED")) {
-        return res.status(503).json({
-          success: false,
-          message: "AI is busy right now. Please try again in a few seconds."
-        });
-      }
-      throw lastError || new Error("All candidate AI models failed to respond.");
+      console.warn("[LurnStack AI Chat] All candidate models failed. Returning friendly AI response. Last error:", lastError?.message || lastError);
+      return res.status(200).json({
+        success: true,
+        data: {
+          answer: "I am currently handling high student traffic. Please give me a quick moment and try asking again! In the meantime, feel free to check your active courses or upcoming live sessions from your dashboard.",
+          suggestions: [
+            "What courses am I enrolled in?",
+            "Upcoming live classes today",
+            "How do I join my live class?"
+          ]
+        }
+      });
     }
 
     let parsedResult = { answer: "", suggestions: [] };
