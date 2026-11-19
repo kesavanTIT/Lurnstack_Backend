@@ -1,5 +1,6 @@
 const prisma = require("../config/db");
 const axios = require("axios");
+const { GoogleGenAI } = require("@google/genai");
 
 // Helper to get today's date string in Asia/Kolkata timezone (format: YYYY-MM-DD)
 const getKolkataDateString = (date = new Date()) => {
@@ -464,56 +465,46 @@ Keep suggestions short, relevant, and actionable based on the query and context.
 
     // 8. Post to Gemini API with fallback models + retry delay
     const CANDIDATE_MODELS = [
-      "gemini-2.0-flash",
+      "gemini-3.8-flash",
       "gemini-2.0-flash-lite",
       "gemini-1.5-flash"
     ];
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    let response = null;
+    const genAI = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+
+    let rawText = null;
     let lastError = null;
 
     for (let i = 0; i < CANDIDATE_MODELS.length; i++) {
       const model = CANDIDATE_MODELS[i];
       try {
         if (i > 0) await sleep(1000); // 1s delay before fallback model
-        response = await axios.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-          {
-            contents: geminiContents,
-            systemInstruction: {
-              parts: [{ text: systemPrompt }]
-            },
-            generationConfig: {
-              responseMimeType: "application/json",
-              maxOutputTokens: 800
-            }
-          },
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "X-goog-api-key": GEMINI_API_KEY
-            },
-            timeout: 30000
+        const result = await genAI.models.generateContent({
+          model: model,
+          contents: geminiContents,
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: "application/json",
+            maxOutputTokens: 800
           }
-        );
+        });
 
-        if (response && response.data) {
+        if (result && result.text) {
+          rawText = result.text;
           console.log(`[LurnStack AI Chat] Success with model: ${model}`);
           break;
         }
       } catch (err) {
         lastError = err;
-        const errCode = err.response?.data?.error?.code;
-        const errMsg = err.response?.data?.error?.message || err.message;
-        console.warn(`[LurnStack AI Chat] Model '${model}' failed (${errCode}): ${errMsg}`);
+        console.warn(`[LurnStack AI Chat] Model '${model}' failed: ${err.message?.substring(0, 100)}`);
       }
     }
 
-    if (!response || !response.data) {
-      const errCode = lastError?.response?.data?.error?.code;
-      if (errCode === 429) {
+    if (!rawText) {
+      const errMsg = lastError?.message || "";
+      if (errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED")) {
         return res.status(503).json({
           success: false,
           message: "AI is busy right now. Please try again in a few seconds."
@@ -522,18 +513,15 @@ Keep suggestions short, relevant, and actionable based on the query and context.
       throw lastError || new Error("All candidate AI models failed to respond.");
     }
 
-    const candidateText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     let parsedResult = { answer: "", suggestions: [] };
-    if (candidateText) {
-      try {
-        parsedResult = JSON.parse(candidateText.trim());
-      } catch (parseErr) {
-        console.error("Failed to parse Gemini response as JSON:", candidateText);
-        parsedResult = {
-          answer: candidateText.trim(),
-          suggestions: []
-        };
-      }
+    try {
+      parsedResult = JSON.parse(rawText.trim());
+    } catch (parseErr) {
+      console.error("Failed to parse Gemini response as JSON:", rawText);
+      parsedResult = {
+        answer: rawText.trim(),
+        suggestions: []
+      };
     }
 
     return res.status(200).json({

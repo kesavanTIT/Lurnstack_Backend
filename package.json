@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
+    "@google/genai": "^1.0.0",
     "@prisma/client": "^5.14.0",
     "axios": "^1.16.1",
     "bcryptjs": "^2.4.3",
