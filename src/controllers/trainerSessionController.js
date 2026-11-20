@@ -105,9 +105,9 @@ const getSessionOccurrences = (session, now = new Date()) => {
   }
 
   const todayStr = getKolkataDateString(now);
-  const createdDateStr = getKolkataDateString(new Date(session.createdAt));
+  const sessionTargetDate = session.scheduledDate || getKolkataDateString(new Date(session.createdAt));
 
-  const dateStr = session.isRecurring ? todayStr : createdDateStr;
+  const dateStr = session.isRecurring ? todayStr : sessionTargetDate;
 
   const scheduledAt = session.startTime ? getKolkataDateTime(dateStr, session.startTime) : null;
   const endsAt = session.endTime ? getKolkataDateTime(dateStr, session.endTime) : null;
@@ -152,13 +152,13 @@ const calculateSessionTodayStatus = (session, now = new Date()) => {
     return "cancelled_today";
   }
 
-  // For non-recurring sessions, check if today is the day of creation
+  // For non-recurring sessions, check against scheduledDate (fallback to createdAt)
   if (!session.isRecurring) {
-    const createdDateStr = getKolkataDateString(new Date(session.createdAt));
-    if (todayStr < createdDateStr) {
+    const sessionTargetDate = session.scheduledDate || getKolkataDateString(new Date(session.createdAt));
+    if (todayStr < sessionTargetDate) {
       return "upcoming";
     }
-    if (todayStr > createdDateStr) {
+    if (todayStr > sessionTargetDate) {
       return "completed_today";
     }
   }
@@ -377,8 +377,11 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
     completedDays: session.completedDays !== undefined && session.completedDays !== null ? session.completedDays : 0,
     deleteRequested: session.deleteRequested || false,
     deleteRejectReason: session.deleteRejectReason || null,
-    isTridinOnly: Boolean(session.isTridinOnly),
-    targetAudience: session.targetAudience || (session.isTridinOnly ? "TRIDIN" : "LURNSTACK"),
+    isTridinOnly: Boolean(session.isTridinOnly) || session.sectionType === "TIT" || session.source === "admin_tit_classes" || session.sessionType === "TIT",
+    targetAudience: session.targetAudience || ((session.sectionType === "TIT" || session.source === "admin_tit_classes" || session.sessionType === "TIT") ? "TRIDIN" : (session.isTridinOnly ? "TRIDIN" : "LURNSTACK")),
+    sectionType: session.sectionType || null,
+    source: session.source || null,
+    createdByRole: session.createdByRole || null,
   };
 };
 
@@ -698,9 +701,9 @@ const getTrainerSessions = async (req, res) => {
         trainerId: parseInt(req.user.id),
         status: { not: "deleted" },
         AND: [
-          { OR: [{ sessionType: { notIn: ["RECORDED_COURSE", "TIT"] } }, { sessionType: null }] },
-          { OR: [{ sectionType: { notIn: ["TRIDIN_COURSE", "TIT"] } }, { sectionType: null }] },
-          { OR: [{ source: { notIn: ["tridin_video_course", "admin_tit_classes"] } }, { source: null }] },
+          { OR: [{ sessionType: { not: "RECORDED_COURSE" } }, { sessionType: null }] },
+          { OR: [{ sectionType: { not: "TRIDIN_COURSE" } }, { sectionType: null }] },
+          { OR: [{ source: { not: "tridin_video_course" } }, { source: null }] },
         ],
       },
       include: {

@@ -708,6 +708,8 @@ const createLiveClass = async (req, res) => {
         source: isTIT ? "admin_tit_classes" : "admin_course_classes",
         createdByRole: "admin",
         requiresAdminReview: isTIT,
+        isTridinOnly: isTIT,
+        targetAudience: isTIT ? "TRIDIN" : "LURNSTACK",
         scheduledDate,
         scheduledAt: scheduledAtStr,
         endsAt: endsAtStr,
@@ -909,6 +911,8 @@ const updateLiveClass = async (req, res) => {
         updateData.sessionType = isTITUpdate ? "TIT" : null;
         updateData.source = isTITUpdate ? "admin_tit_classes" : "admin_course_classes";
         updateData.requiresAdminReview = isTITUpdate;
+        updateData.isTridinOnly = isTITUpdate;
+        updateData.targetAudience = isTITUpdate ? "TRIDIN" : "LURNSTACK";
         if (!isTITUpdate) {
           updateData.pricingState = "FREE";
           updateData.publishState = "PUBLISHED";
