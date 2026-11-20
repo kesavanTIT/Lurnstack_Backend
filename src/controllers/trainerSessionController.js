@@ -382,6 +382,7 @@ const formatSession = (session, categoryMap = new Map(), req = null) => {
     sectionType: session.sectionType || null,
     source: session.source || null,
     createdByRole: session.createdByRole || null,
+    isTIT: session.sectionType === "TIT" || session.source === "admin_tit_classes" || session.sessionType === "TIT",
   };
 };
 
