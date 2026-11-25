@@ -9,6 +9,7 @@
 "use strict";
 
 const { Expo } = require("expo-server-sdk");
+const prisma = require("../config/db");
 
 // Create a new Expo SDK client
 let expo = new Expo();
@@ -70,12 +71,25 @@ const sendPushNotification = async (pushTokens, title, body, screenData = {}) =>
       let ticketChunk = await expo.sendPushNotificationsAsync(chunk);
       
       // Analyze tickets for errors
-      for (let ticket of ticketChunk) {
+      for (let i = 0; i < ticketChunk.length; i++) {
+        const ticket = ticketChunk[i];
         if (ticket.status === "ok") {
           successCount++;
         } else {
           console.error(`[PUSH] Send ticket error:`, ticket.details || ticket.message);
           failureCount++;
+
+          // Auto-cleanup: DeviceNotRegistered aana udaney DB-la token null panna
+          if (ticket.details?.error === "DeviceNotRegistered") {
+            const expiredToken = chunk[i]?.to;
+            if (expiredToken) {
+              console.warn(`[PUSH] 🧹 Auto-cleaning expired token: ${expiredToken}`);
+              prisma.user.updateMany({
+                where: { pushToken: expiredToken },
+                data: { pushToken: null }
+              }).catch(err => console.error("[PUSH] Token cleanup error:", err.message));
+            }
+          }
         }
       }
     } catch (error) {
