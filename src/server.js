@@ -50,11 +50,11 @@ const corsOptions = {
   origin: (origin, callback) => {
     // Allow known origins or any local network IP for mobile testing
     const isLocalNetwork = origin && (
-      origin.startsWith("http://192.168.") || 
-      origin.startsWith("http://10.") || 
+      origin.startsWith("http://192.168.") ||
+      origin.startsWith("http://10.") ||
       /^http:\/\/172\.(1[6-9]|2\d|3[0-1])\./.test(origin)
     );
-    
+
     if (!origin || allowedOrigins.includes(origin) || isLocalNetwork) {
       callback(null, true);
     } else {
@@ -146,7 +146,7 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   try {
     const prisma = require("./config/db");
-    
+
     // Auto-seed default categories matching student side
     const seedDefaultCategories = require("./config/seedCategories");
     await seedDefaultCategories();
@@ -159,7 +159,7 @@ const startServer = async () => {
     const { startSessionReminderWhatsappJob } = require("./jobs/sessionReminderWhatsappJob");
     startSessionReminderWhatsappJob();
 
-    
+
     // Self-healing: Ensure 'updatedAt' column exists if migration skipped it
     console.log("🛠️ Checking database schema consistency...");
     const isMySQL = process.env.DATABASE_URL && process.env.DATABASE_URL.includes("mysql");

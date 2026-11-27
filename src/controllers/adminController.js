@@ -623,9 +623,14 @@ const createLiveClass = async (req, res) => {
     const resolvedCourseId = courseId || course_id || null;
     const resolvedEndTimeInput = endTime || endsAt || end_time;
 
-    const thumbnail = req.file ? getRelativeUploadPath(req.file.path) : null;
+    let thumbnail = null;
+    if (req.file) {
+      thumbnail = getRelativeUploadPath(req.file.path);
+    } else if (req.body.thumbnail && req.body.thumbnail !== "null" && req.body.thumbnail !== "undefined" && req.body.thumbnail !== "") {
+      thumbnail = getRelativeUploadPath(req.body.thumbnail);
+    }
 
-    if (!courseName || (!classTitle && !title) || !resolvedInstructor || !date || (!time && !startTime) || !duration || (!meetLink && !meetingLink)) {
+    if (!courseName || (!classTitle && !title) || (!resolvedInstructor && !req.body.trainerId) || !date || (!time && !startTime) || !duration || (!meetLink && !meetingLink)) {
       return res.status(400).json({
         success: false,
         message: "Please provide all required fields.",
@@ -638,14 +643,25 @@ const createLiveClass = async (req, res) => {
 
     const isTIT = sectionType === "TIT" || source === "admin_tit_classes";
     
-    // Always resolve trainerId from instructor name for LiveSession mapping
+    // Resolve trainerId from trainerId or instructor name for LiveSession mapping
     let trainerId = null;
-    if (resolvedInstructor) {
+    if (req.body.trainerId) {
+      const parsedTid = Number.parseInt(req.body.trainerId, 10);
+      if (Number.isInteger(parsedTid) && parsedTid > 0) {
+        const matchedById = await prisma.user.findFirst({
+          where: { id: parsedTid, role: "TRAINER" },
+        });
+        if (matchedById) {
+          trainerId = matchedById.id;
+        }
+      }
+    }
+    if (!trainerId && resolvedInstructor) {
       const matchedTrainer = await prisma.user.findFirst({
         where: {
           role: "TRAINER",
-          fullName: { contains: resolvedInstructor, mode: "insensitive" }
-        }
+          fullName: { contains: resolvedInstructor, mode: "insensitive" },
+        },
       });
       if (matchedTrainer) {
         trainerId = matchedTrainer.id;
@@ -654,7 +670,7 @@ const createLiveClass = async (req, res) => {
     if (!trainerId) {
       return res.status(400).json({
         success: false,
-        message: `Trainer '${resolvedInstructor}' not found. Please ensure the trainer exists.`
+        message: `Trainer '${resolvedInstructor || req.body.trainerId}' not found. Please ensure the trainer exists.`
       });
     }
 
@@ -682,6 +698,13 @@ const createLiveClass = async (req, res) => {
 
     const parsedRecurringDays = validation.parsed;
 
+    const enableWhatsAppValue = req.body.enableWhatsApp === true || req.body.enableWhatsApp === "true";
+    const pricingState = isTIT
+      ? "PENDING_PRICE"
+      : req.body.priceInPaise && Number(req.body.priceInPaise) > 0
+      ? "PRICED"
+      : "FREE";
+
     // Create LiveSession (both for TIT and standard course sessions)
     const newSession = await prisma.liveSession.create({
       data: {
@@ -701,7 +724,7 @@ const createLiveClass = async (req, res) => {
         status: "active",
         cancelledDates: [],
         thumbnail,
-        pricingState: isTIT ? "PENDING_PRICE" : "FREE",
+        pricingState,
         publishState: isTIT ? "DRAFT" : "PUBLISHED",
         sectionType: isTIT ? "TIT" : null,
         sessionType: isTIT ? "TIT" : null,
@@ -714,10 +737,16 @@ const createLiveClass = async (req, res) => {
         scheduledAt: scheduledAtStr,
         endsAt: endsAtStr,
         durationMinutes,
-        enableWhatsApp: false, // Force false for admin scheduled classes
+        enableWhatsApp: enableWhatsAppValue,
+        whatsappTemplateName: req.body.whatsappTemplateName || null,
+        whatsappCustomTitle: req.body.whatsappCustomTitle || null,
+        whatsappButtonUrl: req.body.whatsappButtonUrl || null,
         trainerInstructions: req.body.trainerInstructions || null,
         recurringDays: parsedRecurringDays,
         recurrenceEndDate: dateValidation.parsed,
+        totalHours: req.body.totalHours !== undefined && req.body.totalHours !== "" && req.body.totalHours !== null ? parseFloat(req.body.totalHours) : null,
+        totalDays: req.body.totalDays !== undefined && req.body.totalDays !== "" && req.body.totalDays !== null ? parseInt(req.body.totalDays, 10) : null,
+        priceInPaise: req.body.priceInPaise ? Number(req.body.priceInPaise) : null,
       },
     });
 

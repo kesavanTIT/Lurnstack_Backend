@@ -174,7 +174,7 @@ cron.schedule("* * * * *", async () => {
                   { sessionId: session.id },
                   session.courseId ? { courseId: session.courseId } : null,
                 ].filter(Boolean),
-                status: { in: ["paid", "joined", "confirmed"] },
+                status: { in: ["paid", "joined", "completed"] },
               },
               include: { student: { select: { id: true, email: true, isActive: true } } },
             }),

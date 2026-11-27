@@ -205,7 +205,7 @@ const loginUser = async (req, res) => {
     const token = jwt.sign(
       { id: user.id, role: finalRole },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" } // Token valid for 7 days
+      { expiresIn: "90d" } // Token valid for 90 days (prevent frequent auto-logouts)
     );
 
     // 5. Send back user info (no password) + token
@@ -742,7 +742,7 @@ const googleAuthCallback = async (req, res) => {
     const token = jwt.sign(
       { id: user.id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "90d" }
     );
 
     const redirectUrl = new URL(frontendRedirectUrl);
