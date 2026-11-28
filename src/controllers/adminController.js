@@ -627,7 +627,8 @@ const createLiveClass = async (req, res) => {
     if (req.file) {
       thumbnail = getRelativeUploadPath(req.file.path);
     } else if (req.body.thumbnail && req.body.thumbnail !== "null" && req.body.thumbnail !== "undefined" && req.body.thumbnail !== "") {
-      thumbnail = getRelativeUploadPath(req.body.thumbnail);
+      // Already a relative path — do NOT re-process with getRelativeUploadPath to avoid path corruption
+      thumbnail = req.body.thumbnail;
     }
 
     if (!courseName || (!classTitle && !title) || (!resolvedInstructor && !req.body.trainerId) || !date || (!time && !startTime) || !duration || (!meetLink && !meetingLink)) {
@@ -751,7 +752,12 @@ const createLiveClass = async (req, res) => {
     });
 
     // Automatically generate SessionOccurrence records so attendance system picks it up
-    await generateOccurrences(newSession);
+    // Wrapped in try-catch: occurrence generation failure should NOT fail the class creation
+    try {
+      await generateOccurrences(newSession);
+    } catch (occErr) {
+      console.error("generateOccurrences failed (non-fatal, session still created):", occErr?.message, occErr?.code);
+    }
 
     let thumbnailResponse = newSession.thumbnail;
     if (thumbnailResponse && !thumbnailResponse.startsWith("http")) {
@@ -791,10 +797,11 @@ const createLiveClass = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Create Live Class Error:", error);
+    console.error("Create Live Class Error:", error?.message, "| Code:", error?.code, "| Meta:", JSON.stringify(error?.meta));
     return res.status(500).json({
       success: false,
       message: "Internal server error. Failed to create class.",
+      debug: process.env.NODE_ENV !== "production" ? error?.message : undefined,
     });
   }
 };
