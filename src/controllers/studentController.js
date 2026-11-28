@@ -2545,67 +2545,139 @@ const getSessionAttendance = async (req, res) => {
 const getStudentAttendance = async (req, res) => {
   try {
     const studentId = parseInt(req.user.id);
-    const attendance = await prisma.attendance.findMany({
-      where: { studentId },
-      include: {
-        session: { select: { title: true, courseId: true, courseTitle: true } }
-      },
-      orderBy: { occurrenceDate: "desc" }
-    });
+    const now = new Date();
 
-    const occList = await prisma.sessionOccurrence.findMany({
-      where: {
-        sessionId: { in: [...new Set(attendance.map(a => a.sessionId))] },
-        occurrenceDate: { in: [...new Set(attendance.map(a => a.occurrenceDate))] }
+    const [attendance, studentAttendances] = await Promise.all([
+      prisma.attendance.findMany({
+        where: { studentId },
+        include: {
+          session: { select: { title: true, courseId: true, courseTitle: true } },
+          events: true
+        },
+        orderBy: { occurrenceDate: "desc" }
+      }),
+      prisma.studentAttendance.findMany({
+        where: { studentId },
+        include: {
+          session: { select: { title: true, courseId: true, courseTitle: true } },
+          occurrence: true
+        },
+        orderBy: { occurrenceDate: "desc" }
+      })
+    ]);
+
+    const allSessionIds = [...new Set([
+      ...attendance.map(a => a.sessionId),
+      ...studentAttendances.map(sa => sa.sessionId)
+    ].filter(Boolean))];
+
+    const allOccDates = [...new Set([
+      ...attendance.map(a => a.occurrenceDate?.toISOString()),
+      ...studentAttendances.map(sa => sa.occurrenceDate?.toISOString())
+    ].filter(Boolean))].map(d => new Date(d));
+
+    const occList = allSessionIds.length > 0 && allOccDates.length > 0
+      ? await prisma.sessionOccurrence.findMany({
+          where: {
+            sessionId: { in: allSessionIds },
+            occurrenceDate: { in: allOccDates }
+          }
+        })
+      : [];
+
+    const toDateKey = (d) => (d ? new Date(d).toISOString().slice(0, 10) : "");
+    const occByKey = new Map();
+    for (const o of occList) {
+      occByKey.set(`${o.sessionId}_${toDateKey(o.occurrenceDate)}`, o);
+    }
+
+    const saByKey = new Map();
+    for (const sa of studentAttendances) {
+      saByKey.set(`${sa.sessionId}_${toDateKey(sa.occurrenceDate)}`, sa);
+    }
+
+    const attByKey = new Map();
+    for (const a of attendance) {
+      attByKey.set(`${a.sessionId}_${toDateKey(a.occurrenceDate)}`, a);
+    }
+
+    const allKeys = [...new Set([...attByKey.keys(), ...saByKey.keys()])];
+
+    const formattedData = allKeys.map(key => {
+      const a = attByKey.get(key) || null;
+      const sa = saByKey.get(key) || null;
+      const sessionId = a?.sessionId || sa?.sessionId;
+      const occurrenceDate = a?.occurrenceDate || sa?.occurrenceDate;
+      const occ = sa?.occurrence || occByKey.get(key) || null;
+      const sessionMeta = a?.session || sa?.session || {};
+
+      let finalStatus = (a?.status || sa?.status || "pending");
+      if (finalStatus === "joined") finalStatus = "present";
+
+      // Authoritative manual / finalized StudentAttendance sync
+      if (sa?.source === "admin_manual" && sa.status) {
+        finalStatus = sa.status === "joined" ? "present" : sa.status;
+      } else if (sa?.status && ["present", "late", "absent"].includes(sa.status) && (sa.finalizedAt || finalStatus === "pending")) {
+        finalStatus = sa.status;
       }
-    });
 
-    const formattedData = attendance.map(a => {
-      const occ = occList.find(o => o.sessionId === a.sessionId && new Date(o.occurrenceDate).getTime() === new Date(a.occurrenceDate).getTime());
-      
-      let finalStatus = a.status === 'joined' ? 'present' : a.status;
+      let calcTotalSecs = a ? getDurationSeconds(a, occ) : 0;
+      const firstJoinedAt = a?.firstJoinedAt || sa?.firstJoinedAt || null;
+      const lastJoinedAt = a?.lastJoinedAt || sa?.lastJoinedAt || null;
+      const joinCount = Math.max(a?.joinCount || 0, sa?.joinCount || 0);
 
-      const calcTotalSecs = getDurationSeconds(a, occ);
+      // Mobile join auto-estimation once class occurrence has ended
+      if (sa?.source === "mobile_join" && occ?.endsAt && new Date(occ.endsAt) <= now && firstJoinedAt) {
+        const estimatedSecs = Math.max(0, Math.floor((new Date(occ.endsAt).getTime() - new Date(firstJoinedAt).getTime()) / 1000));
+        if (estimatedSecs > calcTotalSecs) {
+          calcTotalSecs = estimatedSecs;
+        }
+      }
 
-      if (finalStatus === 'absent' && a.joinCount > 0) {
+      const sessionDurationMins = (occ?.startsAt && occ?.endsAt)
+        ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000))
+        : 60;
+      const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.25);
+      const hasOccurrenceEnded = Boolean(occ?.endsAt && new Date(occ.endsAt) <= now);
+
+      if (sa?.source !== "admin_manual" && (finalStatus === "absent" || finalStatus === "pending") && joinCount > 0) {
         let totalSecs = calcTotalSecs;
-        if (totalSecs === 0 && a.firstJoinedAt) {
-          const start = new Date(a.firstJoinedAt).getTime();
+        if (totalSecs === 0 && firstJoinedAt && hasOccurrenceEnded) {
+          const start = new Date(firstJoinedAt).getTime();
           const end = occ?.endsAt ? new Date(occ.endsAt).getTime() : start + 3600000;
           if (end > start) {
             totalSecs = Math.round((end - start) / 1000);
           }
         }
 
-        const sessionDurationMins = (occ?.startsAt && occ?.endsAt)
-          ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000))
-          : 60;
-        const requiredSeconds = Math.ceil(sessionDurationMins * 60 * 0.25);
-
         if (totalSecs >= requiredSeconds) {
-          finalStatus = 'present';
+          const graceEnd = occ?.startsAt ? new Date(new Date(occ.startsAt).getTime() + 15 * 60 * 1000) : null;
+          finalStatus = (firstJoinedAt && graceEnd && new Date(firstJoinedAt) > graceEnd) ? "late" : "present";
+          calcTotalSecs = Math.max(calcTotalSecs, totalSecs);
+        } else if (finalStatus === "pending" && hasOccurrenceEnded) {
+          finalStatus = "absent";
         }
       }
 
       return {
-        id: a.id,
-        sessionId: a.sessionId,
-        studentId: a.studentId,
-        occurrenceDate: a.occurrenceDate,
-        startsAt: occ?.startsAt || a.occurrenceDate,
-        endsAt: occ?.endsAt || a.occurrenceDate,
-        firstJoinedAt: a.firstJoinedAt,
-        lastJoinedAt: a.lastJoinedAt,
-        joinCount: a.joinCount,
+        id: a?.id || sa?.id,
+        sessionId,
+        studentId,
+        occurrenceDate,
+        startsAt: occ?.startsAt || occurrenceDate,
+        endsAt: occ?.endsAt || occurrenceDate,
+        firstJoinedAt,
+        lastJoinedAt,
+        joinCount,
         totalDurationSeconds: calcTotalSecs,
-        sessionDurationMinutes: occ && occ.startsAt && occ.endsAt ? Math.max(1, Math.round((new Date(occ.endsAt).getTime() - new Date(occ.startsAt).getTime()) / 60000)) : 60,
+        sessionDurationMinutes: sessionDurationMins,
         attendedMinutes: Math.round(calcTotalSecs / 60),
         status: finalStatus,
-        sessionTitle: a.session?.title || "Unknown Session",
-        courseId: a.session?.courseId || null,
-        courseTitle: a.session?.courseTitle || null
+        sessionTitle: sessionMeta.title || "Unknown Session",
+        courseId: sessionMeta.courseId || sa?.courseId || null,
+        courseTitle: sessionMeta.courseTitle || null
       };
-    });
+    }).sort((x, y) => new Date(y.occurrenceDate).getTime() - new Date(x.occurrenceDate).getTime());
 
     return res.status(200).json({ success: true, data: formattedData });
   } catch (error) {

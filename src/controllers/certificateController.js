@@ -822,7 +822,13 @@ const getMyCertificates = async (req, res) => {
     }
 
     const certificates = await prisma.certificate.findMany({
-      where: { userId },
+      where: {
+        userId,
+        OR: [
+          { paymentStatus: "PAID" },
+          { certificateUrl: { not: null } },
+        ],
+      },
       orderBy: { createdAt: "desc" },
     });
 
